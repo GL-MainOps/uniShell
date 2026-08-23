@@ -1,0 +1,17 @@
+# Go build output
+/bin/
+/dist/
+/build/
+*.test
+*.out
+
+# Local tooling
+.coverage/
+.tmp/
+
+# IDE/editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
