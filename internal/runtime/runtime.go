@@ -110,6 +110,11 @@ func (s *Session) Prepare() error {
 		Version:           filepath.Base(filepath.Dir(s.Paths.Runtime)),
 	}
 
+	if marker.ProcessStartTicks == 0 {
+		_ = os.RemoveAll(s.Paths.Runtime)
+		return errors.New("unable to determine current process start time")
+	}
+
 	if err := writeSessionMarker(
 		filepath.Join(s.Paths.Runtime, sessionMarkerName),
 		marker,
