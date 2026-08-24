@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"gitlab.com/mainops/uniShell/internal/app"
+	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 )
 
@@ -41,6 +42,11 @@ func main() {
 }
 
 func printError(err error) {
+	if errors.Is(err, credentials.ErrAuthenticationFailed) {
+		fmt.Fprintln(os.Stderr, "Authentication Failed. Aborting...")
+		return
+	}
+
 	var permissionErr *runtime.PermissionError
 
 	if errors.As(err, &permissionErr) {
