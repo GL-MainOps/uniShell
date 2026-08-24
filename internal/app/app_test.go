@@ -7,11 +7,11 @@ import (
 
 func TestNewUsesDefaultRuntimeRoot(t *testing.T) {
 	t.Setenv("UNISHELL_RUNTIME_DIR", "")
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
 
 	application, err := New(Options{
 		Version: "1.0.0",
 		Commit:  "test",
-		Auth:    "test-token",
 	})
 	if err != nil {
 		t.Fatalf("New() returned error: %v", err)
@@ -27,11 +27,11 @@ func TestNewUsesDefaultRuntimeRoot(t *testing.T) {
 func TestNewUsesEnvironmentRuntimeRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "unishell")
 	t.Setenv("UNISHELL_RUNTIME_DIR", root)
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
 
 	application, err := New(Options{
 		Version: "1.0.0",
 		Commit:  "test",
-		Auth:    "test-token",
 	})
 	if err != nil {
 		t.Fatalf("New() returned error: %v", err)
@@ -47,12 +47,12 @@ func TestNewUsesExplicitRuntimeRoot(t *testing.T) {
 	envRoot := filepath.Join(t.TempDir(), "environment")
 
 	t.Setenv("UNISHELL_RUNTIME_DIR", envRoot)
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
 
 	application, err := New(Options{
 		Version: "1.0.0",
 		Commit:  "test",
 		Root:    explicitRoot,
-		Auth:    "test-token",
 	})
 	if err != nil {
 		t.Fatalf("New() returned error: %v", err)
@@ -66,11 +66,12 @@ func TestNewUsesExplicitRuntimeRoot(t *testing.T) {
 func TestNewBuildsVersionedRuntimePaths(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "unishell")
 
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
+
 	application, err := New(Options{
 		Version: "1.2.3",
 		Commit:  "test",
 		Root:    root,
-		Auth:    "test-token",
 	})
 	if err != nil {
 		t.Fatalf("New() returned error: %v", err)
@@ -94,10 +95,10 @@ func TestNewBuildsVersionedRuntimePaths(t *testing.T) {
 }
 
 func TestNewRejectsEmptyVersion(t *testing.T) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
 	_, err := New(Options{
 		Version: "",
 		Commit:  "test",
-		Auth:    "test-token",
 	})
 	if err == nil {
 		t.Fatal("New() returned nil error, want error")

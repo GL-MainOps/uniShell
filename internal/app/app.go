@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"gitlab.com/mainops/uniShell/internal/auth"
+	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 )
 
@@ -23,7 +23,6 @@ type Options struct {
 	Version string
 	Commit  string
 	Root    string
-	Auth    string
 }
 
 // New creates authenticated application state.
@@ -38,9 +37,8 @@ func New(options Options) (*App, error) {
 		root = defaultRuntimeRoot
 	}
 
-	token, err := auth.Resolve(auth.Options{
-		Explicit: options.Auth,
-	})
+	token, err := credentials.Resolve()
+
 	if err != nil {
 		return nil, fmt.Errorf("authentication: %w", err)
 	}

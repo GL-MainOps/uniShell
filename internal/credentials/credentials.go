@@ -1,4 +1,4 @@
-package auth
+package credentials
 
 import (
 	"errors"
@@ -12,20 +12,11 @@ var ErrEmptyToken = errors.New("authentication token cannot be empty")
 
 const environmentVariable = "UNISHELL_AUTH_TOKEN"
 
-// Options controls how the authentication token is resolved.
-type Options struct {
-	Explicit string
-}
-
-// Resolve returns an authentication token using the configured precedence.
+// Resolve returns an authentication token.
 //
-// Explicit CLI input takes precedence over the environment variable.
-// If neither is available, an interactive hidden prompt is used.
-func Resolve(options Options) (string, error) {
-	if options.Explicit != "" {
-		return validate(options.Explicit)
-	}
-
+// The environment variable is checked first. If it is unavailable,
+// an interactive hidden prompt is used.
+func Resolve() (string, error) {
 	if token := os.Getenv(environmentVariable); token != "" {
 		return validate(token)
 	}
@@ -44,12 +35,12 @@ func validate(token string) (string, error) {
 func prompt() (string, error) {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return "", fmt.Errorf(
-			"authentication token is required; provide --auth or set %s",
+			"authentication token is required; provide %s",
 			environmentVariable,
 		)
 	}
 
-	fmt.Fprint(os.Stderr, "uniShell authentication token: ")
+	fmt.Fprint(os.Stderr, "Enter Token: ")
 
 	token, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Fprintln(os.Stderr)
