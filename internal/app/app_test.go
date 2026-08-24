@@ -11,6 +11,7 @@ func TestNewUsesDefaultRuntimeRoot(t *testing.T) {
 	application, err := New(Options{
 		Version: "1.0.0",
 		Commit:  "test",
+		Auth:    "test-token",
 	})
 	if err != nil {
 		t.Fatalf("New() returned error: %v", err)
@@ -30,6 +31,7 @@ func TestNewUsesEnvironmentRuntimeRoot(t *testing.T) {
 	application, err := New(Options{
 		Version: "1.0.0",
 		Commit:  "test",
+		Auth:    "test-token",
 	})
 	if err != nil {
 		t.Fatalf("New() returned error: %v", err)
@@ -50,6 +52,7 @@ func TestNewUsesExplicitRuntimeRoot(t *testing.T) {
 		Version: "1.0.0",
 		Commit:  "test",
 		Root:    explicitRoot,
+		Auth:    "test-token",
 	})
 	if err != nil {
 		t.Fatalf("New() returned error: %v", err)
@@ -67,6 +70,7 @@ func TestNewBuildsVersionedRuntimePaths(t *testing.T) {
 		Version: "1.2.3",
 		Commit:  "test",
 		Root:    root,
+		Auth:    "test-token",
 	})
 	if err != nil {
 		t.Fatalf("New() returned error: %v", err)
@@ -93,8 +97,42 @@ func TestNewRejectsEmptyVersion(t *testing.T) {
 	_, err := New(Options{
 		Version: "",
 		Commit:  "test",
+		Auth:    "test-token",
 	})
 	if err == nil {
 		t.Fatal("New() returned nil error, want error")
+	}
+}
+
+func TestNewRequiresAuthentication(t *testing.T) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "")
+
+	_, err := New(Options{
+		Version: "1.0.0",
+		Commit:  "test",
+	})
+
+	if err == nil {
+		t.Fatal("New() returned nil error, want authentication error")
+	}
+}
+
+func TestNewUsesEnvironmentAuthenticationToken(t *testing.T) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "environment-token")
+
+	application, err := New(Options{
+		Version: "1.0.0",
+		Commit:  "test",
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	if application.AuthToken != "environment-token" {
+		t.Fatalf(
+			"auth token = %q, want %q",
+			application.AuthToken,
+			"environment-token",
+		)
 	}
 }

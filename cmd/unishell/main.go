@@ -4,9 +4,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
+
 	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/runtime"
-	"os"
 )
 
 var (
@@ -21,12 +22,19 @@ func main() {
 		"uniShell runtime directory",
 	)
 
+	authToken := flag.String(
+		"auth",
+		"",
+		"uniShell authentication token",
+	)
+
 	flag.Parse()
 
 	application, err := app.New(app.Options{
 		Version: version,
 		Commit:  commit,
 		Root:    *runtimeDir,
+		Auth:    *authToken,
 	})
 	if err != nil {
 		printError(err)

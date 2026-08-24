@@ -1,3 +1,6 @@
+# Un-needed files
+docker-compose.yml
+
 # Go build output
 /bin/
 /dist/
@@ -6,6 +9,7 @@
 *.out
 
 # Local tooling
+.go-pkgs/
 .coverage/
 .tmp/
 
