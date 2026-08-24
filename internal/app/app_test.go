@@ -1,6 +1,7 @@
 package app
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -135,5 +136,116 @@ func TestNewUsesEnvironmentAuthenticationToken(t *testing.T) {
 			application.AuthToken,
 			"environment-token",
 		)
+	}
+}
+
+func TestStartSessionCreatesIsolatedRuntime(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "unishell")
+
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
+
+	application, err := New(Options{
+		Version: "1.0.0",
+		Commit:  "test",
+		Root:    root,
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	session, err := application.StartSession()
+	if err != nil {
+		t.Fatalf("StartSession() returned error: %v", err)
+	}
+
+	if session.ID == "" {
+		t.Fatal("session ID is empty")
+	}
+
+	if session.Paths.Runtime == application.Paths.Runtime {
+		t.Fatal("session runtime equals version runtime")
+	}
+
+	info, err := os.Stat(session.Paths.Runtime)
+	if err != nil {
+		t.Fatalf("stat session runtime: %v", err)
+	}
+
+	if !info.IsDir() {
+		t.Fatal("session runtime is not a directory")
+	}
+
+	if err := session.Cleanup(); err != nil {
+		t.Fatalf("Cleanup() returned error: %v", err)
+	}
+}
+
+func TestStartSessionSupportsConcurrentSessions(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "unishell")
+
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
+
+	application, err := New(Options{
+		Version: "1.0.0",
+		Commit:  "test",
+		Root:    root,
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	first, err := application.StartSession()
+	if err != nil {
+		t.Fatalf("StartSession(first) returned error: %v", err)
+	}
+
+	second, err := application.StartSession()
+	if err != nil {
+		t.Fatalf("StartSession(second) returned error: %v", err)
+	}
+
+	if first.ID == second.ID {
+		t.Fatal("concurrent sessions have identical IDs")
+	}
+
+	if first.Paths.Runtime == second.Paths.Runtime {
+		t.Fatal("concurrent sessions share the same runtime")
+	}
+
+	if _, err := os.Stat(first.Paths.Runtime); err != nil {
+		t.Fatalf("first session disappeared: %v", err)
+	}
+
+	if _, err := os.Stat(second.Paths.Runtime); err != nil {
+		t.Fatalf("second session disappeared: %v", err)
+	}
+
+	if err := first.Cleanup(); err != nil {
+		t.Fatalf("first Cleanup() returned error: %v", err)
+	}
+
+	if _, err := os.Stat(second.Paths.Runtime); err != nil {
+		t.Fatalf(
+			"second session was affected by first cleanup: %v",
+			err,
+		)
+	}
+
+	if err := second.Cleanup(); err != nil {
+		t.Fatalf("second Cleanup() returned error: %v", err)
+	}
+}
+
+func TestStartSessionRequiresAuthentication(t *testing.T) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "")
+
+	_, err := New(Options{
+		Version: "1.0.0",
+		Commit:  "test",
+		Root:    t.TempDir(),
+	})
+
+	if err == nil {
+		t.Fatal("New() returned nil error without authentication")
 	}
 }

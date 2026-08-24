@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	defaultRootName = ".unishell"
-	runtimeDirName  = "runtime"
+	defaultRuntimeRoot = "/var/tmp/.lesscache"
+	runtimeDirName     = "runtime"
+	runtimeEnvName     = "UNISHELL_RUNTIME_DIR"
 )
 
 // Paths describes the filesystem locations used by a uniShell runtime
@@ -22,6 +23,11 @@ type Paths struct {
 
 // NewPaths creates the filesystem layout for the supplied version.
 //
+// Root resolution precedence is:
+//  1. explicit root
+//  2. UNISHELL_RUNTIME_DIR
+//  3. /var/tmp/.lesscache
+//
 // Runtime points to the version directory. Individual Session instances
 // derive their own isolated runtime directory beneath it.
 func NewPaths(root, version string) (Paths, error) {
@@ -30,7 +36,11 @@ func NewPaths(root, version string) (Paths, error) {
 	}
 
 	if root == "" {
-		root = filepath.Join(os.TempDir(), defaultRootName)
+		root = os.Getenv(runtimeEnvName)
+	}
+
+	if root == "" {
+		root = defaultRuntimeRoot
 	}
 
 	root = filepath.Clean(root)
