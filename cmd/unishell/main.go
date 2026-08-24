@@ -19,29 +19,31 @@ func main() {
 
 func run(args []string) error {
 	command := "shell"
+	commandArgs := args
 
 	if len(args) > 0 {
 		command = args[0]
+		commandArgs = args[1:]
 	}
 
 	switch command {
 	case "shell":
-		return runShell(args[1:])
+		return runShell(commandArgs)
 
 	case "install":
-		return runInstall(args[1:])
+		return runInstall(commandArgs)
 
 	case "update":
-		return runUpdate(args[1:])
+		return runUpdate(commandArgs)
 
 	case "clean":
-		return runClean(args[1:])
+		return runClean(commandArgs)
 
 	case "doctor":
-		return runDoctor(args[1:])
+		return runDoctor(commandArgs)
 
 	case "version":
-		return runVersion(args[1:])
+		return runVersion(commandArgs)
 
 	case "help", "--help", "-h":
 		printHelp()
