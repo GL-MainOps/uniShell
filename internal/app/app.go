@@ -2,9 +2,12 @@ package app
 
 import (
 	"fmt"
+	"os"
 
 	"gitlab.com/mainops/uniShell/internal/runtime"
 )
+
+const defaultRuntimeRoot = "/var/tmp/.lesscache"
 
 // App contains the application-level state shared by uniShell commands.
 type App struct {
@@ -22,7 +25,17 @@ type Options struct {
 
 // New creates the application state.
 func New(options Options) (*App, error) {
-	paths, err := runtime.NewPaths(options.Root, options.Version)
+	root := options.Root
+
+	if root == "" {
+		root = os.Getenv("UNISHELL_RUNTIME_DIR")
+	}
+
+	if root == "" {
+		root = defaultRuntimeRoot
+	}
+
+	paths, err := runtime.NewPaths(root, options.Version)
 	if err != nil {
 		return nil, fmt.Errorf("initialize runtime paths: %w", err)
 	}

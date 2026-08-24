@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"gitlab.com/mainops/uniShell/internal/app"
 	"os"
@@ -12,22 +13,31 @@ var (
 )
 
 func main() {
-	app, err := app.New(app.Options{
+	runtimeDir := flag.String(
+		"runtime-dir",
+		"",
+		"uniShell runtime directory",
+	)
+
+	flag.Parse()
+
+	application, err := app.New(app.Options{
 		Version: version,
 		Commit:  commit,
+		Root:    *runtimeDir,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "uniShell: %v\n", err)
 		os.Exit(1)
 	}
 
-	if err := run(app, os.Args[1:]); err != nil {
+	if err := run(application, flag.Args()); err != nil {
 		fmt.Fprintf(os.Stderr, "uniShell: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(app *app.App, args []string) error {
+func run(application *app.App, args []string) error {
 	command := "shell"
 	commandArgs := args
 
@@ -38,22 +48,22 @@ func run(app *app.App, args []string) error {
 
 	switch command {
 	case "shell":
-		return runShell(app, commandArgs)
+		return runShell(application, commandArgs)
 
 	case "install":
-		return runInstall(app, commandArgs)
+		return runInstall(application, commandArgs)
 
 	case "update":
-		return runUpdate(app, commandArgs)
+		return runUpdate(application, commandArgs)
 
 	case "clean":
-		return runClean(app, commandArgs)
+		return runClean(application, commandArgs)
 
 	case "doctor":
-		return runDoctor(app, commandArgs)
+		return runDoctor(application, commandArgs)
 
 	case "version":
-		return runVersion(app, commandArgs)
+		return runVersion(application, commandArgs)
 
 	case "help", "--help", "-h":
 		printHelp()
