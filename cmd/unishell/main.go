@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"gitlab.com/mainops/uniShell/internal/app"
+	"gitlab.com/mainops/uniShell/internal/runtime"
 	"os"
 )
 
@@ -27,14 +29,33 @@ func main() {
 		Root:    *runtimeDir,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "uniShell: %v\n", err)
+		printError(err)
 		os.Exit(1)
 	}
 
 	if err := run(application, flag.Args()); err != nil {
-		fmt.Fprintf(os.Stderr, "uniShell: %v\n", err)
+		printError(err)
 		os.Exit(1)
 	}
+}
+
+func printError(err error) {
+	var permissionErr *runtime.PermissionError
+
+	if errors.As(err, &permissionErr) {
+		fmt.Fprintf(
+			os.Stderr,
+			"uniShell: %v\n",
+			permissionErr,
+		)
+		fmt.Fprintln(
+			os.Stderr,
+			"Fix the directory permissions or choose another runtime directory with --runtime-dir.",
+		)
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "uniShell: %v\n", err)
 }
 
 func run(application *app.App, args []string) error {
