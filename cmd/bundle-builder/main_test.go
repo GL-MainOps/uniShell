@@ -1,0 +1,130 @@
+package main
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"gitlab.com/mainops/uniShell/internal/bundle"
+	"gitlab.com/mainops/uniShell/internal/credentials"
+)
+
+func TestRunRequiresInput(t *testing.T) {
+	err := run([]string{
+		"-output",
+		filepath.Join(t.TempDir(), "bundle"),
+	})
+
+	if err == nil {
+		t.Fatal("run() returned nil error")
+	}
+}
+
+func TestRunRequiresOutput(t *testing.T) {
+	err := run([]string{
+		"-input",
+		t.TempDir(),
+	})
+
+	if err == nil {
+		t.Fatal("run() returned nil error")
+	}
+}
+
+func TestWriteOutput(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "test.bundle")
+	data := []byte("test bundle")
+
+	if err := writeOutput(output, data); err != nil {
+		t.Fatalf("writeOutput() returned error: %v", err)
+	}
+
+	got, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+
+	if string(got) != string(data) {
+		t.Fatalf("output = %q, want %q", got, data)
+	}
+
+	info, err := os.Stat(output)
+	if err != nil {
+		t.Fatalf("stat output: %v", err)
+	}
+
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf(
+			"output permissions = %o, want %o",
+			info.Mode().Perm(),
+			0600,
+		)
+	}
+}
+
+func TestWriteOutputCanBeOpenedAsBundle(t *testing.T) {
+	source := t.TempDir()
+
+	if err := os.WriteFile(
+		filepath.Join(source, "test"),
+		[]byte("payload"),
+		0600,
+	); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	password := "test-password"
+
+	data, err := bundle.Create(source, password)
+	if err != nil {
+		t.Fatalf("bundle.Create() returned error: %v", err)
+	}
+
+	output := filepath.Join(t.TempDir(), "test.bundle")
+
+	if err := writeOutput(output, data); err != nil {
+		t.Fatalf("writeOutput() returned error: %v", err)
+	}
+
+	stored, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+
+	if len(stored) == 0 {
+		t.Fatal("stored bundle is empty")
+	}
+
+	_, err = bundle.Open(stored, password)
+	if err != nil {
+		t.Fatalf("bundle.Open() returned error: %v", err)
+	}
+}
+
+func TestWrongPasswordDoesNotOpenGeneratedBundle(t *testing.T) {
+	source := t.TempDir()
+
+	if err := os.WriteFile(
+		filepath.Join(source, "test"),
+		[]byte("payload"),
+		0600,
+	); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	data, err := bundle.Create(source, "test-password")
+	if err != nil {
+		t.Fatalf("bundle.Create() returned error: %v", err)
+	}
+
+	_, err = bundle.Open(data, "wrong-password")
+
+	if !errors.Is(err, credentials.ErrAuthenticationFailed) {
+		t.Fatalf(
+			"bundle.Open() error = %v, want %v",
+			err,
+			credentials.ErrAuthenticationFailed,
+		)
+	}
+}
