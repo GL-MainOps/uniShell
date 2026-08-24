@@ -12,7 +12,10 @@ var (
 )
 
 func main() {
-	app, err := app.New(version, commit)
+	app, err := app.New(app.Options{
+		Version: version,
+		Commit:  commit,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "uniShell: %v\n", err)
 		os.Exit(1)

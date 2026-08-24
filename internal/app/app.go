@@ -13,16 +13,23 @@ type App struct {
 	Paths   runtime.Paths
 }
 
+// Options controls application initialization.
+type Options struct {
+	Version string
+	Commit  string
+	Root    string
+}
+
 // New creates the application state.
-func New(version, commit string) (*App, error) {
-	paths, err := runtime.NewPaths(version)
+func New(options Options) (*App, error) {
+	paths, err := runtime.NewPaths(options.Root, options.Version)
 	if err != nil {
 		return nil, fmt.Errorf("initialize runtime paths: %w", err)
 	}
 
 	return &App{
-		Version: version,
-		Commit:  commit,
+		Version: options.Version,
+		Commit:  options.Commit,
 		Paths:   paths,
 	}, nil
 }

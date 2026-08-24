@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	runtimeRootName = ".unishell"
+	defaultRootName = ".unishell"
 	runtimeDirName  = "runtime"
 )
 
@@ -21,13 +21,17 @@ type Paths struct {
 
 // NewPaths creates the filesystem layout for the supplied version.
 //
-// No directories are created by this function. It only calculates paths.
-func NewPaths(version string) (Paths, error) {
+// If root is empty, the operating system's temporary directory is used.
+func NewPaths(root, version string) (Paths, error) {
 	if version == "" {
 		return Paths{}, fmt.Errorf("runtime version cannot be empty")
 	}
 
-	root := filepath.Join(os.TempDir(), runtimeRootName)
+	if root == "" {
+		root = filepath.Join(os.TempDir(), defaultRootName)
+	}
+
+	root = filepath.Clean(root)
 	runtime := filepath.Join(root, runtimeDirName, version)
 
 	return Paths{
