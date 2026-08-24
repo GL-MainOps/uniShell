@@ -11,7 +11,8 @@ const (
 	runtimeDirName  = "runtime"
 )
 
-// Paths describes the filesystem locations used by a uniShell runtime.
+// Paths describes the filesystem locations used by a uniShell runtime
+// version.
 type Paths struct {
 	Root    string
 	Runtime string
@@ -21,7 +22,8 @@ type Paths struct {
 
 // NewPaths creates the filesystem layout for the supplied version.
 //
-// If root is empty, the operating system's temporary directory is used.
+// Runtime points to the version directory. Individual Session instances
+// derive their own isolated runtime directory beneath it.
 func NewPaths(root, version string) (Paths, error) {
 	if version == "" {
 		return Paths{}, fmt.Errorf("runtime version cannot be empty")
