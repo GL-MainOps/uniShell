@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"gitlab.com/mainops/uniShell/internal/app"
 	"os"
 )
 
@@ -11,13 +12,19 @@ var (
 )
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	app, err := app.New(version, commit)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "uniShell: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := run(app, os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "uniShell: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string) error {
+func run(app *app.App, args []string) error {
 	command := "shell"
 	commandArgs := args
 
@@ -28,22 +35,22 @@ func run(args []string) error {
 
 	switch command {
 	case "shell":
-		return runShell(commandArgs)
+		return runShell(app, commandArgs)
 
 	case "install":
-		return runInstall(commandArgs)
+		return runInstall(app, commandArgs)
 
 	case "update":
-		return runUpdate(commandArgs)
+		return runUpdate(app, commandArgs)
 
 	case "clean":
-		return runClean(commandArgs)
+		return runClean(app, commandArgs)
 
 	case "doctor":
-		return runDoctor(commandArgs)
+		return runDoctor(app, commandArgs)
 
 	case "version":
-		return runVersion(commandArgs)
+		return runVersion(app, commandArgs)
 
 	case "help", "--help", "-h":
 		printHelp()
@@ -54,33 +61,33 @@ func run(args []string) error {
 	}
 }
 
-func runShell(args []string) error {
+func runShell(app *app.App, args []string) error {
 	fmt.Println("uniShell shell: not implemented")
 	return nil
 }
 
-func runInstall(args []string) error {
+func runInstall(app *app.App, args []string) error {
 	fmt.Println("uniShell install: not implemented")
 	return nil
 }
 
-func runUpdate(args []string) error {
+func runUpdate(app *app.App, args []string) error {
 	fmt.Println("uniShell update: not implemented")
 	return nil
 }
 
-func runClean(args []string) error {
+func runClean(app *app.App, args []string) error {
 	fmt.Println("uniShell clean: not implemented")
 	return nil
 }
 
-func runDoctor(args []string) error {
+func runDoctor(app *app.App, args []string) error {
 	fmt.Println("uniShell doctor: not implemented")
 	return nil
 }
 
-func runVersion(args []string) error {
-	fmt.Printf("uniShell %s (%s)\n", version, commit)
+func runVersion(app *app.App, args []string) error {
+	fmt.Printf("uniShell %s (%s)\n", app.Version, app.Commit)
 	return nil
 }
 
