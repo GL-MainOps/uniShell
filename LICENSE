@@ -1,0 +1,163 @@
+uniShell Personal Use License
+Version 1.0
+Copyright (c) 2026 MainOps
+
+IMPORTANT NOTICE
+
+This software is proprietary software. It is NOT open-source software and
+is NOT licensed under any OSI-approved open-source license.
+
+By obtaining, accessing, installing, copying, or using this software, you
+agree to the terms of this license.
+
+1. GRANT OF LICENSE
+
+Subject to the terms of this license, the copyright holder grants an
+individual person a limited, non-exclusive, non-transferable,
+non-sublicensable license to use the unmodified software solely for the
+individual's personal, private, and non-commercial purposes.
+
+This license does not grant any rights to organizations, companies,
+businesses, institutions, teams, or other entities except where the
+copyright holder has granted those rights separately in writing.
+
+2. PERSONAL USE ONLY
+
+The permitted use is strictly limited to personal, private,
+non-commercial use by an individual.
+
+Without prior written permission from the copyright holder, the software
+may NOT be used:
+
+- for commercial purposes;
+- to provide commercial services;
+- as part of a business operation;
+- for internal organizational or corporate use;
+- as part of a managed service;
+- as part of a hosted or cloud service;
+- to provide services to third parties;
+- for resale;
+- for redistribution;
+- as part of another product or software package;
+- as part of a training, consulting, or support service;
+- for benchmarking intended for commercial or competitive purposes; or
+- for any other purpose outside the personal, private, non-commercial
+  purpose expressly permitted by this license.
+
+3. NO REDISTRIBUTION
+
+You may not distribute, publish, transmit, upload, mirror, sell, rent,
+lease, sublicense, transfer, or otherwise make the software or any
+substantial portion of it available to another person or entity.
+
+This prohibition includes, without limitation:
+
+- source-code repositories;
+- binary repositories;
+- package repositories;
+- software distribution platforms;
+- public or private mirrors;
+- file-sharing services;
+- container images;
+- downloadable archives;
+- package managers;
+- embedded copies in other software; and
+- any other redistribution mechanism.
+
+4. NO MODIFICATION OR DERIVATIVE WORKS
+
+You may not modify, adapt, translate, transform, reverse engineer for the
+purpose of creating a derivative work, decompile, disassemble, or create
+derivative works based on the software, except to the limited extent that
+such restriction is expressly prohibited by applicable law.
+
+You may not distribute or use modified versions of the software.
+
+5. NO FORKING
+
+Creating, maintaining, publishing, distributing, or using a fork,
+derivative repository, derivative project, or other independently
+maintained version of this software is prohibited without prior written
+permission from the copyright holder.
+
+The existence of a repository mirror does not grant permission to create
+additional mirrors, forks, or derivative repositories.
+
+6. NO SUBLICENSING
+
+You may not grant, transfer, assign, sublicense, or otherwise convey any
+rights granted under this license to another person or entity.
+
+7. COPYRIGHT AND NOTICES
+
+You may not remove, alter, obscure, or replace copyright notices,
+license notices, attribution notices, or other proprietary notices
+included with the software.
+
+8. SECURITY AND ACCESS CONTROLS
+
+Where the software contains authentication, encryption, access-control,
+obfuscation, or other security mechanisms, you may not intentionally
+circumvent, disable, remove, or defeat those mechanisms for the purpose
+of obtaining functionality or access outside the permissions granted by
+this license, except to the limited extent that such restriction is
+expressly prohibited by applicable law.
+
+9. OWNERSHIP
+
+The software and all associated intellectual-property rights remain the
+property of the copyright holder.
+
+This license grants a limited right of use only. It does not transfer
+ownership of the software or any intellectual-property rights.
+
+10. THIRD-PARTY COMPONENTS
+
+Components distributed with or used by this project may be subject to
+their own licenses.
+
+Nothing in this license overrides the license terms of an independent
+third-party component.
+
+11. TERMINATION
+
+This license terminates automatically if you violate any term of this
+license.
+
+Upon termination, you must immediately stop using the software and
+delete all copies of the software in your possession or control, except
+where retention is required by applicable law.
+
+12. NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE,
+NON-INFRINGEMENT, SECURITY, OR ACCURACY.
+
+13. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT HOLDER
+SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL,
+EXEMPLARY, OR PUNITIVE DAMAGES, OR FOR ANY LOSS OF DATA, PROFITS,
+REVENUE, BUSINESS, SYSTEM AVAILABILITY, OR OTHER LOSSES ARISING FROM OR
+RELATED TO THE SOFTWARE OR ITS USE.
+
+14. APPLICABLE LAW
+
+This license shall be interpreted and enforced under the laws applicable
+to the copyright holder, subject to any mandatory provisions of applicable
+law.
+
+15. WRITTEN PERMISSION
+
+Any permission not expressly granted by this license is reserved.
+
+Additional rights may only be granted by the copyright holder in a
+written agreement.
+
+16. ENTIRE LICENSE
+
+This license constitutes the complete license governing the rights
+granted for the software unless supplemented or replaced by a separate
+written agreement issued by the copyright holder.
