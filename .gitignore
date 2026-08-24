@@ -23,3 +23,4 @@ docker-compose.yml
 
 # Generated encrypted runtime bundle
 internal/bundle/generated_bundle.go
+!internal/bundle/testdata/runtime.bundle
