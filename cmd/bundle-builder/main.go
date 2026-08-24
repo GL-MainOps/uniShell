@@ -33,6 +33,12 @@ func run(args []string) error {
 		"output encrypted bundle path",
 	)
 
+	generate := flags.String(
+		"generate",
+		"",
+		"generated Go source file containing the encrypted bundle",
+	)
+
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -43,6 +49,10 @@ func run(args []string) error {
 
 	if *output == "" {
 		return errors.New("output bundle path is required")
+	}
+
+	if *generate == "" {
+		return errors.New("generated Go source path is required")
 	}
 
 	password, err := resolvePassword()
@@ -56,6 +66,10 @@ func run(args []string) error {
 	}
 
 	if err := writeOutput(*output, data); err != nil {
+		return err
+	}
+
+	if err := generateBundleSource(*generate, data); err != nil {
 		return err
 	}
 

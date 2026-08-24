@@ -18,4 +18,8 @@ docker-compose.yml
 .vscode/
 *.swp
 *.swo
+*.bundle
 .DS_Store
+
+# Generated encrypted runtime bundle
+internal/bundle/generated_bundle.go
