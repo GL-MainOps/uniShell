@@ -11,7 +11,7 @@ docker-compose.yml
 # Local tooling
 .go-pkgs/
 .coverage/
-.tmp/
+tmp/
 
 # IDE/editor files
 .idea/
