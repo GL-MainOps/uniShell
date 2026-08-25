@@ -157,8 +157,34 @@ func runUpdate(app *app.App, args []string) error {
 	return nil
 }
 
-func runClean(app *app.App, args []string) error {
-	fmt.Println("uniShell clean: not implemented")
+type cleanApplication interface {
+	DiscoverMultiplexerSession() (*app.Session, error)
+}
+
+func runClean(application cleanApplication, args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("clean does not accept arguments")
+	}
+
+	session, err := application.DiscoverMultiplexerSession()
+	if err != nil {
+		if errors.Is(err, multiplexer.ErrSessionNotFound) {
+			return nil
+		}
+
+		return fmt.Errorf(
+			"discover multiplexer session: %w",
+			err,
+		)
+	}
+
+	if err := session.Cleanup(); err != nil {
+		return fmt.Errorf(
+			"clean multiplexer session: %w",
+			err,
+		)
+	}
+
 	return nil
 }
 

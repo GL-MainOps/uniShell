@@ -32,9 +32,9 @@ func (s *Session) Attach() error {
 		s.Multiplexer.Session,
 	); err != nil {
 		return fmt.Errorf(
-			"attach multiplexer session: %w",
-			err,
-		)
+		"attach multiplexer session: %w",
+		err,
+	)
 	}
 
 	return nil
@@ -48,7 +48,20 @@ func (s *Session) Cleanup() error {
 	var firstErr error
 
 	if s.Multiplexer != nil {
-		if err := s.Multiplexer.Backend.Destroy(
+		runtimePath := s.Multiplexer.Session.Runtime
+
+		if runtimePath != "" {
+			manager := multiplexer.NewManager(
+				multiplexer.NewRegistry(s.Multiplexer.Backend),
+			)
+
+			if err := manager.Cleanup(runtimePath); err != nil {
+				firstErr = fmt.Errorf(
+					"cleanup multiplexer session: %w",
+					err,
+				)
+			}
+		} else if err := s.Multiplexer.Backend.Destroy(
 			s.Multiplexer.Session,
 		); err != nil {
 			firstErr = fmt.Errorf(

@@ -272,3 +272,55 @@ func TestRunShellRejectsArguments(t *testing.T) {
 		t.Fatal("runShell() returned nil error")
 	}
 }
+
+func TestRunCleanDestroysExistingSession(t *testing.T) {
+	backend := &shellTestBackend{}
+
+	session := &app.Session{
+		Multiplexer: &multiplexer.ManagedSession{
+			Backend: backend,
+			Session: multiplexer.Session{
+				Name:     "default",
+				Endpoint: "/tmp/test.sock",
+			},
+		},
+	}
+
+	application := &shellTestApplication{
+		discoverSession: session,
+	}
+
+	if err := runClean(application, nil); err != nil {
+		t.Fatalf("runClean() returned error: %v", err)
+	}
+
+	if !backend.destroyed {
+		t.Fatal("runClean() did not destroy session")
+	}
+}
+
+func TestRunCleanSucceedsWhenSessionDoesNotExist(t *testing.T) {
+	application := &shellTestApplication{
+		discoverErr: multiplexer.ErrSessionNotFound,
+	}
+
+	if err := runClean(application, nil); err != nil {
+		t.Fatalf(
+			"runClean() returned error: %v",
+			err,
+		)
+	}
+}
+
+func TestRunCleanRejectsArguments(t *testing.T) {
+	application := &shellTestApplication{}
+
+	err := runClean(
+		application,
+		[]string{"unexpected"},
+	)
+
+	if err == nil {
+		t.Fatal("runClean() returned nil error")
+	}
+}

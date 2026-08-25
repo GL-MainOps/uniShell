@@ -731,3 +731,143 @@ func TestManagerCreatePreservesEmptyNativeSessionName(t *testing.T) {
 		)
 	}
 }
+
+func TestManagerCleanupDestroysLiveSessionAndRemovesRuntime(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if err := manager.Cleanup(runtimePath); err != nil {
+		t.Fatalf("Cleanup() returned error: %v", err)
+	}
+
+	if !backend.destroyed {
+		t.Fatal("Cleanup() did not destroy live session")
+	}
+
+	if _, err := os.Stat(runtimePath); !errors.Is(
+		err,
+		os.ErrNotExist,
+	) {
+		t.Fatalf(
+			"runtime still exists, stat error = %v",
+			err,
+		)
+	}
+}
+
+func TestManagerCleanupRemovesStaleSessionRuntime(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     false,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	backend.alive = false
+
+	if err := manager.Cleanup(runtimePath); err != nil {
+		t.Fatalf("Cleanup() returned error: %v", err)
+	}
+
+	if _, err := os.Stat(runtimePath); !errors.Is(
+		err,
+		os.ErrNotExist,
+	) {
+		t.Fatalf(
+			"stale runtime still exists, stat error = %v",
+			err,
+		)
+	}
+}
+
+func TestManagerCleanupPreservesRuntimeWhenBackendUnavailable(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	backend.available = false
+
+	err := manager.Cleanup(runtimePath)
+
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf(
+			"Cleanup() error = %v, want %v",
+			err,
+			ErrUnavailable,
+		)
+	}
+
+	if _, err := os.Stat(runtimePath); err != nil {
+		t.Fatalf(
+			"runtime was removed while backend unavailable: %v",
+			err,
+		)
+	}
+}

@@ -339,3 +339,62 @@ func (m *Manager) Reconcile(
 
 	return nil
 }
+
+func (m *Manager) Cleanup(runtimePath string) error {
+	if runtimePath == "" {
+		return fmt.Errorf("multiplexer runtime path cannot be empty")
+	}
+
+	metadata, err := ReadMetadata(runtimePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return os.RemoveAll(runtimePath)
+		}
+
+		return err
+	}
+
+	backend, ok := m.registry.Get(metadata.Multiplexer)
+	if !ok {
+		return fmt.Errorf(
+			"multiplexer %q: %w",
+			metadata.Multiplexer,
+			ErrUnavailable,
+		)
+	}
+
+	if !backend.Available() {
+		return fmt.Errorf(
+			"multiplexer %q: %w",
+			metadata.Multiplexer,
+			ErrUnavailable,
+		)
+	}
+
+	session := Session{
+		Name:       metadata.Name,
+		NativeName: metadata.NativeName,
+		Runtime:    runtimePath,
+		Endpoint:   metadata.Endpoint,
+	}
+
+	if backend.IsAlive(session) {
+		if err := backend.Destroy(session); err != nil {
+			return fmt.Errorf(
+				"destroy %s session: %w",
+				metadata.Multiplexer,
+				err,
+			)
+		}
+	}
+
+	if err := os.RemoveAll(runtimePath); err != nil {
+		return fmt.Errorf(
+			"remove multiplexer runtime %q: %w",
+			runtimePath,
+			err,
+		)
+	}
+
+	return nil
+}
