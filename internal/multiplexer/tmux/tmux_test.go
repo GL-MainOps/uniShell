@@ -4,16 +4,15 @@ import (
 	"reflect"
 	"testing"
 
-	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 )
 
-func TestCreateUsesSocketAndSessionName(t *testing.T) {
+func TestCreateUsesSessionEndpointAndName(t *testing.T) {
 	var gotName string
 	var gotArgs []string
 
 	backend := &Backend{
-		Binary:     "fake-tmux",
-		SocketPath: "/runtime/multiplexer/tmux.sock",
+		Binary: "fake-tmux",
 		Run: func(name string, args ...string) error {
 			gotName = name
 			gotArgs = append([]string(nil), args...)
@@ -21,8 +20,9 @@ func TestCreateUsesSocketAndSessionName(t *testing.T) {
 		},
 	}
 
-	err := backend.Create(multiplexer.Session{
-		Name: "work",
+	err := backend.Create(api.Session{
+		Name:     "work",
+		Endpoint: "/runtime/work/multiplexer/tmux.sock",
 	})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -34,7 +34,7 @@ func TestCreateUsesSocketAndSessionName(t *testing.T) {
 
 	want := []string{
 		"-S",
-		"/runtime/multiplexer/tmux.sock",
+		"/runtime/work/multiplexer/tmux.sock",
 		"new-session",
 		"-d",
 		"-s",
@@ -46,25 +46,43 @@ func TestCreateUsesSocketAndSessionName(t *testing.T) {
 	}
 }
 
+func TestCreateRejectsMissingEndpoint(t *testing.T) {
+	backend := &Backend{
+		Binary: "fake-tmux",
+		Run: func(_ string, _ ...string) error {
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		Name: "work",
+	})
+
+	if err == nil {
+		t.Fatal("Create() returned nil error")
+	}
+}
+
 func TestCreatePreservesNativeSessionNaming(t *testing.T) {
 	var gotArgs []string
 
 	backend := &Backend{
-		Binary:     "fake-tmux",
-		SocketPath: "/runtime/multiplexer/tmux.sock",
+		Binary: "fake-tmux",
 		Run: func(_ string, args ...string) error {
 			gotArgs = append([]string(nil), args...)
 			return nil
 		},
 	}
 
-	if err := backend.Create(multiplexer.Session{}); err != nil {
+	if err := backend.Create(api.Session{
+		Endpoint: "/runtime/default/multiplexer/tmux.sock",
+	}); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
 	want := []string{
 		"-S",
-		"/runtime/multiplexer/tmux.sock",
+		"/runtime/default/multiplexer/tmux.sock",
 		"new-session",
 		"-d",
 	}
@@ -74,27 +92,27 @@ func TestCreatePreservesNativeSessionNaming(t *testing.T) {
 	}
 }
 
-func TestAttachUsesSocketAndSessionName(t *testing.T) {
+func TestAttachUsesSessionEndpointAndName(t *testing.T) {
 	var gotArgs []string
 
 	backend := &Backend{
-		Binary:     "fake-tmux",
-		SocketPath: "/runtime/multiplexer/tmux.sock",
+		Binary: "fake-tmux",
 		Run: func(_ string, args ...string) error {
 			gotArgs = append([]string(nil), args...)
 			return nil
 		},
 	}
 
-	if err := backend.Attach(
-		multiplexer.Session{Name: "work"},
-	); err != nil {
+	if err := backend.Attach(api.Session{
+		Name:     "work",
+		Endpoint: "/runtime/work/multiplexer/tmux.sock",
+	}); err != nil {
 		t.Fatalf("Attach() returned error: %v", err)
 	}
 
 	want := []string{
 		"-S",
-		"/runtime/multiplexer/tmux.sock",
+		"/runtime/work/multiplexer/tmux.sock",
 		"attach-session",
 		"-t",
 		"work",
@@ -105,27 +123,27 @@ func TestAttachUsesSocketAndSessionName(t *testing.T) {
 	}
 }
 
-func TestIsAliveUsesSocket(t *testing.T) {
+func TestIsAliveUsesSessionEndpoint(t *testing.T) {
 	var gotArgs []string
 
 	backend := &Backend{
-		Binary:     "fake-tmux",
-		SocketPath: "/runtime/multiplexer/tmux.sock",
+		Binary: "fake-tmux",
 		Run: func(_ string, args ...string) error {
 			gotArgs = append([]string(nil), args...)
 			return nil
 		},
 	}
 
-	if !backend.IsAlive(
-		multiplexer.Session{Name: "work"},
-	) {
+	if !backend.IsAlive(api.Session{
+		Name:     "work",
+		Endpoint: "/runtime/work/multiplexer/tmux.sock",
+	}) {
 		t.Fatal("IsAlive() = false, want true")
 	}
 
 	want := []string{
 		"-S",
-		"/runtime/multiplexer/tmux.sock",
+		"/runtime/work/multiplexer/tmux.sock",
 		"has-session",
 		"-t",
 		"work",
@@ -136,27 +154,27 @@ func TestIsAliveUsesSocket(t *testing.T) {
 	}
 }
 
-func TestDestroyUsesSocket(t *testing.T) {
+func TestDestroyUsesSessionEndpoint(t *testing.T) {
 	var gotArgs []string
 
 	backend := &Backend{
-		Binary:     "fake-tmux",
-		SocketPath: "/runtime/multiplexer/tmux.sock",
+		Binary: "fake-tmux",
 		Run: func(_ string, args ...string) error {
 			gotArgs = append([]string(nil), args...)
 			return nil
 		},
 	}
 
-	if err := backend.Destroy(
-		multiplexer.Session{Name: "work"},
-	); err != nil {
+	if err := backend.Destroy(api.Session{
+		Name:     "work",
+		Endpoint: "/runtime/work/multiplexer/tmux.sock",
+	}); err != nil {
 		t.Fatalf("Destroy() returned error: %v", err)
 	}
 
 	want := []string{
 		"-S",
-		"/runtime/multiplexer/tmux.sock",
+		"/runtime/work/multiplexer/tmux.sock",
 		"kill-session",
 		"-t",
 		"work",
@@ -164,23 +182,5 @@ func TestDestroyUsesSocket(t *testing.T) {
 
 	if !reflect.DeepEqual(gotArgs, want) {
 		t.Fatalf("args = %#v, want %#v", gotArgs, want)
-	}
-}
-
-func TestValidateRejectsEmptySocket(t *testing.T) {
-	backend := &Backend{}
-
-	if err := backend.Validate(); err == nil {
-		t.Fatal("Validate() returned nil error")
-	}
-}
-
-func TestValidateAcceptsSocket(t *testing.T) {
-	backend := &Backend{
-		SocketPath: "/runtime/multiplexer/tmux.sock",
-	}
-
-	if err := backend.Validate(); err != nil {
-		t.Fatalf("Validate() returned error: %v", err)
 	}
 }

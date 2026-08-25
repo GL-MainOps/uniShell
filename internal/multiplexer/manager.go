@@ -3,7 +3,10 @@ package multiplexer
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -166,4 +169,99 @@ func generateSessionID() (string, error) {
 	}
 
 	return hex.EncodeToString(data), nil
+}
+
+func (m *Manager) Discover(
+	runtimePath string,
+	sessionName string,
+) (*ManagedSession, error) {
+	metadata, err := ReadMetadata(runtimePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrSessionNotFound
+		}
+
+		return nil, err
+	}
+
+	if metadata.Name != sessionName {
+		return nil, ErrSessionNotFound
+	}
+
+	backend, ok := m.registry.Get(metadata.Multiplexer)
+	if !ok {
+		return nil, fmt.Errorf(
+			"multiplexer %q: %w",
+			metadata.Multiplexer,
+			ErrUnavailable,
+		)
+	}
+
+	if !backend.Available() {
+		return nil, fmt.Errorf(
+			"multiplexer %q: %w",
+			metadata.Multiplexer,
+			ErrUnavailable,
+		)
+	}
+
+	session := Session{
+		Name:     metadata.Name,
+		Runtime:  runtimePath,
+		Endpoint: metadata.Endpoint,
+	}
+
+	if !backend.IsAlive(session) {
+		return nil, ErrSessionNotFound
+	}
+
+	return &ManagedSession{
+		Metadata: metadata,
+		Backend:  backend,
+		Session:  session,
+	}, nil
+}
+
+func (m *Manager) DiscoverByName(
+	versionRuntime string,
+	sessionName string,
+) (*ManagedSession, error) {
+	entries, err := os.ReadDir(versionRuntime)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrSessionNotFound
+		}
+
+		return nil, fmt.Errorf(
+			"inspect runtime sessions: %w",
+			err,
+		)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		runtimePath := filepath.Join(
+			versionRuntime,
+			entry.Name(),
+		)
+
+		session, err := m.Discover(
+			runtimePath,
+			sessionName,
+		)
+		if err == nil {
+			return session, nil
+		}
+
+		if errors.Is(err, ErrSessionNotFound) {
+			continue
+		}
+
+		return nil, err
+	}
+
+	return nil, ErrSessionNotFound
 }

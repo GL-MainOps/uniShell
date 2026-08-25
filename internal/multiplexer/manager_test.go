@@ -199,3 +199,232 @@ func TestManagerDestroyRemovesMetadata(t *testing.T) {
 		t.Fatal("ReadMetadata() succeeded after Destroy()")
 	}
 }
+
+func TestManagerDiscoverFindsLiveSession(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	created, err := manager.Create(
+		"test",
+		"default",
+		runtimePath,
+		"/tmp/test.endpoint",
+	)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	discovered, err := manager.Discover(
+		runtimePath,
+		"default",
+	)
+	if err != nil {
+		t.Fatalf("Discover() returned error: %v", err)
+	}
+
+	if discovered.Metadata.ID != created.Metadata.ID {
+		t.Fatalf(
+			"discovered ID = %q, want %q",
+			discovered.Metadata.ID,
+			created.Metadata.ID,
+		)
+	}
+
+	if discovered.Metadata.Name != "default" {
+		t.Fatalf(
+			"discovered name = %q, want %q",
+			discovered.Metadata.Name,
+			"default",
+		)
+	}
+}
+
+func TestManagerDiscoverRejectsDifferentSessionName(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		runtimePath,
+		"/tmp/test.endpoint",
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	_, err := manager.Discover(
+		runtimePath,
+		"work",
+	)
+
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf(
+			"Discover() error = %v, want %v",
+			err,
+			ErrSessionNotFound,
+		)
+	}
+}
+
+func TestManagerDiscoverRejectsStaleMetadata(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     false,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	metadata := Metadata{
+		ID:          "stale-session",
+		Name:        "default",
+		Multiplexer: "test",
+		Endpoint:    "/tmp/test.endpoint",
+	}
+
+	if err := WriteMetadata(runtimePath, metadata); err != nil {
+		t.Fatalf("WriteMetadata() returned error: %v", err)
+	}
+
+	_, err := manager.Discover(
+		runtimePath,
+		"default",
+	)
+
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf(
+			"Discover() error = %v, want %v",
+			err,
+			ErrSessionNotFound,
+		)
+	}
+}
+
+func TestManagerDiscoverRejectsUnavailableBackend(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: false,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	metadata := Metadata{
+		ID:          "session",
+		Name:        "default",
+		Multiplexer: "test",
+		Endpoint:    "/tmp/test.endpoint",
+	}
+
+	if err := WriteMetadata(runtimePath, metadata); err != nil {
+		t.Fatalf("WriteMetadata() returned error: %v", err)
+	}
+
+	_, err := manager.Discover(
+		runtimePath,
+		"default",
+	)
+
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf(
+			"Discover() error = %v, want %v",
+			err,
+			ErrUnavailable,
+		)
+	}
+}
+
+func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T) {
+	versionRuntime := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	firstRuntime := filepath.Join(versionRuntime, "first")
+	secondRuntime := filepath.Join(versionRuntime, "second")
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"other",
+		firstRuntime,
+		"/tmp/first.endpoint",
+	); err != nil {
+		t.Fatalf("Create(first) returned error: %v", err)
+	}
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		secondRuntime,
+		"/tmp/second.endpoint",
+	); err != nil {
+		t.Fatalf("Create(second) returned error: %v", err)
+	}
+
+	session, err := manager.DiscoverByName(
+		versionRuntime,
+		"default",
+	)
+	if err != nil {
+		t.Fatalf(
+			"DiscoverByName() returned error: %v",
+			err,
+		)
+	}
+
+	if session.Session.Runtime != secondRuntime {
+		t.Fatalf(
+			"runtime = %q, want %q",
+			session.Session.Runtime,
+			secondRuntime,
+		)
+	}
+}

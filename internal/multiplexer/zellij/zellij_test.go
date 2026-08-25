@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 )
 
 func TestCreateUsesSessionName(t *testing.T) {
@@ -21,7 +21,7 @@ func TestCreateUsesSessionName(t *testing.T) {
 	}
 
 	if err := backend.Create(
-		multiplexer.Session{Name: "work"},
+		api.Session{Name: "work"},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestAttachUsesSessionName(t *testing.T) {
 	}
 
 	if err := backend.Attach(
-		multiplexer.Session{Name: "work"},
+		api.Session{Name: "work"},
 	); err != nil {
 		t.Fatalf("Attach() returned error: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestIsAliveFindsSession(t *testing.T) {
 	}
 
 	if !backend.IsAlive(
-		multiplexer.Session{Name: "work"},
+		api.Session{Name: "work"},
 	) {
 		t.Fatal("IsAlive() = false, want true")
 	}
@@ -91,7 +91,7 @@ func TestIsAliveRejectsMissingSession(t *testing.T) {
 	}
 
 	if backend.IsAlive(
-		multiplexer.Session{Name: "work"},
+		api.Session{Name: "work"},
 	) {
 		t.Fatal("IsAlive() = true, want false")
 	}
@@ -109,7 +109,7 @@ func TestDestroyUsesSessionName(t *testing.T) {
 	}
 
 	if err := backend.Destroy(
-		multiplexer.Session{Name: "work"},
+		api.Session{Name: "work"},
 	); err != nil {
 		t.Fatalf("Destroy() returned error: %v", err)
 	}

@@ -5,24 +5,27 @@ import (
 
 	"gitlab.com/mainops/uniShell/internal/bundle"
 	"gitlab.com/mainops/uniShell/internal/credentials"
+	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 )
 
 type BundleSource func() ([]byte, error)
 
 type Options struct {
-	Version string
-	Commit  string
-	Root    string
-	Bundle  BundleSource
+	Version     string
+	Commit      string
+	Root        string
+	Bundle      BundleSource
+	Multiplexer *multiplexer.Manager
 }
 
 type App struct {
-	Version   string
-	Commit    string
-	AuthToken string
-	Paths     runtime.Paths
-	Bundle    BundleSource
+	Version     string
+	Commit      string
+	AuthToken   string
+	Paths       runtime.Paths
+	Bundle      BundleSource
+	Multiplexer *multiplexer.Manager
 }
 
 func New(options Options) (*App, error) {
@@ -46,12 +49,20 @@ func New(options Options) (*App, error) {
 		source = bundle.Embedded
 	}
 
+	manager := options.Multiplexer
+	if manager == nil {
+		manager = multiplexer.NewManager(
+			multiplexer.DefaultRegistry(),
+		)
+	}
+
 	return &App{
-		Version:   version,
-		Commit:    options.Commit,
-		AuthToken: token,
-		Paths:     paths,
-		Bundle:    source,
+		Version:     version,
+		Commit:      options.Commit,
+		AuthToken:   token,
+		Paths:       paths,
+		Bundle:      source,
+		Multiplexer: manager,
 	}, nil
 }
 

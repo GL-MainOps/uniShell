@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"gitlab.com/mainops/uniShell/internal/credentials"
+	"gitlab.com/mainops/uniShell/internal/multiplexer"
 )
 
 func TestNewUsesDefaultRuntimeRoot(t *testing.T) {
@@ -367,4 +368,67 @@ func TestStartSessionFailureLeavesNoSessionRuntime(t *testing.T) {
 			)
 		}
 	}
+}
+
+func TestNewUsesProvidedMultiplexerManager(t *testing.T) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
+
+	backend := &appTestBackend{}
+
+	manager := multiplexer.NewManager(
+		multiplexer.NewRegistry(backend),
+	)
+
+	application, err := New(Options{
+		Version:     "1.0.0",
+		Commit:      "test",
+		Root:        t.TempDir(),
+		Multiplexer: manager,
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	if application.Multiplexer != manager {
+		t.Fatal("application did not retain provided multiplexer manager")
+	}
+}
+
+type appTestBackend struct{}
+
+func (appTestBackend) Name() string {
+	return "test"
+}
+
+func (appTestBackend) Capabilities() map[multiplexer.Capability]bool {
+	return map[multiplexer.Capability]bool{
+		multiplexer.CapabilitySessions: true,
+		multiplexer.CapabilityAttach:   true,
+		multiplexer.CapabilityDetach:   true,
+		multiplexer.CapabilityDestroy:  true,
+	}
+}
+
+func (appTestBackend) Available() bool {
+	return true
+}
+
+func (appTestBackend) Create(multiplexer.Session) error {
+	return nil
+}
+
+func (appTestBackend) Attach(multiplexer.Session) error {
+	return nil
+}
+
+func (appTestBackend) Detach(multiplexer.Session) error {
+	return nil
+}
+
+func (appTestBackend) IsAlive(multiplexer.Session) bool {
+	return true
+}
+
+func (appTestBackend) Destroy(multiplexer.Session) error {
+	return nil
 }

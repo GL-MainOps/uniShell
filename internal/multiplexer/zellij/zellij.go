@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 )
 
 type CommandRunner func(name string, args ...string) ([]byte, error)
@@ -33,12 +33,12 @@ func (b *Backend) Name() string {
 	return "zellij"
 }
 
-func (b *Backend) Capabilities() map[multiplexer.Capability]bool {
-	return map[multiplexer.Capability]bool{
-		multiplexer.CapabilitySessions: true,
-		multiplexer.CapabilityAttach:   true,
-		multiplexer.CapabilityDetach:   true,
-		multiplexer.CapabilityDestroy:  true,
+func (b *Backend) Capabilities() map[api.Capability]bool {
+	return map[api.Capability]bool{
+		api.CapabilitySessions: true,
+		api.CapabilityAttach:   true,
+		api.CapabilityDetach:   true,
+		api.CapabilityDestroy:  true,
 	}
 }
 
@@ -47,7 +47,7 @@ func (b *Backend) Available() bool {
 	return err == nil
 }
 
-func (b *Backend) Create(session multiplexer.Session) error {
+func (b *Backend) Create(session api.Session) error {
 	args := []string{"--session"}
 
 	if session.Name != "" {
@@ -58,7 +58,7 @@ func (b *Backend) Create(session multiplexer.Session) error {
 	return err
 }
 
-func (b *Backend) Attach(session multiplexer.Session) error {
+func (b *Backend) Attach(session api.Session) error {
 	args := []string{"attach"}
 
 	if session.Name != "" {
@@ -69,7 +69,7 @@ func (b *Backend) Attach(session multiplexer.Session) error {
 	return err
 }
 
-func (b *Backend) Detach(session multiplexer.Session) error {
+func (b *Backend) Detach(session api.Session) error {
 	_, err := b.Run(
 		b.Binary,
 		"action",
@@ -79,7 +79,7 @@ func (b *Backend) Detach(session multiplexer.Session) error {
 	return err
 }
 
-func (b *Backend) IsAlive(session multiplexer.Session) bool {
+func (b *Backend) IsAlive(session api.Session) bool {
 	output, err := b.Run(
 		b.Binary,
 		"list-sessions",
@@ -101,7 +101,7 @@ func (b *Backend) IsAlive(session multiplexer.Session) bool {
 	return false
 }
 
-func (b *Backend) Destroy(session multiplexer.Session) error {
+func (b *Backend) Destroy(session api.Session) error {
 	args := []string{"delete-session"}
 
 	if session.Name != "" {

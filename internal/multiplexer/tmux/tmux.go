@@ -5,21 +5,19 @@ import (
 	"os"
 	"os/exec"
 
-	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 )
 
 type CommandRunner func(name string, args ...string) error
 
 type Backend struct {
-	Binary     string
-	SocketPath string
-	Run        CommandRunner
+	Binary string
+	Run    CommandRunner
 }
 
-func New(socketPath string) *Backend {
+func New() *Backend {
 	return &Backend{
-		Binary:     "tmux",
-		SocketPath: socketPath,
+		Binary: "tmux",
 		Run: func(name string, args ...string) error {
 			cmd := exec.Command(name, args...)
 			cmd.Stdin = os.Stdin
@@ -35,12 +33,12 @@ func (b *Backend) Name() string {
 	return "tmux"
 }
 
-func (b *Backend) Capabilities() map[multiplexer.Capability]bool {
-	return map[multiplexer.Capability]bool{
-		multiplexer.CapabilitySessions: true,
-		multiplexer.CapabilityAttach:   true,
-		multiplexer.CapabilityDetach:   true,
-		multiplexer.CapabilityDestroy:  true,
+func (b *Backend) Capabilities() map[api.Capability]bool {
+	return map[api.Capability]bool{
+		api.CapabilitySessions: true,
+		api.CapabilityAttach:   true,
+		api.CapabilityDetach:   true,
+		api.CapabilityDestroy:  true,
 	}
 }
 
@@ -49,8 +47,11 @@ func (b *Backend) Available() bool {
 	return err == nil
 }
 
-func (b *Backend) Create(session multiplexer.Session) error {
-	args := b.commandArgs("new-session", "-d")
+func (b *Backend) Create(session api.Session) error {
+	args, err := b.commandArgs(session, "new-session", "-d")
+	if err != nil {
+		return err
+	}
 
 	if session.Name != "" {
 		args = append(args, "-s", session.Name)
@@ -59,8 +60,11 @@ func (b *Backend) Create(session multiplexer.Session) error {
 	return b.Run(b.Binary, args...)
 }
 
-func (b *Backend) Attach(session multiplexer.Session) error {
-	args := b.commandArgs("attach-session")
+func (b *Backend) Attach(session api.Session) error {
+	args, err := b.commandArgs(session, "attach-session")
+	if err != nil {
+		return err
+	}
 
 	if session.Name != "" {
 		args = append(args, "-t", session.Name)
@@ -69,8 +73,11 @@ func (b *Backend) Attach(session multiplexer.Session) error {
 	return b.Run(b.Binary, args...)
 }
 
-func (b *Backend) Detach(session multiplexer.Session) error {
-	args := b.commandArgs("detach-client")
+func (b *Backend) Detach(session api.Session) error {
+	args, err := b.commandArgs(session, "detach-client")
+	if err != nil {
+		return err
+	}
 
 	if session.Name != "" {
 		args = append(args, "-s", session.Name)
@@ -79,8 +86,11 @@ func (b *Backend) Detach(session multiplexer.Session) error {
 	return b.Run(b.Binary, args...)
 }
 
-func (b *Backend) IsAlive(session multiplexer.Session) bool {
-	args := b.commandArgs("has-session")
+func (b *Backend) IsAlive(session api.Session) bool {
+	args, err := b.commandArgs(session, "has-session")
+	if err != nil {
+		return false
+	}
 
 	if session.Name != "" {
 		args = append(args, "-t", session.Name)
@@ -89,8 +99,11 @@ func (b *Backend) IsAlive(session multiplexer.Session) bool {
 	return b.Run(b.Binary, args...) == nil
 }
 
-func (b *Backend) Destroy(session multiplexer.Session) error {
-	args := b.commandArgs("kill-session")
+func (b *Backend) Destroy(session api.Session) error {
+	args, err := b.commandArgs(session, "kill-session")
+	if err != nil {
+		return err
+	}
 
 	if session.Name != "" {
 		args = append(args, "-t", session.Name)
@@ -99,23 +112,17 @@ func (b *Backend) Destroy(session multiplexer.Session) error {
 	return b.Run(b.Binary, args...)
 }
 
-func (b *Backend) commandArgs(args ...string) []string {
-	if b.SocketPath == "" {
-		return append([]string(nil), args...)
+func (b *Backend) commandArgs(
+	session api.Session,
+	args ...string,
+) ([]string, error) {
+	if session.Endpoint == "" {
+		return nil, fmt.Errorf("tmux endpoint cannot be empty")
 	}
 
 	result := make([]string, 0, len(args)+2)
-
-	result = append(result, "-S", b.SocketPath)
+	result = append(result, "-S", session.Endpoint)
 	result = append(result, args...)
 
-	return result
-}
-
-func (b *Backend) Validate() error {
-	if b.SocketPath == "" {
-		return fmt.Errorf("tmux socket path cannot be empty")
-	}
-
-	return nil
+	return result, nil
 }
