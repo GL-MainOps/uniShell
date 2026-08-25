@@ -18,18 +18,27 @@ const (
 	sessionIDBytes    = 16
 )
 
+type SessionMode string
+
+const (
+	SessionModeNormal      SessionMode = "normal"
+	SessionModeMultiplexer SessionMode = "multiplexer"
+)
+
 type sessionMarker struct {
-	SessionID         string `json:"session_id"`
-	PID               int    `json:"pid"`
-	ProcessStartTicks uint64 `json:"process_start_ticks"`
-	StartedAt         int64  `json:"started_at"`
-	Version           string `json:"version"`
+	SessionID         string      `json:"session_id"`
+	PID               int         `json:"pid"`
+	ProcessStartTicks uint64      `json:"process_start_ticks"`
+	StartedAt         int64       `json:"started_at"`
+	Version           string      `json:"version"`
+	Mode              SessionMode `json:"mode"`
 }
 
 // Session represents one isolated temporary uniShell runtime session.
 type Session struct {
 	Paths Paths
 	ID    string
+	Mode  SessionMode
 }
 
 // NewSession creates a new isolated runtime session.
@@ -49,6 +58,7 @@ func NewSession(paths Paths) (*Session, error) {
 	return &Session{
 		Paths: sessionPaths,
 		ID:    id,
+		Mode:  SessionModeNormal,
 	}, nil
 }
 
@@ -108,6 +118,7 @@ func (s *Session) Prepare() error {
 		ProcessStartTicks: currentProcessStartTicks(),
 		StartedAt:         time.Now().UnixNano(),
 		Version:           filepath.Base(filepath.Dir(s.Paths.Runtime)),
+		Mode:              s.Mode,
 	}
 
 	if marker.ProcessStartTicks == 0 {
@@ -166,7 +177,10 @@ func CleanupStale(paths Paths) error {
 		}
 
 		sessionRuntime := filepath.Join(paths.Runtime, entry.Name())
-		markerPath := filepath.Join(sessionRuntime, sessionMarkerName)
+		markerPath := filepath.Join(
+			sessionRuntime,
+			sessionMarkerName,
+		)
 
 		marker, err := readSessionMarker(markerPath)
 		if err != nil {
@@ -181,7 +195,22 @@ func CleanupStale(paths Paths) error {
 			)
 		}
 
-		if sessionIsAlive(marker) {
+		// Multiplexer-backed sessions are owned by the multiplexer.
+		// Their liveness is reconciled by multiplexer.Manager.
+		if marker.Mode == SessionModeMultiplexer {
+			continue
+		}
+
+		alive, err := sessionIsAlive(marker)
+		if err != nil {
+			return fmt.Errorf(
+				"check runtime session %q: %w",
+				sessionRuntime,
+				err,
+			)
+		}
+
+		if alive {
 			continue
 		}
 
@@ -286,16 +315,41 @@ func readSessionMarker(path string) (sessionMarker, error) {
 		)
 	}
 
+	if marker.Mode == "" {
+		marker.Mode = SessionModeNormal
+	}
+
+	switch marker.Mode {
+	case SessionModeNormal, SessionModeMultiplexer:
+		// valid
+	default:
+		return sessionMarker{}, fmt.Errorf(
+			"invalid runtime session mode %q",
+			marker.Mode,
+		)
+	}
+
 	return marker, nil
 }
 
-func sessionIsAlive(marker sessionMarker) bool {
-	startTicks, err := processStartTicks(marker.PID)
-	if err != nil {
-		return false
+func sessionIsAlive(marker sessionMarker) (bool, error) {
+	if marker.Mode != SessionModeNormal {
+		return false, fmt.Errorf(
+			"unsupported cleanup session mode %q",
+			marker.Mode,
+		)
 	}
 
-	return startTicks == marker.ProcessStartTicks
+	startTicks, err := processStartTicks(marker.PID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	return startTicks == marker.ProcessStartTicks, nil
 }
 
 func currentProcessStartTicks() uint64 {
@@ -343,4 +397,34 @@ func runtimeFilesystemError(
 	}
 
 	return fmt.Errorf("%s %q: %w", action, path, err)
+}
+
+func (s *Session) SetMode(mode SessionMode) error {
+	switch mode {
+	case SessionModeNormal, SessionModeMultiplexer:
+		s.Mode = mode
+		return nil
+
+	default:
+		return fmt.Errorf("unsupported runtime session mode %q", mode)
+	}
+}
+
+func NewSessionWithMode(paths Paths, mode SessionMode) (*Session, error) {
+	if mode != SessionModeNormal &&
+		mode != SessionModeMultiplexer {
+		return nil, fmt.Errorf(
+			"unsupported runtime session mode %q",
+			mode,
+		)
+	}
+
+	session, err := NewSession(paths)
+	if err != nil {
+		return nil, err
+	}
+
+	session.Mode = mode
+
+	return session, nil
 }

@@ -17,11 +17,13 @@ func (s *Session) Cleanup() error {
 		return nil
 	}
 
+	var firstErr error
+
 	if s.Multiplexer != nil {
 		if err := s.Multiplexer.Backend.Destroy(
 			s.Multiplexer.Session,
 		); err != nil {
-			return fmt.Errorf(
+			firstErr = fmt.Errorf(
 				"destroy multiplexer session: %w",
 				err,
 			)
@@ -29,13 +31,13 @@ func (s *Session) Cleanup() error {
 	}
 
 	if s.Runtime != nil {
-		if err := s.Runtime.Cleanup(); err != nil {
-			return fmt.Errorf(
+		if err := s.Runtime.Cleanup(); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf(
 				"cleanup runtime session: %w",
 				err,
 			)
 		}
 	}
 
-	return nil
+	return firstErr
 }

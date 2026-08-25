@@ -265,3 +265,72 @@ func (m *Manager) DiscoverByName(
 
 	return nil, ErrSessionNotFound
 }
+
+func (m *Manager) Reconcile(
+	versionRuntime string,
+) error {
+	entries, err := os.ReadDir(versionRuntime)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf(
+			"inspect runtime sessions: %w",
+			err,
+		)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		runtimePath := filepath.Join(
+			versionRuntime,
+			entry.Name(),
+		)
+
+		metadata, err := ReadMetadata(runtimePath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+
+			return fmt.Errorf(
+				"read session metadata %q: %w",
+				runtimePath,
+				err,
+			)
+		}
+
+		backend, ok := m.registry.Get(metadata.Multiplexer)
+		if !ok {
+			continue
+		}
+
+		if !backend.Available() {
+			continue
+		}
+
+		session := Session{
+			Name:     metadata.Name,
+			Runtime:  runtimePath,
+			Endpoint: metadata.Endpoint,
+		}
+
+		if backend.IsAlive(session) {
+			continue
+		}
+
+		if err := os.RemoveAll(runtimePath); err != nil {
+			return fmt.Errorf(
+				"remove stale multiplexer session %q: %w",
+				runtimePath,
+				err,
+			)
+		}
+	}
+
+	return nil
+}

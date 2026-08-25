@@ -2,6 +2,7 @@ package multiplexer
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -425,6 +426,147 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 			"runtime = %q, want %q",
 			session.Session.Runtime,
 			secondRuntime,
+		)
+	}
+}
+
+func TestManagerReconcilePreservesLiveSession(t *testing.T) {
+	versionRuntime := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	sessionRuntime := filepath.Join(
+		versionRuntime,
+		"session",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		sessionRuntime,
+		"/tmp/test.endpoint",
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(sessionRuntime, "payload"),
+		[]byte("runtime"),
+		0600,
+	); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+
+	if err := manager.Reconcile(versionRuntime); err != nil {
+		t.Fatalf("Reconcile() returned error: %v", err)
+	}
+
+	if _, err := os.Stat(sessionRuntime); err != nil {
+		t.Fatalf(
+			"live session was removed: %v",
+			err,
+		)
+	}
+}
+
+func TestManagerReconcileRemovesDeadSession(t *testing.T) {
+	versionRuntime := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	sessionRuntime := filepath.Join(
+		versionRuntime,
+		"session",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     false,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		sessionRuntime,
+		"/tmp/test.endpoint",
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	// Create() marks the fake backend alive. Make it stale explicitly.
+	backend.alive = false
+
+	if err := manager.Reconcile(versionRuntime); err != nil {
+		t.Fatalf("Reconcile() returned error: %v", err)
+	}
+
+	if _, err := os.Stat(sessionRuntime); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf(
+			"dead session runtime still exists, stat error = %v",
+			err,
+		)
+	}
+}
+
+func TestManagerReconcileIgnoresUnavailableBackend(t *testing.T) {
+	versionRuntime := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	sessionRuntime := filepath.Join(
+		versionRuntime,
+		"session",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		sessionRuntime,
+		"/tmp/test.endpoint",
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	// Simulate the backend becoming unavailable after the session exists.
+	backend.available = false
+	backend.alive = false
+
+	if err := manager.Reconcile(versionRuntime); err != nil {
+		t.Fatalf("Reconcile() returned error: %v", err)
+	}
+
+	if _, err := os.Stat(sessionRuntime); err != nil {
+		t.Fatalf(
+			"session was removed while backend was unavailable: %v",
+			err,
 		)
 	}
 }

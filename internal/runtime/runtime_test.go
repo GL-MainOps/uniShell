@@ -443,3 +443,194 @@ func TestIsWithinRoot(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionDefaultsToNormalMode(t *testing.T) {
+	paths, err := NewPaths(t.TempDir(), "1.0.0")
+	if err != nil {
+		t.Fatalf("NewPaths() returned error: %v", err)
+	}
+
+	session, err := NewSession(paths)
+	if err != nil {
+		t.Fatalf("NewSession() returned error: %v", err)
+	}
+
+	if session.Mode != SessionModeNormal {
+		t.Fatalf(
+			"session mode = %q, want %q",
+			session.Mode,
+			SessionModeNormal,
+		)
+	}
+}
+
+func TestSessionSupportsMultiplexerMode(t *testing.T) {
+	paths, err := NewPaths(t.TempDir(), "1.0.0")
+	if err != nil {
+		t.Fatalf("NewPaths() returned error: %v", err)
+	}
+
+	session, err := NewSession(paths)
+	if err != nil {
+		t.Fatalf("NewSession() returned error: %v", err)
+	}
+
+	if err := session.SetMode(SessionModeMultiplexer); err != nil {
+		t.Fatalf("SetMode() returned error: %v", err)
+	}
+
+	if session.Mode != SessionModeMultiplexer {
+		t.Fatalf(
+			"session mode = %q, want %q",
+			session.Mode,
+			SessionModeMultiplexer,
+		)
+	}
+}
+
+func TestSessionRejectsUnknownMode(t *testing.T) {
+	paths, err := NewPaths(t.TempDir(), "1.0.0")
+	if err != nil {
+		t.Fatalf("NewPaths() returned error: %v", err)
+	}
+
+	session, err := NewSession(paths)
+	if err != nil {
+		t.Fatalf("NewSession() returned error: %v", err)
+	}
+
+	err = session.SetMode(SessionMode("unknown"))
+	if err == nil {
+		t.Fatal("SetMode() returned nil error")
+	}
+}
+
+func TestCleanupStalePreservesMultiplexerSession(t *testing.T) {
+	paths, err := NewPaths(t.TempDir(), "1.0.0")
+	if err != nil {
+		t.Fatalf("NewPaths() returned error: %v", err)
+	}
+
+	session, err := NewSession(paths)
+	if err != nil {
+		t.Fatalf("NewSession() returned error: %v", err)
+	}
+
+	if err := session.SetMode(SessionModeMultiplexer); err != nil {
+		t.Fatalf("SetMode() returned error: %v", err)
+	}
+
+	if err := session.Prepare(); err != nil {
+		t.Fatalf("Prepare() returned error: %v", err)
+	}
+
+	if err := CleanupStale(paths); err != nil {
+		t.Fatalf("CleanupStale() returned error: %v", err)
+	}
+
+	if _, err := os.Stat(session.Paths.Runtime); err != nil {
+		t.Fatalf(
+			"multiplexer runtime was removed as stale: %v",
+			err,
+		)
+	}
+
+	if err := session.Cleanup(); err != nil {
+		t.Fatalf("Cleanup() returned error: %v", err)
+	}
+}
+
+func TestNewSessionWithModeCreatesNormalSession(t *testing.T) {
+	paths, err := NewPaths(t.TempDir(), "1.0.0")
+	if err != nil {
+		t.Fatalf("NewPaths() returned error: %v", err)
+	}
+
+	session, err := NewSessionWithMode(
+		paths,
+		SessionModeNormal,
+	)
+	if err != nil {
+		t.Fatalf("NewSessionWithMode() returned error: %v", err)
+	}
+
+	if session.Mode != SessionModeNormal {
+		t.Fatalf(
+			"session mode = %q, want %q",
+			session.Mode,
+			SessionModeNormal,
+		)
+	}
+}
+
+func TestNewSessionWithModeCreatesMultiplexerSession(t *testing.T) {
+	paths, err := NewPaths(t.TempDir(), "1.0.0")
+	if err != nil {
+		t.Fatalf("NewPaths() returned error: %v", err)
+	}
+
+	session, err := NewSessionWithMode(
+		paths,
+		SessionModeMultiplexer,
+	)
+	if err != nil {
+		t.Fatalf("NewSessionWithMode() returned error: %v", err)
+	}
+
+	if session.Mode != SessionModeMultiplexer {
+		t.Fatalf(
+			"session mode = %q, want %q",
+			session.Mode,
+			SessionModeMultiplexer,
+		)
+	}
+}
+
+func TestNewSessionWithModeRejectsUnknownMode(t *testing.T) {
+	paths, err := NewPaths(t.TempDir(), "1.0.0")
+	if err != nil {
+		t.Fatalf("NewPaths() returned error: %v", err)
+	}
+
+	_, err = NewSessionWithMode(
+		paths,
+		SessionMode("unknown"),
+	)
+	if err == nil {
+		t.Fatal("NewSessionWithMode() returned nil error")
+	}
+}
+
+func TestCleanupStaleIgnoresMultiplexerSessions(t *testing.T) {
+	paths, err := NewPaths(t.TempDir(), "1.0.0")
+	if err != nil {
+		t.Fatalf("NewPaths() returned error: %v", err)
+	}
+
+	session, err := NewSessionWithMode(
+		paths,
+		SessionModeMultiplexer,
+	)
+	if err != nil {
+		t.Fatalf("NewSessionWithMode() returned error: %v", err)
+	}
+
+	if err := session.Prepare(); err != nil {
+		t.Fatalf("Prepare() returned error: %v", err)
+	}
+
+	if err := CleanupStale(paths); err != nil {
+		t.Fatalf("CleanupStale() returned error: %v", err)
+	}
+
+	if _, err := os.Stat(session.Paths.Runtime); err != nil {
+		t.Fatalf(
+			"multiplexer session was removed by CleanupStale(): %v",
+			err,
+		)
+	}
+
+	if err := session.Cleanup(); err != nil {
+		t.Fatalf("Cleanup() returned error: %v", err)
+	}
+}
