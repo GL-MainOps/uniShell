@@ -29,6 +29,7 @@ type ManagedSession struct {
 func (m *Manager) Create(
 	backendName string,
 	sessionName string,
+	nativeName string,
 	runtimePath string,
 	endpoint string,
 ) (*ManagedSession, error) {
@@ -51,13 +52,17 @@ func (m *Manager) Create(
 
 	id, err := generateSessionID()
 	if err != nil {
-		return nil, fmt.Errorf("generate multiplexer session ID: %w", err)
+		return nil, fmt.Errorf(
+			"generate multiplexer session ID: %w",
+			err,
+		)
 	}
 
 	session := Session{
-		Name:     sessionName,
-		Runtime:  runtimePath,
-		Endpoint: endpoint,
+		Name:       sessionName,
+		NativeName: nativeName,
+		Runtime:    runtimePath,
+		Endpoint:   endpoint,
 	}
 
 	if err := backend.Create(session); err != nil {
@@ -71,14 +76,13 @@ func (m *Manager) Create(
 	metadata := Metadata{
 		ID:          id,
 		Name:        sessionName,
+		NativeName:  nativeName,
 		Multiplexer: backendName,
 		Endpoint:    endpoint,
 		CreatedAt:   time.Now().UTC(),
 	}
 
 	if err := WriteMetadata(runtimePath, metadata); err != nil {
-		// The backend session was created but metadata failed.
-		// Attempt to avoid leaving an unmanaged session behind.
 		_ = backend.Destroy(session)
 
 		return nil, err
@@ -206,9 +210,10 @@ func (m *Manager) Discover(
 	}
 
 	session := Session{
-		Name:     metadata.Name,
-		Runtime:  runtimePath,
-		Endpoint: metadata.Endpoint,
+		Name:       metadata.Name,
+		NativeName: metadata.NativeName,
+		Runtime:    runtimePath,
+		Endpoint:   metadata.Endpoint,
 	}
 
 	if !backend.IsAlive(session) {

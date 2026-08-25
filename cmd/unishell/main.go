@@ -8,6 +8,7 @@ import (
 
 	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/credentials"
+	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 )
 
@@ -102,8 +103,47 @@ func run(application *app.App, args []string) error {
 	}
 }
 
-func runShell(app *app.App, args []string) error {
-	fmt.Println("uniShell shell: not implemented")
+type shellApplication interface {
+	StartMultiplexerSession() (*app.Session, error)
+	DiscoverMultiplexerSession() (*app.Session, error)
+}
+
+func runShell(application shellApplication, args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf(
+			"shell does not accept arguments",
+		)
+	}
+
+	session, err := application.DiscoverMultiplexerSession()
+	if err == nil {
+		return session.Attach()
+	}
+
+	if !errors.Is(err, multiplexer.ErrSessionNotFound) {
+		return fmt.Errorf(
+			"discover multiplexer session: %w",
+			err,
+		)
+	}
+
+	session, err = application.StartMultiplexerSession()
+	if err != nil {
+		return fmt.Errorf(
+			"start multiplexer session: %w",
+			err,
+		)
+	}
+
+	if err := session.Attach(); err != nil {
+		_ = session.Cleanup()
+
+		return fmt.Errorf(
+			"attach new multiplexer session: %w",
+			err,
+		)
+	}
+
 	return nil
 }
 
@@ -139,7 +179,7 @@ Usage:
   unishell [command]
 
 Commands:
-  shell       Start the uniShell environment
+  shell       Start or attach to the uniShell environment
   install     Install the uniShell runtime
   update      Update the uniShell runtime
   clean       Remove the uniShell runtime

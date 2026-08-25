@@ -7,9 +7,11 @@ import (
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 )
 
+
 type sessionTestBackend struct {
 	destroyErr error
 	destroyed  bool
+	attached   bool
 }
 
 func (b *sessionTestBackend) Name() string {
@@ -34,6 +36,7 @@ func (b *sessionTestBackend) Create(multiplexer.Session) error {
 }
 
 func (b *sessionTestBackend) Attach(multiplexer.Session) error {
+	b.attached = true
 	return nil
 }
 
@@ -117,5 +120,28 @@ func TestSessionCleanupContinuesRuntimeCleanupAfterMultiplexerFailure(
 
 	if !backend.destroyed {
 		t.Fatal("Cleanup() did not attempt multiplexer destruction")
+	}
+}
+
+func TestSessionAttachCallsMultiplexer(t *testing.T) {
+	backend := &sessionTestBackend{}
+
+	session := &Session{
+		Multiplexer: &multiplexer.ManagedSession{
+			Backend: backend,
+			Session: multiplexer.Session{
+				Name:       "default",
+				NativeName: "native-default",
+				Endpoint:   "/tmp/test.sock",
+			},
+		},
+	}
+
+	if err := session.Attach(); err != nil {
+		t.Fatalf("Attach() returned error: %v", err)
+	}
+
+	if !backend.attached {
+		t.Fatal("Attach() did not call multiplexer backend")
 	}
 }

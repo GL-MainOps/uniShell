@@ -50,8 +50,8 @@ func (b *Backend) Available() bool {
 func (b *Backend) Create(session api.Session) error {
 	args := []string{"--session"}
 
-	if session.Name != "" {
-		args = append(args, session.Name)
+	if session.NativeName != "" {
+		args = append(args, session.NativeName)
 	}
 
 	_, err := b.Run(b.Binary, args...)
@@ -61,8 +61,8 @@ func (b *Backend) Create(session api.Session) error {
 func (b *Backend) Attach(session api.Session) error {
 	args := []string{"attach"}
 
-	if session.Name != "" {
-		args = append(args, session.Name)
+	if session.NativeName != "" {
+		args = append(args, session.NativeName)
 	}
 
 	_, err := b.Run(b.Binary, args...)
@@ -88,12 +88,12 @@ func (b *Backend) IsAlive(session api.Session) bool {
 		return false
 	}
 
-	if session.Name == "" {
+	if session.NativeName == "" {
 		return len(output) > 0
 	}
 
 	for _, line := range strings.Split(string(output), "\n") {
-		if strings.TrimSpace(line) == session.Name {
+		if strings.TrimSpace(line) == session.NativeName {
 			return true
 		}
 	}
@@ -104,8 +104,8 @@ func (b *Backend) IsAlive(session api.Session) bool {
 func (b *Backend) Destroy(session api.Session) error {
 	args := []string{"delete-session"}
 
-	if session.Name != "" {
-		args = append(args, session.Name)
+	if session.NativeName != "" {
+		args = append(args, session.NativeName)
 	}
 
 	_, err := b.Run(b.Binary, args...)

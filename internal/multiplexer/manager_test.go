@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+const endpoint = "/tmp/test.endpoint"
+
 type managerTestBackend struct {
 	name      string
 	available bool
@@ -75,8 +77,9 @@ func TestManagerCreateWritesMetadata(t *testing.T) {
 	session, err := manager.Create(
 		"test",
 		"default",
+		"",
 		runtimePath,
-		"/tmp/test.endpoint",
+		endpoint,
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -95,6 +98,13 @@ func TestManagerCreateWritesMetadata(t *testing.T) {
 			"session name = %q, want %q",
 			session.Metadata.Name,
 			"default",
+		)
+	}
+
+	if session.Metadata.NativeName != "" {
+		t.Fatalf(
+			"session native name = %q, want empty",
+			session.Metadata.NativeName,
 		)
 	}
 
@@ -131,8 +141,9 @@ func TestManagerAttachRequiresLiveSession(t *testing.T) {
 	created, err := manager.Create(
 		"test",
 		"default",
+		"",
 		runtimePath,
-		"/tmp/test.endpoint",
+		endpoint,
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -182,8 +193,9 @@ func TestManagerDestroyRemovesMetadata(t *testing.T) {
 	if _, err := manager.Create(
 		"test",
 		"default",
+		"",
 		runtimePath,
-		"/tmp/test.endpoint",
+		endpoint,
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -220,8 +232,9 @@ func TestManagerDiscoverFindsLiveSession(t *testing.T) {
 	created, err := manager.Create(
 		"test",
 		"default",
+		"native-default",
 		runtimePath,
-		"/tmp/test.endpoint",
+		endpoint,
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -250,6 +263,30 @@ func TestManagerDiscoverFindsLiveSession(t *testing.T) {
 			"default",
 		)
 	}
+
+	if discovered.Metadata.NativeName != "native-default" {
+		t.Fatalf(
+			"discovered native name = %q, want %q",
+			discovered.Metadata.NativeName,
+			"native-default",
+		)
+	}
+
+	if discovered.Session.Name != "default" {
+		t.Fatalf(
+			"discovered session name = %q, want %q",
+			discovered.Session.Name,
+			"default",
+		)
+	}
+
+	if discovered.Session.NativeName != "native-default" {
+		t.Fatalf(
+			"discovered session native name = %q, want %q",
+			discovered.Session.NativeName,
+			"native-default",
+		)
+	}
 }
 
 func TestManagerDiscoverRejectsDifferentSessionName(t *testing.T) {
@@ -271,8 +308,9 @@ func TestManagerDiscoverRejectsDifferentSessionName(t *testing.T) {
 	if _, err := manager.Create(
 		"test",
 		"default",
+		"",
 		runtimePath,
-		"/tmp/test.endpoint",
+		endpoint,
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -310,6 +348,7 @@ func TestManagerDiscoverRejectsStaleMetadata(t *testing.T) {
 	metadata := Metadata{
 		ID:          "stale-session",
 		Name:        "default",
+		NativeName:  "native-default",
 		Multiplexer: "test",
 		Endpoint:    "/tmp/test.endpoint",
 	}
@@ -351,6 +390,7 @@ func TestManagerDiscoverRejectsUnavailableBackend(t *testing.T) {
 	metadata := Metadata{
 		ID:          "session",
 		Name:        "default",
+		NativeName:  "native-default",
 		Multiplexer: "test",
 		Endpoint:    "/tmp/test.endpoint",
 	}
@@ -395,6 +435,7 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 	if _, err := manager.Create(
 		"test",
 		"other",
+		"",
 		firstRuntime,
 		"/tmp/first.endpoint",
 	); err != nil {
@@ -404,6 +445,7 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 	if _, err := manager.Create(
 		"test",
 		"default",
+		"",
 		secondRuntime,
 		"/tmp/second.endpoint",
 	); err != nil {
@@ -454,6 +496,7 @@ func TestManagerReconcilePreservesLiveSession(t *testing.T) {
 	if _, err := manager.Create(
 		"test",
 		"default",
+		"",
 		sessionRuntime,
 		"/tmp/test.endpoint",
 	); err != nil {
@@ -504,6 +547,7 @@ func TestManagerReconcileRemovesDeadSession(t *testing.T) {
 	if _, err := manager.Create(
 		"test",
 		"default",
+		"",
 		sessionRuntime,
 		"/tmp/test.endpoint",
 	); err != nil {
@@ -549,6 +593,7 @@ func TestManagerReconcileIgnoresUnavailableBackend(t *testing.T) {
 	if _, err := manager.Create(
 		"test",
 		"default",
+		"",
 		sessionRuntime,
 		"/tmp/test.endpoint",
 	); err != nil {
@@ -567,6 +612,122 @@ func TestManagerReconcileIgnoresUnavailableBackend(t *testing.T) {
 		t.Fatalf(
 			"session was removed while backend was unavailable: %v",
 			err,
+		)
+	}
+}
+
+func TestManagerCreatePreservesNativeSessionName(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	session, err := manager.Create(
+		"test",
+		"default",
+		"native-work",
+		runtimePath,
+		endpoint,
+	)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if session.Metadata.Name != "default" {
+		t.Fatalf(
+			"metadata name = %q, want %q",
+			session.Metadata.Name,
+			"default",
+		)
+	}
+
+	if session.Metadata.NativeName != "native-work" {
+		t.Fatalf(
+			"metadata native name = %q, want %q",
+			session.Metadata.NativeName,
+			"native-work",
+		)
+	}
+
+	if session.Session.Name != "default" {
+		t.Fatalf(
+			"session name = %q, want %q",
+			session.Session.Name,
+			"default",
+		)
+	}
+
+	if session.Session.NativeName != "native-work" {
+		t.Fatalf(
+			"session native name = %q, want %q",
+			session.Session.NativeName,
+			"native-work",
+		)
+	}
+}
+
+func TestManagerCreatePreservesEmptyNativeSessionName(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	session, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+	)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if session.Metadata.Name != "default" {
+		t.Fatalf(
+			"metadata name = %q, want %q",
+			session.Metadata.Name,
+			"default",
+		)
+	}
+
+	if session.Metadata.NativeName != "" {
+		t.Fatalf(
+			"metadata native name = %q, want empty",
+			session.Metadata.NativeName,
+		)
+	}
+
+	if session.Session.Name != "default" {
+		t.Fatalf(
+			"session name = %q, want %q",
+			session.Session.Name,
+			"default",
+		)
+	}
+
+	if session.Session.NativeName != "" {
+		t.Fatalf(
+			"session native name = %q, want empty",
+			session.Session.NativeName,
 		)
 	}
 }

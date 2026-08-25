@@ -7,7 +7,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 )
 
-func TestCreateUsesSessionName(t *testing.T) {
+func TestCreateUsesNativeSessionName(t *testing.T) {
 	var gotName string
 	var gotArgs []string
 
@@ -20,9 +20,10 @@ func TestCreateUsesSessionName(t *testing.T) {
 		},
 	}
 
-	if err := backend.Create(
-		api.Session{Name: "work"},
-	); err != nil {
+	if err := backend.Create(api.Session{
+		Name:       "work",
+		NativeName: "native-work",
+	}); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
@@ -32,7 +33,7 @@ func TestCreateUsesSessionName(t *testing.T) {
 
 	want := []string{
 		"--session",
-		"work",
+		"native-work",
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
@@ -40,7 +41,7 @@ func TestCreateUsesSessionName(t *testing.T) {
 	}
 }
 
-func TestAttachUsesSessionName(t *testing.T) {
+func TestCreatePreservesEmptyNativeSessionName(t *testing.T) {
 	var gotArgs []string
 
 	backend := &Backend{
@@ -51,15 +52,14 @@ func TestAttachUsesSessionName(t *testing.T) {
 		},
 	}
 
-	if err := backend.Attach(
-		api.Session{Name: "work"},
-	); err != nil {
-		t.Fatalf("Attach() returned error: %v", err)
+	if err := backend.Create(api.Session{
+		Name: "work",
+	}); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
 	}
 
 	want := []string{
-		"attach",
-		"work",
+		"--session",
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
@@ -67,22 +67,51 @@ func TestAttachUsesSessionName(t *testing.T) {
 	}
 }
 
-func TestIsAliveFindsSession(t *testing.T) {
+func TestAttachUsesNativeSessionName(t *testing.T) {
+	var gotArgs []string
+
 	backend := &Backend{
 		Binary: "fake-zellij",
-		Run: func(_ string, _ ...string) ([]byte, error) {
-			return []byte("default\nwork\nproduction\n"), nil
+		Run: func(_ string, args ...string) ([]byte, error) {
+			gotArgs = append([]string(nil), args...)
+			return nil, nil
 		},
 	}
 
-	if !backend.IsAlive(
-		api.Session{Name: "work"},
-	) {
+	if err := backend.Attach(api.Session{
+		Name:       "work",
+		NativeName: "native-work",
+	}); err != nil {
+		t.Fatalf("Attach() returned error: %v", err)
+	}
+
+	want := []string{
+		"attach",
+		"native-work",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf("args = %#v, want %#v", gotArgs, want)
+	}
+}
+
+func TestIsAliveFindsNativeSession(t *testing.T) {
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(_ string, _ ...string) ([]byte, error) {
+			return []byte("default\nnative-work\nproduction\n"), nil
+		},
+	}
+
+	if !backend.IsAlive(api.Session{
+		Name:       "work",
+		NativeName: "native-work",
+	}) {
 		t.Fatal("IsAlive() = false, want true")
 	}
 }
 
-func TestIsAliveRejectsMissingSession(t *testing.T) {
+func TestIsAliveRejectsMissingNativeSession(t *testing.T) {
 	backend := &Backend{
 		Binary: "fake-zellij",
 		Run: func(_ string, _ ...string) ([]byte, error) {
@@ -90,14 +119,15 @@ func TestIsAliveRejectsMissingSession(t *testing.T) {
 		},
 	}
 
-	if backend.IsAlive(
-		api.Session{Name: "work"},
-	) {
+	if backend.IsAlive(api.Session{
+		Name:       "work",
+		NativeName: "native-work",
+	}) {
 		t.Fatal("IsAlive() = true, want false")
 	}
 }
 
-func TestDestroyUsesSessionName(t *testing.T) {
+func TestDestroyUsesNativeSessionName(t *testing.T) {
 	var gotArgs []string
 
 	backend := &Backend{
@@ -108,15 +138,16 @@ func TestDestroyUsesSessionName(t *testing.T) {
 		},
 	}
 
-	if err := backend.Destroy(
-		api.Session{Name: "work"},
-	); err != nil {
+	if err := backend.Destroy(api.Session{
+		Name:       "work",
+		NativeName: "native-work",
+	}); err != nil {
 		t.Fatalf("Destroy() returned error: %v", err)
 	}
 
 	want := []string{
 		"delete-session",
-		"work",
+		"native-work",
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {

@@ -10,9 +10,10 @@ const (
 )
 
 type Session struct {
-	Name     string
-	Runtime  string
-	Endpoint string
+	Name       string
+	NativeName string
+	Runtime    string
+	Endpoint   string
 }
 
 type Backend interface {

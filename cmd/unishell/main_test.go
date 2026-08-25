@@ -6,7 +6,9 @@ import (
 	"os"
 	"testing"
 
+	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/credentials"
+	"gitlab.com/mainops/uniShell/internal/multiplexer"
 )
 
 func TestPrintErrorAuthenticationFailed(t *testing.T) {
@@ -67,10 +69,206 @@ func TestPrintErrorGenericError(t *testing.T) {
 	want := "uniShell: test error\n"
 
 	if output.String() != want {
-		t.Fatalf(
-			"output = %q, want %q",
-			output.String(),
-			want,
+	t.Fatalf(
+		"output = %q, want %q",
+		output.String(),
+		want,
 		)
+	}
+}
+
+type shellTestApplication struct {
+	discoverSession *app.Session
+	discoverErr     error
+	startSession    *app.Session
+	startErr        error
+}
+
+func (a *shellTestApplication) StartMultiplexerSession() (*app.Session, error) {
+	return a.startSession, a.startErr
+}
+
+func (a *shellTestApplication) DiscoverMultiplexerSession() (*app.Session, error) {
+	return a.discoverSession, a.discoverErr
+}
+
+type shellTestBackend struct {
+	attached bool
+	destroyed bool
+	attachErr error
+}
+
+func (b *shellTestBackend) Name() string {
+	return "test"
+}
+
+func (b *shellTestBackend) Capabilities() map[multiplexer.Capability]bool {
+	return map[multiplexer.Capability]bool{
+		multiplexer.CapabilitySessions: true,
+		multiplexer.CapabilityAttach:   true,
+		multiplexer.CapabilityDetach:   true,
+		multiplexer.CapabilityDestroy:  true,
+	}
+}
+
+func (b *shellTestBackend) Available() bool {
+	return true
+}
+
+func (b *shellTestBackend) Create(multiplexer.Session) error {
+	return nil
+}
+
+func (b *shellTestBackend) Attach(multiplexer.Session) error {
+	b.attached = true
+	return b.attachErr
+}
+
+func (b *shellTestBackend) Detach(multiplexer.Session) error {
+	return nil
+}
+
+func (b *shellTestBackend) IsAlive(multiplexer.Session) bool {
+	return true
+}
+
+func (b *shellTestBackend) Destroy(multiplexer.Session) error {
+	b.destroyed = true
+	return nil
+}
+
+func TestRunShellAttachesExistingSession(t *testing.T) {
+	backend := &shellTestBackend{}
+
+	session := &app.Session{
+		Multiplexer: &multiplexer.ManagedSession{
+			Backend: backend,
+			Session: multiplexer.Session{
+				Name:     "default",
+				Endpoint: "/tmp/test.sock",
+			},
+		},
+	}
+
+	application := &shellTestApplication{
+		discoverSession: session,
+	}
+
+	if err := runShell(application, nil); err != nil {
+		t.Fatalf("runShell() returned error: %v", err)
+	}
+
+	if !backend.attached {
+		t.Fatal("runShell() did not attach existing session")
+	}
+
+	if backend.destroyed {
+		t.Fatal("runShell() destroyed existing session")
+	}
+}
+
+func TestRunShellCreatesAndAttachesWhenSessionDoesNotExist(
+	t *testing.T,
+) {
+	backend := &shellTestBackend{}
+
+	session := &app.Session{
+		Multiplexer: &multiplexer.ManagedSession{
+			Backend: backend,
+			Session: multiplexer.Session{
+				Name:     "default",
+				Endpoint: "/tmp/test.sock",
+			},
+		},
+	}
+
+	application := &shellTestApplication{
+		discoverErr:  multiplexer.ErrSessionNotFound,
+		startSession: session,
+	}
+
+	if err := runShell(application, nil); err != nil {
+		t.Fatalf("runShell() returned error: %v", err)
+	}
+
+	if !backend.attached {
+		t.Fatal("runShell() did not attach newly created session")
+	}
+
+	if backend.destroyed {
+		t.Fatal("runShell() destroyed successfully attached session")
+	}
+}
+
+func TestRunShellCleansNewSessionWhenAttachFails(t *testing.T) {
+	attachErr := errors.New("attach failed")
+
+	backend := &shellTestBackend{
+		attachErr: attachErr,
+	}
+
+	session := &app.Session{
+		Multiplexer: &multiplexer.ManagedSession{
+			Backend: backend,
+			Session: multiplexer.Session{
+				Name:     "default",
+				Endpoint: "/tmp/test.sock",
+			},
+		},
+	}
+
+	application := &shellTestApplication{
+		discoverErr:  multiplexer.ErrSessionNotFound,
+		startSession: session,
+	}
+
+	err := runShell(application, nil)
+
+	if !errors.Is(err, attachErr) {
+		t.Fatalf(
+			"runShell() error = %v, want %v",
+			err,
+			attachErr,
+		)
+	}
+
+	if !backend.attached {
+		t.Fatal("runShell() did not attempt attachment")
+	}
+
+	if !backend.destroyed {
+		t.Fatal(
+			"runShell() did not clean up newly created session",
+		)
+	}
+}
+
+func TestRunShellDoesNotCreateWhenDiscoveryFailsUnexpectedly(
+	t *testing.T,
+) {
+	discoverErr := errors.New("discovery failed")
+
+	application := &shellTestApplication{
+		discoverErr: discoverErr,
+	}
+
+	err := runShell(application, nil)
+
+	if !errors.Is(err, discoverErr) {
+		t.Fatalf(
+			"runShell() error = %v, want %v",
+			err,
+			discoverErr,
+		)
+	}
+}
+
+func TestRunShellRejectsArguments(t *testing.T) {
+	application := &shellTestApplication{}
+
+	err := runShell(application, []string{"unexpected"})
+
+	if err == nil {
+		t.Fatal("runShell() returned nil error")
 	}
 }

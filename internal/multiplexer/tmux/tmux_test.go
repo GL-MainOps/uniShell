@@ -7,7 +7,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 )
 
-func TestCreateUsesSessionEndpointAndName(t *testing.T) {
+func TestCreateUsesSessionEndpointAndNativeName(t *testing.T) {
 	var gotName string
 	var gotArgs []string
 
@@ -21,8 +21,9 @@ func TestCreateUsesSessionEndpointAndName(t *testing.T) {
 	}
 
 	err := backend.Create(api.Session{
-		Name:     "work",
-		Endpoint: "/runtime/work/multiplexer/tmux.sock",
+		Name:       "work",
+		NativeName: "native-work",
+		Endpoint:   "/runtime/work/multiplexer/tmux.sock",
 	})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -38,7 +39,7 @@ func TestCreateUsesSessionEndpointAndName(t *testing.T) {
 		"new-session",
 		"-d",
 		"-s",
-		"work",
+		"native-work",
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
@@ -55,7 +56,8 @@ func TestCreateRejectsMissingEndpoint(t *testing.T) {
 	}
 
 	err := backend.Create(api.Session{
-		Name: "work",
+		Name:       "work",
+		NativeName: "native-work",
 	})
 
 	if err == nil {
@@ -63,7 +65,7 @@ func TestCreateRejectsMissingEndpoint(t *testing.T) {
 	}
 }
 
-func TestCreatePreservesNativeSessionNaming(t *testing.T) {
+func TestCreatePreservesEmptyNativeSessionName(t *testing.T) {
 	var gotArgs []string
 
 	backend := &Backend{
@@ -75,6 +77,7 @@ func TestCreatePreservesNativeSessionNaming(t *testing.T) {
 	}
 
 	if err := backend.Create(api.Session{
+		Name:     "work",
 		Endpoint: "/runtime/default/multiplexer/tmux.sock",
 	}); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -92,7 +95,7 @@ func TestCreatePreservesNativeSessionNaming(t *testing.T) {
 	}
 }
 
-func TestAttachUsesSessionEndpointAndName(t *testing.T) {
+func TestAttachUsesSessionEndpointAndNativeName(t *testing.T) {
 	var gotArgs []string
 
 	backend := &Backend{
@@ -104,8 +107,9 @@ func TestAttachUsesSessionEndpointAndName(t *testing.T) {
 	}
 
 	if err := backend.Attach(api.Session{
-		Name:     "work",
-		Endpoint: "/runtime/work/multiplexer/tmux.sock",
+		Name:       "work",
+		NativeName: "native-work",
+		Endpoint:   "/runtime/work/multiplexer/tmux.sock",
 	}); err != nil {
 		t.Fatalf("Attach() returned error: %v", err)
 	}
@@ -115,7 +119,7 @@ func TestAttachUsesSessionEndpointAndName(t *testing.T) {
 		"/runtime/work/multiplexer/tmux.sock",
 		"attach-session",
 		"-t",
-		"work",
+		"native-work",
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
@@ -123,7 +127,7 @@ func TestAttachUsesSessionEndpointAndName(t *testing.T) {
 	}
 }
 
-func TestIsAliveUsesSessionEndpoint(t *testing.T) {
+func TestIsAliveUsesSessionEndpointAndNativeName(t *testing.T) {
 	var gotArgs []string
 
 	backend := &Backend{
@@ -135,8 +139,9 @@ func TestIsAliveUsesSessionEndpoint(t *testing.T) {
 	}
 
 	if !backend.IsAlive(api.Session{
-		Name:     "work",
-		Endpoint: "/runtime/work/multiplexer/tmux.sock",
+		Name:       "work",
+		NativeName: "native-work",
+		Endpoint:   "/runtime/work/multiplexer/tmux.sock",
 	}) {
 		t.Fatal("IsAlive() = false, want true")
 	}
@@ -146,7 +151,7 @@ func TestIsAliveUsesSessionEndpoint(t *testing.T) {
 		"/runtime/work/multiplexer/tmux.sock",
 		"has-session",
 		"-t",
-		"work",
+		"native-work",
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
@@ -154,7 +159,7 @@ func TestIsAliveUsesSessionEndpoint(t *testing.T) {
 	}
 }
 
-func TestDestroyUsesSessionEndpoint(t *testing.T) {
+func TestDestroyUsesSessionEndpointAndNativeName(t *testing.T) {
 	var gotArgs []string
 
 	backend := &Backend{
@@ -166,8 +171,9 @@ func TestDestroyUsesSessionEndpoint(t *testing.T) {
 	}
 
 	if err := backend.Destroy(api.Session{
-		Name:     "work",
-		Endpoint: "/runtime/work/multiplexer/tmux.sock",
+		Name:       "work",
+		NativeName: "native-work",
+		Endpoint:   "/runtime/work/multiplexer/tmux.sock",
 	}); err != nil {
 		t.Fatalf("Destroy() returned error: %v", err)
 	}
@@ -177,7 +183,7 @@ func TestDestroyUsesSessionEndpoint(t *testing.T) {
 		"/runtime/work/multiplexer/tmux.sock",
 		"kill-session",
 		"-t",
-		"work",
+		"native-work",
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {

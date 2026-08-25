@@ -12,6 +12,34 @@ type Session struct {
 	Multiplexer *multiplexer.ManagedSession
 }
 
+func (s *Session) Attach() error {
+	if s == nil {
+		return fmt.Errorf("session is nil")
+	}
+
+	if s.Multiplexer == nil {
+		return fmt.Errorf("multiplexer session is unavailable")
+	}
+
+	if err := multiplexer.RequireCapability(
+		s.Multiplexer.Backend,
+		multiplexer.CapabilityAttach,
+	); err != nil {
+		return err
+	}
+
+	if err := s.Multiplexer.Backend.Attach(
+		s.Multiplexer.Session,
+	); err != nil {
+		return fmt.Errorf(
+			"attach multiplexer session: %w",
+			err,
+		)
+	}
+
+	return nil
+}
+
 func (s *Session) Cleanup() error {
 	if s == nil {
 		return nil

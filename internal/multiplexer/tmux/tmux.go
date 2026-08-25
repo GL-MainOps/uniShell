@@ -53,8 +53,8 @@ func (b *Backend) Create(session api.Session) error {
 		return err
 	}
 
-	if session.Name != "" {
-		args = append(args, "-s", session.Name)
+	if session.NativeName != "" {
+		args = append(args, "-s", session.NativeName)
 	}
 
 	return b.Run(b.Binary, args...)
@@ -66,8 +66,8 @@ func (b *Backend) Attach(session api.Session) error {
 		return err
 	}
 
-	if session.Name != "" {
-		args = append(args, "-t", session.Name)
+	if session.NativeName != "" {
+		args = append(args, "-t", session.NativeName)
 	}
 
 	return b.Run(b.Binary, args...)
@@ -79,8 +79,8 @@ func (b *Backend) Detach(session api.Session) error {
 		return err
 	}
 
-	if session.Name != "" {
-		args = append(args, "-s", session.Name)
+	if session.NativeName != "" {
+		args = append(args, "-s", session.NativeName)
 	}
 
 	return b.Run(b.Binary, args...)
@@ -92,8 +92,8 @@ func (b *Backend) IsAlive(session api.Session) bool {
 		return false
 	}
 
-	if session.Name != "" {
-		args = append(args, "-t", session.Name)
+	if session.NativeName != "" {
+		args = append(args, "-t", session.NativeName)
 	}
 
 	return b.Run(b.Binary, args...) == nil
@@ -105,8 +105,8 @@ func (b *Backend) Destroy(session api.Session) error {
 		return err
 	}
 
-	if session.Name != "" {
-		args = append(args, "-t", session.Name)
+	if session.NativeName != "" {
+		args = append(args, "-t", session.NativeName)
 	}
 
 	return b.Run(b.Binary, args...)

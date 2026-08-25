@@ -14,24 +14,26 @@ import (
 type BundleSource func() ([]byte, error)
 
 type Options struct {
-	Version         string
-	Commit          string
-	Root            string
-	Bundle          BundleSource
-	Multiplexer     *multiplexer.Manager
-	MultiplexerName string
-	SessionName     string
+	Version                string
+	Commit                 string
+	Root                   string
+	Bundle                 BundleSource
+	Multiplexer             *multiplexer.Manager
+	MultiplexerName         string
+	SessionName             string
+	MultiplexerSessionName  string
 }
 
 type App struct {
-	Version         string
-	Commit          string
-	AuthToken       string
-	Paths           runtime.Paths
-	Bundle          BundleSource
-	Multiplexer     *multiplexer.Manager
-	MultiplexerName string
-	SessionName     string
+	Version                string
+	Commit                 string
+	AuthToken              string
+	Paths                  runtime.Paths
+	Bundle                 BundleSource
+	Multiplexer             *multiplexer.Manager
+	MultiplexerName         string
+	SessionName             string
+	MultiplexerSessionName  string
 }
 
 func New(options Options) (*App, error) {
@@ -64,7 +66,7 @@ func New(options Options) (*App, error) {
 
 	multiplexerName := options.MultiplexerName
 	if multiplexerName == "" {
-		multiplexerName = "tmux"
+		multiplexerName = multiplexer.DefaultName
 	}
 
 	sessionName := options.SessionName
@@ -73,14 +75,15 @@ func New(options Options) (*App, error) {
 	}
 
 	return &App{
-		Version:         version,
-		Commit:          options.Commit,
-		AuthToken:       token,
-		Paths:           paths,
-		Bundle:          source,
-		Multiplexer:     manager,
-		MultiplexerName: multiplexerName,
-		SessionName:     sessionName,
+		Version:                version,
+		Commit:                 options.Commit,
+		AuthToken:              token,
+		Paths:                  paths,
+		Bundle:                 source,
+		Multiplexer:            manager,
+		MultiplexerName:        multiplexerName,
+		SessionName:             sessionName,
+		MultiplexerSessionName: options.MultiplexerSessionName,
 	}, nil
 }
 
@@ -218,6 +221,7 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 	managedSession, err := a.Multiplexer.Create(
 		a.MultiplexerName,
 		a.SessionName,
+		a.MultiplexerSessionName,
 		runtimeSession.Paths.Runtime,
 		endpoint,
 	)
@@ -233,5 +237,19 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 	return &Session{
 		Runtime:     runtimeSession,
 		Multiplexer: managedSession,
+	}, nil
+}
+
+func (a *App) DiscoverMultiplexerSession() (*Session, error) {
+	managed, err := a.Multiplexer.DiscoverByName(
+		a.Paths.Runtime,
+		a.SessionName,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Session{
+		Multiplexer: managed,
 	}, nil
 }
