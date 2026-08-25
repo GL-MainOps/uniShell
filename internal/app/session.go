@@ -32,9 +32,37 @@ func (s *Session) Attach() error {
 		s.Multiplexer.Session,
 	); err != nil {
 		return fmt.Errorf(
-		"attach multiplexer session: %w",
-		err,
-	)
+			"attach multiplexer session: %w",
+			err,
+		)
+	}
+
+	return nil
+}
+
+func (s *Session) Detach() error {
+	if s == nil {
+		return fmt.Errorf("session is nil")
+	}
+
+	if s.Multiplexer == nil {
+		return fmt.Errorf("multiplexer session is unavailable")
+	}
+
+	if err := multiplexer.RequireCapability(
+		s.Multiplexer.Backend,
+		multiplexer.CapabilityDetach,
+	); err != nil {
+		return err
+	}
+
+	if err := s.Multiplexer.Backend.Detach(
+		s.Multiplexer.Session,
+	); err != nil {
+		return fmt.Errorf(
+			"detach multiplexer session: %w",
+			err,
+		)
 	}
 
 	return nil

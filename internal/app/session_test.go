@@ -7,11 +7,12 @@ import (
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 )
 
-
 type sessionTestBackend struct {
 	destroyErr error
+	detachErr  error
 	destroyed  bool
 	attached   bool
+	detached   bool
 }
 
 func (b *sessionTestBackend) Name() string {
@@ -41,7 +42,8 @@ func (b *sessionTestBackend) Attach(multiplexer.Session) error {
 }
 
 func (b *sessionTestBackend) Detach(multiplexer.Session) error {
-	return nil
+	b.detached = true
+	return b.detachErr
 }
 
 func (b *sessionTestBackend) IsAlive(multiplexer.Session) bool {
@@ -143,5 +145,56 @@ func TestSessionAttachCallsMultiplexer(t *testing.T) {
 
 	if !backend.attached {
 		t.Fatal("Attach() did not call multiplexer backend")
+	}
+}
+
+func TestSessionDetachCallsMultiplexer(t *testing.T) {
+	backend := &sessionTestBackend{}
+
+	session := &Session{
+		Multiplexer: &multiplexer.ManagedSession{
+			Backend: backend,
+			Session: multiplexer.Session{
+				Name:       "default",
+				NativeName: "native-default",
+				Endpoint:   "/tmp/test.sock",
+			},
+		},
+	}
+
+	if err := session.Detach(); err != nil {
+		t.Fatalf("Detach() returned error: %v", err)
+	}
+
+	if !backend.detached {
+		t.Fatal("Detach() did not call multiplexer backend")
+	}
+
+	if backend.destroyed {
+		t.Fatal("Detach() destroyed multiplexer session")
+	}
+}
+
+func TestSessionDetachReturnsMultiplexerError(t *testing.T) {
+	wantErr := errors.New("detach failed")
+
+	backend := &sessionTestBackend{
+		detachErr: wantErr,
+	}
+
+	session := &Session{
+		Multiplexer: &multiplexer.ManagedSession{
+			Backend: backend,
+		},
+	}
+
+	err := session.Detach()
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf(
+			"Detach() error = %v, want %v",
+			err,
+			wantErr,
+		)
 	}
 }

@@ -69,10 +69,10 @@ func TestPrintErrorGenericError(t *testing.T) {
 	want := "uniShell: test error\n"
 
 	if output.String() != want {
-	t.Fatalf(
-		"output = %q, want %q",
-		output.String(),
-		want,
+		t.Fatalf(
+			"output = %q, want %q",
+			output.String(),
+			want,
 		)
 	}
 }
@@ -93,9 +93,11 @@ func (a *shellTestApplication) DiscoverMultiplexerSession() (*app.Session, error
 }
 
 type shellTestBackend struct {
-	attached bool
+	attached  bool
+	detached  bool
 	destroyed bool
 	attachErr error
+	detachErr error
 }
 
 func (b *shellTestBackend) Name() string {
@@ -125,7 +127,8 @@ func (b *shellTestBackend) Attach(multiplexer.Session) error {
 }
 
 func (b *shellTestBackend) Detach(multiplexer.Session) error {
-	return nil
+	b.detached = true
+	return b.detachErr
 }
 
 func (b *shellTestBackend) IsAlive(multiplexer.Session) bool {
@@ -270,6 +273,122 @@ func TestRunShellRejectsArguments(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("runShell() returned nil error")
+	}
+}
+
+func TestRunDetachDetachesExistingSession(t *testing.T) {
+	backend := &shellTestBackend{}
+
+	session := &app.Session{
+		Multiplexer: &multiplexer.ManagedSession{
+			Backend: backend,
+			Session: multiplexer.Session{
+				Name:     "default",
+				Endpoint: "/tmp/test.sock",
+			},
+		},
+	}
+
+	application := &shellTestApplication{
+		discoverSession: session,
+	}
+
+	if err := runDetach(application, nil); err != nil {
+		t.Fatalf("runDetach() returned error: %v", err)
+	}
+
+	if !backend.detached {
+		t.Fatal("runDetach() did not detach session")
+	}
+
+	if backend.destroyed {
+		t.Fatal("runDetach() destroyed session")
+	}
+}
+
+func TestRunDetachSucceedsWhenSessionDoesNotExist(t *testing.T) {
+	application := &shellTestApplication{
+		discoverErr: multiplexer.ErrSessionNotFound,
+	}
+
+	if err := runDetach(application, nil); err != nil {
+		t.Fatalf(
+			"runDetach() returned error: %v",
+			err,
+		)
+	}
+}
+
+func TestRunDetachReturnsDetachError(t *testing.T) {
+	detachErr := errors.New("detach failed")
+
+	backend := &shellTestBackend{
+		detachErr: detachErr,
+	}
+
+	session := &app.Session{
+		Multiplexer: &multiplexer.ManagedSession{
+			Backend: backend,
+			Session: multiplexer.Session{
+				Name:     "default",
+				Endpoint: "/tmp/test.sock",
+			},
+		},
+	}
+
+	application := &shellTestApplication{
+		discoverSession: session,
+	}
+
+	err := runDetach(application, nil)
+
+	if !errors.Is(err, detachErr) {
+		t.Fatalf(
+			"runDetach() error = %v, want %v",
+			err,
+			detachErr,
+		)
+	}
+
+	if !backend.detached {
+		t.Fatal("runDetach() did not attempt detachment")
+	}
+
+	if backend.destroyed {
+		t.Fatal("runDetach() destroyed session after detach failure")
+	}
+}
+
+func TestRunDetachDoesNotDetachWhenDiscoveryFailsUnexpectedly(
+	t *testing.T,
+) {
+	discoverErr := errors.New("discovery failed")
+
+	application := &shellTestApplication{
+		discoverErr: discoverErr,
+	}
+
+	err := runDetach(application, nil)
+
+	if !errors.Is(err, discoverErr) {
+		t.Fatalf(
+			"runDetach() error = %v, want %v",
+			err,
+			discoverErr,
+		)
+	}
+}
+
+func TestRunDetachRejectsArguments(t *testing.T) {
+	application := &shellTestApplication{}
+
+	err := runDetach(
+		application,
+		[]string{"unexpected"},
+	)
+
+	if err == nil {
+		t.Fatal("runDetach() returned nil error")
 	}
 }
 

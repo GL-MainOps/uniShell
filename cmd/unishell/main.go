@@ -88,6 +88,9 @@ func run(application *app.App, args []string) error {
 	case "clean":
 		return runClean(application, commandArgs)
 
+	case "detach":
+		return runDetach(application, commandArgs)
+
 	case "doctor":
 		return runDoctor(application, commandArgs)
 
@@ -140,6 +143,39 @@ func runShell(application shellApplication, args []string) error {
 
 		return fmt.Errorf(
 			"attach new multiplexer session: %w",
+			err,
+		)
+	}
+
+	return nil
+}
+
+type sessionApplication interface {
+	DiscoverMultiplexerSession() (*app.Session, error)
+}
+
+func runDetach(application sessionApplication, args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf(
+			"detach does not accept arguments",
+		)
+	}
+
+	session, err := application.DiscoverMultiplexerSession()
+	if err != nil {
+		if errors.Is(err, multiplexer.ErrSessionNotFound) {
+			return nil
+		}
+
+		return fmt.Errorf(
+			"discover multiplexer session: %w",
+			err,
+		)
+	}
+
+	if err := session.Detach(); err != nil {
+		return fmt.Errorf(
+			"detach multiplexer session: %w",
 			err,
 		)
 	}
@@ -209,6 +245,7 @@ Commands:
   install     Install the uniShell runtime
   update      Update the uniShell runtime
   clean       Remove the uniShell runtime
+  detach      Detach from the uniShell multiplexer session
   doctor      Diagnose the uniShell environment
   version     Display version information
   help        Display this help message`)
