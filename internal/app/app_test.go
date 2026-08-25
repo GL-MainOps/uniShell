@@ -8,6 +8,7 @@ import (
 
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	"gitlab.com/mainops/uniShell/internal/runtime"
 )
 
 func TestNewUsesDefaultRuntimeRoot(t *testing.T) {
@@ -394,7 +395,9 @@ func TestNewUsesProvidedMultiplexerManager(t *testing.T) {
 	}
 }
 
-type appTestBackend struct{}
+type appTestBackend struct {
+	created bool
+}
 
 func (appTestBackend) Name() string {
 	return "test"
@@ -413,7 +416,8 @@ func (appTestBackend) Available() bool {
 	return true
 }
 
-func (appTestBackend) Create(multiplexer.Session) error {
+func (b *appTestBackend) Create(multiplexer.Session) error {
+	b.created = true
 	return nil
 }
 
@@ -431,4 +435,103 @@ func (appTestBackend) IsAlive(multiplexer.Session) bool {
 
 func (appTestBackend) Destroy(multiplexer.Session) error {
 	return nil
+}
+
+func TestStartMultiplexerSessionCreatesManagedSession(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "unishell")
+
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-fixture-token")
+
+	backend := &appTestBackend{
+		created: true,
+	}
+
+	manager := multiplexer.NewManager(
+		multiplexer.NewRegistry(backend),
+	)
+
+	application, err := New(Options{
+		Version:         "1.0.0",
+		Commit:          "test",
+		Root:            root,
+		Bundle:          testBundleSource(t),
+		Multiplexer:     manager,
+		MultiplexerName: "test",
+		SessionName:     "default",
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	session, err := application.StartMultiplexerSession()
+	if err != nil {
+		t.Fatalf(
+			"StartMultiplexerSession() returned error: %v",
+			err,
+		)
+	}
+
+	if session == nil {
+		t.Fatal("StartMultiplexerSession() returned nil session")
+	}
+
+	if session.Runtime == nil {
+		t.Fatal("runtime session is nil")
+	}
+
+	if session.Multiplexer == nil {
+		t.Fatal("multiplexer session is nil")
+	}
+
+	if session.Runtime.Mode != runtime.SessionModeMultiplexer {
+		t.Fatalf(
+			"runtime session mode = %q, want %q",
+			session.Runtime.Mode,
+			runtime.SessionModeMultiplexer,
+		)
+	}
+
+	if session.Multiplexer.Metadata.Name != "default" {
+		t.Fatalf(
+			"multiplexer session name = %q, want %q",
+			session.Multiplexer.Metadata.Name,
+			"default",
+		)
+	}
+
+	if session.Multiplexer.Metadata.Multiplexer != "test" {
+		t.Fatalf(
+			"multiplexer = %q, want %q",
+			session.Multiplexer.Metadata.Multiplexer,
+			"test",
+		)
+	}
+
+	if session.Multiplexer.Session.Runtime != session.Runtime.Paths.Runtime {
+		t.Fatalf(
+			"multiplexer runtime = %q, want %q",
+			session.Multiplexer.Session.Runtime,
+			session.Runtime.Paths.Runtime,
+		)
+	}
+
+	if _, err := os.Stat(
+		filepath.Join(
+			session.Runtime.Paths.Runtime,
+			"test-tool",
+		),
+	); err != nil {
+		t.Fatalf(
+			"extracted runtime payload is missing: %v",
+			err,
+		)
+	}
+
+	if !backend.created {
+		t.Fatal("multiplexer backend Create() was not called")
+	}
+
+	if err := session.Cleanup(); err != nil {
+		t.Fatalf("Cleanup() returned error: %v", err)
+	}
 }
