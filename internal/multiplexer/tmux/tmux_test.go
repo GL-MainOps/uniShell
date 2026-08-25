@@ -7,12 +7,13 @@ import (
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 )
 
-func TestCreateUsesSessionName(t *testing.T) {
+func TestCreateUsesSocketAndSessionName(t *testing.T) {
 	var gotName string
 	var gotArgs []string
 
 	backend := &Backend{
-		Binary: "fake-tmux",
+		Binary:     "fake-tmux",
+		SocketPath: "/runtime/multiplexer/tmux.sock",
 		Run: func(name string, args ...string) error {
 			gotName = name
 			gotArgs = append([]string(nil), args...)
@@ -32,6 +33,8 @@ func TestCreateUsesSessionName(t *testing.T) {
 	}
 
 	want := []string{
+		"-S",
+		"/runtime/multiplexer/tmux.sock",
 		"new-session",
 		"-d",
 		"-s",
@@ -47,7 +50,8 @@ func TestCreatePreservesNativeSessionNaming(t *testing.T) {
 	var gotArgs []string
 
 	backend := &Backend{
-		Binary: "fake-tmux",
+		Binary:     "fake-tmux",
+		SocketPath: "/runtime/multiplexer/tmux.sock",
 		Run: func(_ string, args ...string) error {
 			gotArgs = append([]string(nil), args...)
 			return nil
@@ -59,6 +63,8 @@ func TestCreatePreservesNativeSessionNaming(t *testing.T) {
 	}
 
 	want := []string{
+		"-S",
+		"/runtime/multiplexer/tmux.sock",
 		"new-session",
 		"-d",
 	}
@@ -68,22 +74,27 @@ func TestCreatePreservesNativeSessionNaming(t *testing.T) {
 	}
 }
 
-func TestAttachUsesSessionName(t *testing.T) {
+func TestAttachUsesSocketAndSessionName(t *testing.T) {
 	var gotArgs []string
 
 	backend := &Backend{
-		Binary: "fake-tmux",
+		Binary:     "fake-tmux",
+		SocketPath: "/runtime/multiplexer/tmux.sock",
 		Run: func(_ string, args ...string) error {
 			gotArgs = append([]string(nil), args...)
 			return nil
 		},
 	}
 
-	if err := backend.Attach(multiplexer.Session{Name: "work"}); err != nil {
+	if err := backend.Attach(
+		multiplexer.Session{Name: "work"},
+	); err != nil {
 		t.Fatalf("Attach() returned error: %v", err)
 	}
 
 	want := []string{
+		"-S",
+		"/runtime/multiplexer/tmux.sock",
 		"attach-session",
 		"-t",
 		"work",
@@ -94,48 +105,58 @@ func TestAttachUsesSessionName(t *testing.T) {
 	}
 }
 
-func TestIsAliveReturnsTrueWhenCommandSucceeds(t *testing.T) {
-	backend := &Backend{
-		Binary: "fake-tmux",
-		Run: func(_ string, _ ...string) error {
-			return nil
-		},
-	}
-
-	if !backend.IsAlive(multiplexer.Session{Name: "work"}) {
-		t.Fatal("IsAlive() = false, want true")
-	}
-}
-
-func TestIsAliveReturnsFalseWhenCommandFails(t *testing.T) {
-	backend := &Backend{
-		Binary: "fake-tmux",
-		Run: func(_ string, _ ...string) error {
-			return errFakeFailure
-		},
-	}
-
-	if backend.IsAlive(multiplexer.Session{Name: "work"}) {
-		t.Fatal("IsAlive() = true, want false")
-	}
-}
-
-func TestDestroyUsesSessionName(t *testing.T) {
+func TestIsAliveUsesSocket(t *testing.T) {
 	var gotArgs []string
 
 	backend := &Backend{
-		Binary: "fake-tmux",
+		Binary:     "fake-tmux",
+		SocketPath: "/runtime/multiplexer/tmux.sock",
 		Run: func(_ string, args ...string) error {
 			gotArgs = append([]string(nil), args...)
 			return nil
 		},
 	}
 
-	if err := backend.Destroy(multiplexer.Session{Name: "work"}); err != nil {
+	if !backend.IsAlive(
+		multiplexer.Session{Name: "work"},
+	) {
+		t.Fatal("IsAlive() = false, want true")
+	}
+
+	want := []string{
+		"-S",
+		"/runtime/multiplexer/tmux.sock",
+		"has-session",
+		"-t",
+		"work",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf("args = %#v, want %#v", gotArgs, want)
+	}
+}
+
+func TestDestroyUsesSocket(t *testing.T) {
+	var gotArgs []string
+
+	backend := &Backend{
+		Binary:     "fake-tmux",
+		SocketPath: "/runtime/multiplexer/tmux.sock",
+		Run: func(_ string, args ...string) error {
+			gotArgs = append([]string(nil), args...)
+			return nil
+		},
+	}
+
+	if err := backend.Destroy(
+		multiplexer.Session{Name: "work"},
+	); err != nil {
 		t.Fatalf("Destroy() returned error: %v", err)
 	}
 
 	want := []string{
+		"-S",
+		"/runtime/multiplexer/tmux.sock",
 		"kill-session",
 		"-t",
 		"work",
@@ -146,10 +167,20 @@ func TestDestroyUsesSessionName(t *testing.T) {
 	}
 }
 
-var errFakeFailure = &fakeError{}
+func TestValidateRejectsEmptySocket(t *testing.T) {
+	backend := &Backend{}
 
-type fakeError struct{}
+	if err := backend.Validate(); err == nil {
+		t.Fatal("Validate() returned nil error")
+	}
+}
 
-func (*fakeError) Error() string {
-	return "fake command failure"
+func TestValidateAcceptsSocket(t *testing.T) {
+	backend := &Backend{
+		SocketPath: "/runtime/multiplexer/tmux.sock",
+	}
+
+	if err := backend.Validate(); err != nil {
+		t.Fatalf("Validate() returned error: %v", err)
+	}
 }

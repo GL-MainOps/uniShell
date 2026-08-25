@@ -6,8 +6,9 @@ func TestResolveConfigUsesDefaults(t *testing.T) {
 	t.Setenv(EnvMultiplexer, "")
 	t.Setenv(EnvSession, "")
 	t.Setenv(EnvMultiplexerSession, "")
+	t.Setenv(EnvTmuxSocket, "")
 
-	config := ResolveConfig("", "", "")
+	config := ResolveConfig("", "", "", "")
 
 	if config.Name != "tmux" {
 		t.Fatalf("multiplexer = %q, want %q", config.Name, "tmux")
@@ -23,14 +24,22 @@ func TestResolveConfigUsesDefaults(t *testing.T) {
 			config.MultiplexerName,
 		)
 	}
+
+	if config.TmuxSocket != "" {
+		t.Fatalf(
+			"tmux socket = %q, want empty",
+			config.TmuxSocket,
+		)
+	}
 }
 
 func TestResolveConfigUsesEnvironment(t *testing.T) {
 	t.Setenv(EnvMultiplexer, "zellij")
 	t.Setenv(EnvSession, "work")
 	t.Setenv(EnvMultiplexerSession, "shell")
+	t.Setenv(EnvTmuxSocket, "/tmp/custom-tmux.sock")
 
-	config := ResolveConfig("", "", "")
+	config := ResolveConfig("", "", "", "")
 
 	if config.Name != "zellij" {
 		t.Fatalf("multiplexer = %q, want %q", config.Name, "zellij")
@@ -47,17 +56,27 @@ func TestResolveConfigUsesEnvironment(t *testing.T) {
 			"shell",
 		)
 	}
+
+	if config.TmuxSocket != "/tmp/custom-tmux.sock" {
+		t.Fatalf(
+			"tmux socket = %q, want %q",
+			config.TmuxSocket,
+			"/tmp/custom-tmux.sock",
+		)
+	}
 }
 
 func TestResolveConfigExplicitValuesOverrideEnvironment(t *testing.T) {
 	t.Setenv(EnvMultiplexer, "zellij")
 	t.Setenv(EnvSession, "environment")
 	t.Setenv(EnvMultiplexerSession, "environment-session")
+	t.Setenv(EnvTmuxSocket, "/tmp/environment.sock")
 
 	config := ResolveConfig(
 		"tmux",
 		"explicit",
 		"explicit-session",
+		"/tmp/explicit.sock",
 	)
 
 	if config.Name != "tmux" {
@@ -73,6 +92,14 @@ func TestResolveConfigExplicitValuesOverrideEnvironment(t *testing.T) {
 			"multiplexer session = %q, want %q",
 			config.MultiplexerName,
 			"explicit-session",
+		)
+	}
+
+	if config.TmuxSocket != "/tmp/explicit.sock" {
+		t.Fatalf(
+			"tmux socket = %q, want %q",
+			config.TmuxSocket,
+			"/tmp/explicit.sock",
 		)
 	}
 }

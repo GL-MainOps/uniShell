@@ -75,3 +75,32 @@ built-in default
 
 Environment variables are intended to make non-interactive automation  
 possible without requiring command-line arguments.
+
+
+
+## tmux Socket
+
+### `UNISHELL_TMUX_SOCKET`
+
+Overrides the tmux server socket path.
+
+Default:
+
+```text
+<runtime-session>/multiplexer/tmux.sock
+```
+
+This controls the tmux backend only.
+
+Equivalent flag:
+
+```text
+--tmux-socket
+```
+
+When unset, uniShell creates a private socket location inside the
+current runtime session.
+
+Using a custom socket path outside the runtime session is an explicit
+configuration choice and can change the isolation characteristics of
+the tmux backend.
