@@ -57,7 +57,10 @@ func (b *Backend) Available() bool {
 }
 
 func (b *Backend) Create(session api.Session) error {
-	args := []string{"--session"}
+	args := []string{
+		"attach",
+		"--create-background",
+	}
 
 	if session.NativeName != "" {
 		args = append(

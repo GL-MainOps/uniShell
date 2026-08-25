@@ -7,7 +7,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 )
 
-func TestCreateUsesSessionName(t *testing.T) {
+func TestCreateUsesBackgroundSession(t *testing.T) {
 	var (
 		gotArgs []string
 		gotEnv  []string
@@ -40,16 +40,25 @@ func TestCreateUsesSessionName(t *testing.T) {
 	}
 
 	wantArgs := []string{
-		"--session",
+		"attach",
+		"--create-background",
 		"work",
 	}
 
 	if !reflect.DeepEqual(gotArgs, wantArgs) {
-		t.Fatalf("args = %#v, want %#v", gotArgs, wantArgs)
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			wantArgs,
+		)
 	}
 
 	if !reflect.DeepEqual(gotEnv, wantEnv) {
-		t.Fatalf("env = %#v, want %#v", gotEnv, wantEnv)
+		t.Fatalf(
+			"env = %#v, want %#v",
+			gotEnv,
+			wantEnv,
+		)
 	}
 }
 
@@ -72,29 +81,36 @@ func TestCreateWithoutSessionNameUsesNativeDefault(t *testing.T) {
 		},
 	}
 
+	wantEnv := []string{
+		"PATH=/runtime/bin:/usr/bin",
+	}
+
 	err := backend.Create(api.Session{
-		Env: []string{
-			"PATH=/runtime/bin:/usr/bin",
-		},
+		Env: wantEnv,
 	})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
 	wantArgs := []string{
-		"--session",
+		"attach",
+		"--create-background",
 	}
 
 	if !reflect.DeepEqual(gotArgs, wantArgs) {
-		t.Fatalf("args = %#v, want %#v", gotArgs, wantArgs)
-	}
-
-	wantEnv := []string{
-		"PATH=/runtime/bin:/usr/bin",
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			wantArgs,
+		)
 	}
 
 	if !reflect.DeepEqual(gotEnv, wantEnv) {
-		t.Fatalf("env = %#v, want %#v", gotEnv, wantEnv)
+		t.Fatalf(
+			"env = %#v, want %#v",
+			gotEnv,
+			wantEnv,
+		)
 	}
 }
 
@@ -133,7 +149,11 @@ func TestAttachUsesSessionName(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(gotArgs, wantArgs) {
-		t.Fatalf("args = %#v, want %#v", gotArgs, wantArgs)
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			wantArgs,
+		)
 	}
 
 	if gotEnv != nil {
@@ -179,7 +199,11 @@ func TestDetachDoesNotUseSessionEnvironment(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(gotArgs, wantArgs) {
-		t.Fatalf("args = %#v, want %#v", gotArgs, wantArgs)
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			wantArgs,
+		)
 	}
 
 	if gotEnv != nil {
@@ -290,7 +314,11 @@ func TestDestroyUsesSessionName(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(gotArgs, wantArgs) {
-		t.Fatalf("args = %#v, want %#v", gotArgs, wantArgs)
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			wantArgs,
+		)
 	}
 
 	if gotEnv != nil {
