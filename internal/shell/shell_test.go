@@ -159,6 +159,179 @@ func TestIsExecutableRejectsDirectory(t *testing.T) {
 	}
 }
 
+func TestResolveUsesConfiguredShell(t *testing.T) {
+	shellPath := filepath.Join(t.TempDir(), "custom-shell")
+
+	if err := os.WriteFile(
+		shellPath,
+		[]byte("#!/bin/sh\n"),
+		0700,
+	); err != nil {
+		t.Fatalf("write shell: %v", err)
+	}
+
+	t.Setenv("SHELL", shellPath)
+
+	got, err := Resolve()
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+
+	want, err := filepath.Abs(shellPath)
+	if err != nil {
+		t.Fatalf("resolve test path: %v", err)
+	}
+
+	if got != want {
+		t.Fatalf(
+			"Resolve() = %q, want %q",
+			got,
+			want,
+		)
+	}
+}
+
+func TestResolveUsesConfiguredShellFromPATH(t *testing.T) {
+	dir := t.TempDir()
+	shellPath := filepath.Join(dir, "custom-shell")
+
+	if err := os.WriteFile(
+		shellPath,
+		[]byte("#!/bin/sh\n"),
+		0700,
+	); err != nil {
+		t.Fatalf("write shell: %v", err)
+	}
+
+	t.Setenv("PATH", dir)
+	t.Setenv("SHELL", "custom-shell")
+
+	got, err := Resolve()
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+
+	if got != shellPath {
+		t.Fatalf(
+			"Resolve() = %q, want %q",
+			got,
+			shellPath,
+		)
+	}
+}
+
+func TestResolveFallsBackToAvailableShellFromPATH(t *testing.T) {
+	dir := t.TempDir()
+
+	fallback := filepath.Join(dir, "fish")
+
+	if err := os.WriteFile(
+		fallback,
+		[]byte("#!/bin/sh\n"),
+		0700,
+	); err != nil {
+		t.Fatalf("write fallback shell: %v", err)
+	}
+
+	t.Setenv("SHELL", filepath.Join(dir, "missing-shell"))
+	t.Setenv("PATH", dir)
+
+	got, err := Resolve()
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+
+	if got != fallback {
+		t.Fatalf(
+			"Resolve() = %q, want %q",
+			got,
+			fallback,
+		)
+	}
+}
+
+func TestResolveRejectsUnavailableConfiguredShell(
+	t *testing.T,
+) {
+	t.Setenv(
+		"SHELL",
+		filepath.Join(t.TempDir(), "missing-shell"),
+	)
+
+	// Prevent the normal system fallback shells from being found.
+	t.Setenv("PATH", t.TempDir())
+
+	_, err := Resolve()
+
+	if err != ErrShellUnavailable {
+		t.Fatalf(
+			"Resolve() error = %v, want %v",
+			err,
+			ErrShellUnavailable,
+		)
+	}
+}
+
+func TestResolveExecutableUsesAbsolutePath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shell")
+
+	if err := os.WriteFile(
+		path,
+		[]byte("#!/bin/sh\n"),
+		0700,
+	); err != nil {
+		t.Fatalf("write executable: %v", err)
+	}
+
+	got, ok := resolveExecutable(path)
+
+	if !ok {
+		t.Fatal("resolveExecutable() rejected executable")
+	}
+
+	want, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("resolve test path: %v", err)
+	}
+
+	if got != want {
+		t.Fatalf(
+			"resolveExecutable() = %q, want %q",
+			got,
+			want,
+		)
+	}
+}
+
+func TestResolveExecutableUsesPATH(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "shell")
+
+	if err := os.WriteFile(
+		path,
+		[]byte("#!/bin/sh\n"),
+		0700,
+	); err != nil {
+		t.Fatalf("write executable: %v", err)
+	}
+
+	t.Setenv("PATH", dir)
+
+	got, ok := resolveExecutable("shell")
+
+	if !ok {
+		t.Fatal("resolveExecutable() rejected PATH executable")
+	}
+
+	if got != path {
+		t.Fatalf(
+			"resolveExecutable() = %q, want %q",
+			got,
+			path,
+		)
+	}
+}
+
 func TestNewEnvironmentIncludesRuntimePath(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin")
 
@@ -223,7 +396,9 @@ func TestNewEnvironmentSetsResolvedShell(t *testing.T) {
 	}
 }
 
-func TestNewEnvironmentFallsBackWhenConfiguredShellIsUnavailable(t *testing.T) {
+func TestNewEnvironmentFallsBackWhenConfiguredShellIsUnavailable(
+	t *testing.T,
+) {
 	shellPath := filepath.Join(
 		t.TempDir(),
 		"missing-shell",

@@ -18,19 +18,22 @@ type Command struct {
 }
 
 func Resolve() (string, error) {
-	if shell := os.Getenv("SHELL"); shell != "" {
-		if isExecutable(shell) {
-			return shell, nil
+	if configured := os.Getenv("SHELL"); configured != "" {
+		if path, ok := resolveExecutable(configured); ok {
+			return path, nil
 		}
 	}
 
 	for _, candidate := range []string{
-		"/bin/sh",
-		"/bin/bash",
-		"/bin/zsh",
+		"sh",
+		"bash",
+		"zsh",
+		"fish",
+		"ksh",
+		"dash",
 	} {
-		if isExecutable(candidate) {
-			return candidate, nil
+		if path, ok := resolveExecutable(candidate); ok {
+			return path, nil
 		}
 	}
 
@@ -155,6 +158,28 @@ func setEnvironment(
 	}
 
 	return result
+}
+
+func resolveExecutable(path string) (string, bool) {
+	if strings.ContainsRune(path, os.PathSeparator) {
+		if !isExecutable(path) {
+			return "", false
+		}
+
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			return "", false
+		}
+
+		return absolute, true
+	}
+
+	resolved, err := exec.LookPath(path)
+	if err != nil {
+		return "", false
+	}
+
+	return resolved, true
 }
 
 func isExecutable(path string) bool {
