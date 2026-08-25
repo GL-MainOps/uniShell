@@ -48,65 +48,105 @@ func (b *Backend) Available() bool {
 }
 
 func (b *Backend) Create(session api.Session) error {
-	args, err := b.commandArgs(session, "new-session", "-d")
+	args, err := b.commandArgs(
+		session,
+		"new-session",
+		"-d",
+	)
 	if err != nil {
 		return err
 	}
 
+	for _, entry := range session.Env {
+		args = append(args, "-e", entry)
+	}
+
 	if session.NativeName != "" {
-		args = append(args, "-s", session.NativeName)
+		args = append(
+			args,
+			"-s",
+			session.NativeName,
+		)
 	}
 
 	return b.Run(b.Binary, args...)
 }
 
 func (b *Backend) Attach(session api.Session) error {
-	args, err := b.commandArgs(session, "attach-session")
+	args, err := b.commandArgs(
+		session,
+		"attach-session",
+	)
 	if err != nil {
 		return err
 	}
 
 	if session.NativeName != "" {
-		args = append(args, "-t", session.NativeName)
+		args = append(
+			args,
+			"-t",
+			session.NativeName,
+		)
 	}
 
 	return b.Run(b.Binary, args...)
 }
 
 func (b *Backend) Detach(session api.Session) error {
-	args, err := b.commandArgs(session, "detach-client")
+	args, err := b.commandArgs(
+		session,
+		"detach-client",
+	)
 	if err != nil {
 		return err
 	}
 
 	if session.NativeName != "" {
-		args = append(args, "-s", session.NativeName)
+		args = append(
+			args,
+			"-s",
+			session.NativeName,
+		)
 	}
 
 	return b.Run(b.Binary, args...)
 }
 
 func (b *Backend) IsAlive(session api.Session) bool {
-	args, err := b.commandArgs(session, "has-session")
+	args, err := b.commandArgs(
+		session,
+		"has-session",
+	)
 	if err != nil {
 		return false
 	}
 
 	if session.NativeName != "" {
-		args = append(args, "-t", session.NativeName)
+		args = append(
+			args,
+			"-t",
+			session.NativeName,
+		)
 	}
 
 	return b.Run(b.Binary, args...) == nil
 }
 
 func (b *Backend) Destroy(session api.Session) error {
-	args, err := b.commandArgs(session, "kill-session")
+	args, err := b.commandArgs(
+		session,
+		"kill-session",
+	)
 	if err != nil {
 		return err
 	}
 
 	if session.NativeName != "" {
-		args = append(args, "-t", session.NativeName)
+		args = append(
+			args,
+			"-t",
+			session.NativeName,
+		)
 	}
 
 	return b.Run(b.Binary, args...)
@@ -117,11 +157,19 @@ func (b *Backend) commandArgs(
 	args ...string,
 ) ([]string, error) {
 	if session.Endpoint == "" {
-		return nil, fmt.Errorf("tmux endpoint cannot be empty")
+		return nil, fmt.Errorf(
+			"tmux endpoint cannot be empty",
+		)
 	}
 
 	result := make([]string, 0, len(args)+2)
-	result = append(result, "-S", session.Endpoint)
+
+	result = append(
+		result,
+		"-S",
+		session.Endpoint,
+	)
+
 	result = append(result, args...)
 
 	return result, nil

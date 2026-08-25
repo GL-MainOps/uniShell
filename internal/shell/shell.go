@@ -37,16 +37,13 @@ func Resolve() (string, error) {
 	return "", ErrShellUnavailable
 }
 
-func NewCommand(
-	shellPath string,
+func NewEnvironment(
 	runtimeBin string,
-) (Command, error) {
-	if shellPath == "" {
-		return Command{}, errors.New("shell path cannot be empty")
-	}
-
+) ([]string, error) {
 	if runtimeBin == "" {
-		return Command{}, errors.New("runtime bin path cannot be empty")
+		return nil, errors.New(
+			"runtime bin path cannot be empty",
+		)
 	}
 
 	path := buildPATH(
@@ -55,7 +52,34 @@ func NewCommand(
 	)
 
 	env := os.Environ()
-	env = setEnvironment(env, "PATH", path)
+
+	return setEnvironment(
+		env,
+		"PATH",
+		path,
+	), nil
+}
+
+func NewCommand(
+	shellPath string,
+	runtimeBin string,
+) (Command, error) {
+	if shellPath == "" {
+		return Command{}, errors.New(
+			"shell path cannot be empty",
+		)
+	}
+
+	env, err := NewEnvironment(runtimeBin)
+	if err != nil {
+		return Command{}, err
+	}
+
+	env = setEnvironment(
+		env,
+		"SHELL",
+		shellPath,
+	)
 
 	return Command{
 		Path: shellPath,
@@ -83,7 +107,9 @@ func buildPATH(runtimeBin, existing string) string {
 		return runtimeBin
 	}
 
-	return runtimeBin + string(os.PathListSeparator) + existing
+	return runtimeBin +
+		string(os.PathListSeparator) +
+		existing
 }
 
 func setEnvironment(
@@ -98,9 +124,13 @@ func setEnvironment(
 	for _, entry := range env {
 		if strings.HasPrefix(entry, prefix) {
 			if !found {
-				result = append(result, prefix+value)
+				result = append(
+					result,
+					prefix+value,
+				)
 				found = true
 			}
+
 			continue
 		}
 
@@ -108,7 +138,10 @@ func setEnvironment(
 	}
 
 	if !found {
-		result = append(result, prefix+value)
+		result = append(
+			result,
+			prefix+value,
+		)
 	}
 
 	return result

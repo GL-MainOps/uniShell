@@ -158,3 +158,56 @@ func TestIsExecutableRejectsDirectory(t *testing.T) {
 		t.Fatal("directory was detected as executable")
 	}
 }
+
+func TestNewEnvironmentIncludesRuntimePath(t *testing.T) {
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	env, err := NewEnvironment("/runtime/bin")
+	if err != nil {
+		t.Fatalf(
+			"NewEnvironment() returned error: %v",
+			err,
+		)
+	}
+
+	found := false
+
+	for _, entry := range env {
+		if entry == "PATH=/runtime/bin:/usr/bin:/bin" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatal(
+			"runtime PATH was not included in environment",
+		)
+	}
+}
+
+func TestNewCommandSetsShellEnvironment(t *testing.T) {
+	command, err := NewCommand(
+		"/bin/bash",
+		"/runtime/bin",
+	)
+	if err != nil {
+		t.Fatalf(
+			"NewCommand() returned error: %v",
+			err,
+		)
+	}
+
+	found := false
+
+	for _, entry := range command.Env {
+		if entry == "SHELL=/bin/bash" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatal("SHELL was not configured")
+	}
+}

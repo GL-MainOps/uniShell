@@ -7,150 +7,296 @@ import (
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 )
 
-func TestCreateUsesNativeSessionName(t *testing.T) {
-	var gotName string
-	var gotArgs []string
+func TestCreateUsesSessionName(t *testing.T) {
+	var (
+		gotArgs []string
+		gotEnv  []string
+	)
 
 	backend := &Backend{
 		Binary: "fake-zellij",
-		Run: func(name string, args ...string) ([]byte, error) {
-			gotName = name
+		Run: func(
+			_ string,
+			args []string,
+			env []string,
+		) ([]byte, error) {
 			gotArgs = append([]string(nil), args...)
+			gotEnv = append([]string(nil), env...)
 			return nil, nil
 		},
 	}
 
-	if err := backend.Create(api.Session{
-		Name:       "work",
-		NativeName: "native-work",
-	}); err != nil {
+	wantEnv := []string{
+		"PATH=/runtime/work/bin:/usr/bin",
+		"SHELL=/bin/bash",
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+		Env:        wantEnv,
+	})
+	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	if gotName != "fake-zellij" {
-		t.Fatalf("command = %q, want %q", gotName, "fake-zellij")
-	}
-
-	want := []string{
+	wantArgs := []string{
 		"--session",
-		"native-work",
+		"work",
 	}
 
-	if !reflect.DeepEqual(gotArgs, want) {
-		t.Fatalf("args = %#v, want %#v", gotArgs, want)
+	if !reflect.DeepEqual(gotArgs, wantArgs) {
+		t.Fatalf("args = %#v, want %#v", gotArgs, wantArgs)
+	}
+
+	if !reflect.DeepEqual(gotEnv, wantEnv) {
+		t.Fatalf("env = %#v, want %#v", gotEnv, wantEnv)
 	}
 }
 
-func TestCreatePreservesEmptyNativeSessionName(t *testing.T) {
-	var gotArgs []string
+func TestCreateWithoutSessionNameUsesNativeDefault(t *testing.T) {
+	var (
+		gotArgs []string
+		gotEnv  []string
+	)
 
 	backend := &Backend{
 		Binary: "fake-zellij",
-		Run: func(_ string, args ...string) ([]byte, error) {
+		Run: func(
+			_ string,
+			args []string,
+			env []string,
+		) ([]byte, error) {
 			gotArgs = append([]string(nil), args...)
+			gotEnv = append([]string(nil), env...)
 			return nil, nil
 		},
 	}
 
-	if err := backend.Create(api.Session{
-		Name: "work",
-	}); err != nil {
+	err := backend.Create(api.Session{
+		Env: []string{
+			"PATH=/runtime/bin:/usr/bin",
+		},
+	})
+	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	want := []string{
+	wantArgs := []string{
 		"--session",
 	}
 
-	if !reflect.DeepEqual(gotArgs, want) {
-		t.Fatalf("args = %#v, want %#v", gotArgs, want)
+	if !reflect.DeepEqual(gotArgs, wantArgs) {
+		t.Fatalf("args = %#v, want %#v", gotArgs, wantArgs)
+	}
+
+	wantEnv := []string{
+		"PATH=/runtime/bin:/usr/bin",
+	}
+
+	if !reflect.DeepEqual(gotEnv, wantEnv) {
+		t.Fatalf("env = %#v, want %#v", gotEnv, wantEnv)
 	}
 }
 
-func TestAttachUsesNativeSessionName(t *testing.T) {
-	var gotArgs []string
+func TestAttachUsesSessionName(t *testing.T) {
+	var (
+		gotArgs []string
+		gotEnv  []string
+	)
 
 	backend := &Backend{
 		Binary: "fake-zellij",
-		Run: func(_ string, args ...string) ([]byte, error) {
+		Run: func(
+			_ string,
+			args []string,
+			env []string,
+		) ([]byte, error) {
 			gotArgs = append([]string(nil), args...)
+			gotEnv = append([]string(nil), env...)
 			return nil, nil
 		},
 	}
 
-	if err := backend.Attach(api.Session{
-		Name:       "work",
-		NativeName: "native-work",
-	}); err != nil {
+	err := backend.Attach(api.Session{
+		NativeName: "work",
+		Env: []string{
+			"SHOULD_NOT_BE_USED=value",
+		},
+	})
+	if err != nil {
 		t.Fatalf("Attach() returned error: %v", err)
 	}
 
-	want := []string{
+	wantArgs := []string{
 		"attach",
-		"native-work",
+		"work",
 	}
 
-	if !reflect.DeepEqual(gotArgs, want) {
-		t.Fatalf("args = %#v, want %#v", gotArgs, want)
+	if !reflect.DeepEqual(gotArgs, wantArgs) {
+		t.Fatalf("args = %#v, want %#v", gotArgs, wantArgs)
+	}
+
+	if gotEnv != nil {
+		t.Fatalf(
+			"Attach() env = %#v, want nil",
+			gotEnv,
+		)
 	}
 }
 
-func TestIsAliveFindsNativeSession(t *testing.T) {
+func TestDetachDoesNotUseSessionEnvironment(t *testing.T) {
+	var (
+		gotArgs []string
+		gotEnv  []string
+	)
+
 	backend := &Backend{
 		Binary: "fake-zellij",
-		Run: func(_ string, _ ...string) ([]byte, error) {
-			return []byte("default\nnative-work\nproduction\n"), nil
+		Run: func(
+			_ string,
+			args []string,
+			env []string,
+		) ([]byte, error) {
+			gotArgs = append([]string(nil), args...)
+			gotEnv = append([]string(nil), env...)
+			return nil, nil
+		},
+	}
+
+	err := backend.Detach(api.Session{
+		NativeName: "work",
+		Env: []string{
+			"SHOULD_NOT_BE_USED=value",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Detach() returned error: %v", err)
+	}
+
+	wantArgs := []string{
+		"action",
+		"detach",
+	}
+
+	if !reflect.DeepEqual(gotArgs, wantArgs) {
+		t.Fatalf("args = %#v, want %#v", gotArgs, wantArgs)
+	}
+
+	if gotEnv != nil {
+		t.Fatalf(
+			"Detach() env = %#v, want nil",
+			gotEnv,
+		)
+	}
+}
+
+func TestIsAliveUsesSessionName(t *testing.T) {
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) ([]byte, error) {
+			want := []string{"list-sessions"}
+
+			if !reflect.DeepEqual(args, want) {
+				t.Fatalf(
+					"args = %#v, want %#v",
+					args,
+					want,
+				)
+			}
+
+			return []byte("other\nwork\n"), nil
 		},
 	}
 
 	if !backend.IsAlive(api.Session{
-		Name:       "work",
-		NativeName: "native-work",
+		NativeName: "work",
 	}) {
 		t.Fatal("IsAlive() = false, want true")
 	}
 }
 
-func TestIsAliveRejectsMissingNativeSession(t *testing.T) {
+func TestIsAliveRejectsMissingSession(t *testing.T) {
 	backend := &Backend{
 		Binary: "fake-zellij",
-		Run: func(_ string, _ ...string) ([]byte, error) {
-			return []byte("default\nproduction\n"), nil
+		Run: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) ([]byte, error) {
+			return []byte("other\n"), nil
 		},
 	}
 
 	if backend.IsAlive(api.Session{
-		Name:       "work",
-		NativeName: "native-work",
+		NativeName: "work",
 	}) {
 		t.Fatal("IsAlive() = true, want false")
 	}
 }
 
-func TestDestroyUsesNativeSessionName(t *testing.T) {
-	var gotArgs []string
+func TestIsAliveWithoutSessionNameDetectsAnySession(t *testing.T) {
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) ([]byte, error) {
+			return []byte("work\n"), nil
+		},
+	}
+
+	if !backend.IsAlive(api.Session{}) {
+		t.Fatal("IsAlive() = false, want true")
+	}
+}
+
+func TestDestroyUsesSessionName(t *testing.T) {
+	var (
+		gotArgs []string
+		gotEnv  []string
+	)
 
 	backend := &Backend{
 		Binary: "fake-zellij",
-		Run: func(_ string, args ...string) ([]byte, error) {
+		Run: func(
+			_ string,
+			args []string,
+			env []string,
+		) ([]byte, error) {
 			gotArgs = append([]string(nil), args...)
+			gotEnv = append([]string(nil), env...)
 			return nil, nil
 		},
 	}
 
-	if err := backend.Destroy(api.Session{
-		Name:       "work",
-		NativeName: "native-work",
-	}); err != nil {
+	err := backend.Destroy(api.Session{
+		NativeName: "work",
+		Env: []string{
+			"SHOULD_NOT_BE_USED=value",
+		},
+	})
+	if err != nil {
 		t.Fatalf("Destroy() returned error: %v", err)
 	}
 
-	want := []string{
+	wantArgs := []string{
 		"delete-session",
-		"native-work",
+		"work",
 	}
 
-	if !reflect.DeepEqual(gotArgs, want) {
-		t.Fatalf("args = %#v, want %#v", gotArgs, want)
+	if !reflect.DeepEqual(gotArgs, wantArgs) {
+		t.Fatalf("args = %#v, want %#v", gotArgs, wantArgs)
+	}
+
+	if gotEnv != nil {
+		t.Fatalf(
+			"Destroy() env = %#v, want nil",
+			gotEnv,
+		)
 	}
 }

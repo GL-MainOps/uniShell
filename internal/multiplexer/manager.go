@@ -32,6 +32,7 @@ func (m *Manager) Create(
 	nativeName string,
 	runtimePath string,
 	endpoint string,
+	env []string,
 ) (*ManagedSession, error) {
 	backend, ok := m.registry.Get(backendName)
 	if !ok {
@@ -63,6 +64,7 @@ func (m *Manager) Create(
 		NativeName: nativeName,
 		Runtime:    runtimePath,
 		Endpoint:   endpoint,
+		Env:        append([]string(nil), env...),
 	}
 
 	if err := backend.Create(session); err != nil {
@@ -82,7 +84,10 @@ func (m *Manager) Create(
 		CreatedAt:   time.Now().UTC(),
 	}
 
-	if err := WriteMetadata(runtimePath, metadata); err != nil {
+	if err := WriteMetadata(
+		runtimePath,
+		metadata,
+	); err != nil {
 		_ = backend.Destroy(session)
 
 		return nil, err
@@ -103,7 +108,9 @@ func (m *Manager) Attach(
 		return nil, err
 	}
 
-	backend, ok := m.registry.Get(metadata.Multiplexer)
+	backend, ok := m.registry.Get(
+		metadata.Multiplexer,
+	)
 	if !ok {
 		return nil, fmt.Errorf(
 			"multiplexer %q: %w",
@@ -113,9 +120,10 @@ func (m *Manager) Attach(
 	}
 
 	session := Session{
-		Name:     metadata.Name,
-		Runtime:  runtimePath,
-		Endpoint: metadata.Endpoint,
+		Name:       metadata.Name,
+		NativeName: metadata.NativeName,
+		Runtime:    runtimePath,
+		Endpoint:   metadata.Endpoint,
 	}
 
 	if !backend.IsAlive(session) {
@@ -137,7 +145,9 @@ func (m *Manager) Destroy(
 		return err
 	}
 
-	backend, ok := m.registry.Get(metadata.Multiplexer)
+	backend, ok := m.registry.Get(
+		metadata.Multiplexer,
+	)
 	if !ok {
 		return fmt.Errorf(
 			"multiplexer %q: %w",
@@ -147,9 +157,10 @@ func (m *Manager) Destroy(
 	}
 
 	session := Session{
-		Name:     metadata.Name,
-		Runtime:  runtimePath,
-		Endpoint: metadata.Endpoint,
+		Name:       metadata.Name,
+		NativeName: metadata.NativeName,
+		Runtime:    runtimePath,
+		Endpoint:   metadata.Endpoint,
 	}
 
 	if backend.IsAlive(session) {
@@ -192,7 +203,9 @@ func (m *Manager) Discover(
 		return nil, ErrSessionNotFound
 	}
 
-	backend, ok := m.registry.Get(metadata.Multiplexer)
+	backend, ok := m.registry.Get(
+		metadata.Multiplexer,
+	)
 	if !ok {
 		return nil, fmt.Errorf(
 			"multiplexer %q: %w",
@@ -261,7 +274,10 @@ func (m *Manager) DiscoverByName(
 			return session, nil
 		}
 
-		if errors.Is(err, ErrSessionNotFound) {
+		if errors.Is(
+			err,
+			ErrSessionNotFound,
+		) {
 			continue
 		}
 
@@ -309,7 +325,9 @@ func (m *Manager) Reconcile(
 			)
 		}
 
-		backend, ok := m.registry.Get(metadata.Multiplexer)
+		backend, ok := m.registry.Get(
+			metadata.Multiplexer,
+		)
 		if !ok {
 			continue
 		}
@@ -319,9 +337,10 @@ func (m *Manager) Reconcile(
 		}
 
 		session := Session{
-			Name:     metadata.Name,
-			Runtime:  runtimePath,
-			Endpoint: metadata.Endpoint,
+			Name:       metadata.Name,
+			NativeName: metadata.NativeName,
+			Runtime:    runtimePath,
+			Endpoint:   metadata.Endpoint,
 		}
 
 		if backend.IsAlive(session) {
@@ -340,9 +359,13 @@ func (m *Manager) Reconcile(
 	return nil
 }
 
-func (m *Manager) Cleanup(runtimePath string) error {
+func (m *Manager) Cleanup(
+	runtimePath string,
+) error {
 	if runtimePath == "" {
-		return fmt.Errorf("multiplexer runtime path cannot be empty")
+		return fmt.Errorf(
+			"multiplexer runtime path cannot be empty",
+		)
 	}
 
 	metadata, err := ReadMetadata(runtimePath)
@@ -354,7 +377,9 @@ func (m *Manager) Cleanup(runtimePath string) error {
 		return err
 	}
 
-	backend, ok := m.registry.Get(metadata.Multiplexer)
+	backend, ok := m.registry.Get(
+		metadata.Multiplexer,
+	)
 	if !ok {
 		return fmt.Errorf(
 			"multiplexer %q: %w",

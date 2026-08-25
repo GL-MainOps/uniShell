@@ -9,47 +9,59 @@ import (
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/runtime"
+	"gitlab.com/mainops/uniShell/internal/shell"
 )
 
 type BundleSource func() ([]byte, error)
 
 type Options struct {
-	Version                string
-	Commit                 string
-	Root                   string
-	Bundle                 BundleSource
-	Multiplexer             *multiplexer.Manager
-	MultiplexerName         string
-	SessionName             string
-	MultiplexerSessionName  string
+	Version               string
+	Commit                string
+	Root                  string
+	Bundle                BundleSource
+	Multiplexer           *multiplexer.Manager
+	MultiplexerName       string
+	SessionName           string
+	MultiplexerSessionName string
 }
 
 type App struct {
-	Version                string
-	Commit                 string
-	AuthToken              string
-	Paths                  runtime.Paths
-	Bundle                 BundleSource
-	Multiplexer             *multiplexer.Manager
-	MultiplexerName         string
-	SessionName             string
-	MultiplexerSessionName  string
+	Version               string
+	Commit                string
+	AuthToken             string
+	Paths                 runtime.Paths
+	Bundle                BundleSource
+	Multiplexer            *multiplexer.Manager
+	MultiplexerName        string
+	SessionName            string
+	MultiplexerSessionName string
 }
 
 func New(options Options) (*App, error) {
 	version := options.Version
 	if version == "" {
-		return nil, fmt.Errorf("application version cannot be empty")
+		return nil, fmt.Errorf(
+			"application version cannot be empty",
+		)
 	}
 
-	paths, err := runtime.NewPaths(options.Root, version)
+	paths, err := runtime.NewPaths(
+		options.Root,
+		version,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("initialize runtime paths: %w", err)
+		return nil, fmt.Errorf(
+			"initialize runtime paths: %w",
+			err,
+		)
 	}
 
 	token, err := credentials.Resolve()
 	if err != nil {
-		return nil, fmt.Errorf("resolve authentication token: %w", err)
+		return nil, fmt.Errorf(
+			"resolve authentication token: %w",
+			err,
+		)
 	}
 
 	source := options.Bundle
@@ -82,23 +94,32 @@ func New(options Options) (*App, error) {
 		Bundle:                 source,
 		Multiplexer:            manager,
 		MultiplexerName:        multiplexerName,
-		SessionName:             sessionName,
+		SessionName:            sessionName,
 		MultiplexerSessionName: options.MultiplexerSessionName,
 	}, nil
 }
 
 func (a *App) StartSession() (*runtime.Session, error) {
 	if err := runtime.CleanupStale(a.Paths); err != nil {
-		return nil, fmt.Errorf("clean stale runtime sessions: %w", err)
+		return nil, fmt.Errorf(
+			"clean stale runtime sessions: %w",
+			err,
+		)
 	}
 
 	session, err := runtime.NewSession(a.Paths)
 	if err != nil {
-		return nil, fmt.Errorf("create runtime session: %w", err)
+		return nil, fmt.Errorf(
+			"create runtime session: %w",
+			err,
+		)
 	}
 
 	if err := session.Prepare(); err != nil {
-		return nil, fmt.Errorf("prepare runtime session: %w", err)
+		return nil, fmt.Errorf(
+			"prepare runtime session: %w",
+			err,
+		)
 	}
 
 	cleanupOnError := func(err error) (*runtime.Session, error) {
@@ -109,20 +130,35 @@ func (a *App) StartSession() (*runtime.Session, error) {
 	data, err := a.Bundle()
 	if err != nil {
 		return cleanupOnError(
-			fmt.Errorf("load embedded runtime bundle: %w", err),
+			fmt.Errorf(
+				"load embedded runtime bundle: %w",
+				err,
+			),
 		)
 	}
 
-	archive, err := bundle.Open(data, a.AuthToken)
+	archive, err := bundle.Open(
+		data,
+		a.AuthToken,
+	)
 	if err != nil {
 		return cleanupOnError(
-			fmt.Errorf("open runtime bundle: %w", err),
+			fmt.Errorf(
+				"open runtime bundle: %w",
+				err,
+			),
 		)
 	}
 
-	if err := bundle.ExtractArchive(archive, session.Paths.Runtime); err != nil {
+	if err := bundle.ExtractArchive(
+		archive,
+		session.Paths.Runtime,
+	); err != nil {
 		return cleanupOnError(
-			fmt.Errorf("extract runtime bundle: %w", err),
+			fmt.Errorf(
+				"extract runtime bundle: %w",
+				err,
+			),
 		)
 	}
 
@@ -137,7 +173,9 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		)
 	}
 
-	if err := a.Multiplexer.Reconcile(a.Paths.Runtime); err != nil {
+	if err := a.Multiplexer.Reconcile(
+		a.Paths.Runtime,
+	); err != nil {
 		return nil, fmt.Errorf(
 			"reconcile multiplexer sessions: %w",
 			err,
@@ -177,7 +215,10 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		)
 	}
 
-	archive, err := bundle.Open(data, a.AuthToken)
+	archive, err := bundle.Open(
+		data,
+		a.AuthToken,
+	)
 	if err != nil {
 		return cleanupRuntime(
 			fmt.Errorf(
@@ -204,7 +245,10 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		"multiplexer",
 	)
 
-	if err := os.MkdirAll(multiplexerRuntime, 0700); err != nil {
+	if err := os.MkdirAll(
+		multiplexerRuntime,
+		0700,
+	); err != nil {
 		return cleanupRuntime(
 			fmt.Errorf(
 				"prepare multiplexer runtime: %w",
@@ -218,12 +262,40 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		a.MultiplexerName+".sock",
 	)
 
+	shellPath, err := shell.Resolve()
+	if err != nil {
+		return cleanupRuntime(
+			fmt.Errorf(
+				"resolve shell: %w",
+				err,
+			),
+		)
+	}
+
+	environment, err := shell.NewEnvironment(
+		runtimeSession.Paths.Bin,
+	)
+	if err != nil {
+		return cleanupRuntime(
+			fmt.Errorf(
+				"prepare shell environment: %w",
+				err,
+			),
+		)
+	}
+
+	environment = setShellEnvironment(
+		environment,
+		shellPath,
+	)
+
 	managedSession, err := a.Multiplexer.Create(
 		a.MultiplexerName,
 		a.SessionName,
 		a.MultiplexerSessionName,
 		runtimeSession.Paths.Runtime,
 		endpoint,
+		environment,
 	)
 	if err != nil {
 		return cleanupRuntime(
@@ -252,4 +324,41 @@ func (a *App) DiscoverMultiplexerSession() (*Session, error) {
 	return &Session{
 		Multiplexer: managed,
 	}, nil
+}
+
+func setShellEnvironment(
+	env []string,
+	shellPath string,
+) []string {
+	const key = "SHELL"
+	const prefix = key + "="
+
+	result := make([]string, 0, len(env)+1)
+	found := false
+
+	for _, entry := range env {
+		if len(entry) >= len(prefix) &&
+			entry[:len(prefix)] == prefix {
+			if !found {
+				result = append(
+					result,
+					prefix+shellPath,
+				)
+				found = true
+			}
+
+			continue
+		}
+
+		result = append(result, entry)
+	}
+
+	if !found {
+		result = append(
+			result,
+			prefix+shellPath,
+		)
+	}
+
+	return result
 }

@@ -14,6 +14,7 @@ type Session struct {
 	NativeName string
 	Runtime    string
 	Endpoint   string
+	Env        []string
 }
 
 type Backend interface {

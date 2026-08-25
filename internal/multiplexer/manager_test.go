@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -14,8 +15,9 @@ type managerTestBackend struct {
 	available bool
 	alive     bool
 
-	created   bool
-	destroyed bool
+	created        bool
+	createdSession Session
+	destroyed      bool
 }
 
 func (b *managerTestBackend) Name() string {
@@ -35,8 +37,9 @@ func (b *managerTestBackend) Available() bool {
 	return b.available
 }
 
-func (b *managerTestBackend) Create(Session) error {
+func (b *managerTestBackend) Create(session Session) error {
 	b.created = true
+	b.createdSession = session
 	b.alive = true
 	return nil
 }
@@ -80,6 +83,7 @@ func TestManagerCreateWritesMetadata(t *testing.T) {
 		"",
 		runtimePath,
 		endpoint,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -122,6 +126,74 @@ func TestManagerCreateWritesMetadata(t *testing.T) {
 	}
 }
 
+func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	env := []string{
+		"PATH=/runtime/work/bin:/usr/bin",
+		"SHELL=/bin/bash",
+	}
+
+	_, err := manager.Create(
+		"test",
+		"default",
+		"native-work",
+		runtimePath,
+		endpoint,
+		env,
+	)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if !reflect.DeepEqual(
+		backend.createdSession.Env,
+		env,
+	) {
+		t.Fatalf(
+			"backend environment = %#v, want %#v",
+			backend.createdSession.Env,
+			env,
+		)
+	}
+
+	if backend.createdSession.Name != "default" {
+		t.Fatalf(
+			"backend session name = %q, want %q",
+			backend.createdSession.Name,
+			"default",
+		)
+	}
+
+	if backend.createdSession.NativeName != "native-work" {
+		t.Fatalf(
+			"backend native name = %q, want %q",
+			backend.createdSession.NativeName,
+			"native-work",
+		)
+	}
+
+	if backend.createdSession.Endpoint != endpoint {
+		t.Fatalf(
+			"backend endpoint = %q, want %q",
+			backend.createdSession.Endpoint,
+			endpoint,
+		)
+	}
+}
+
 func TestManagerAttachRequiresLiveSession(t *testing.T) {
 	runtimePath := filepath.Join(
 		t.TempDir(),
@@ -144,6 +216,7 @@ func TestManagerAttachRequiresLiveSession(t *testing.T) {
 		"",
 		runtimePath,
 		endpoint,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -196,6 +269,7 @@ func TestManagerDestroyRemovesMetadata(t *testing.T) {
 		"",
 		runtimePath,
 		endpoint,
+		nil,
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -235,6 +309,7 @@ func TestManagerDiscoverFindsLiveSession(t *testing.T) {
 		"native-default",
 		runtimePath,
 		endpoint,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -311,6 +386,7 @@ func TestManagerDiscoverRejectsDifferentSessionName(t *testing.T) {
 		"",
 		runtimePath,
 		endpoint,
+		nil,
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -438,6 +514,7 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 		"",
 		firstRuntime,
 		"/tmp/first.endpoint",
+		nil,
 	); err != nil {
 		t.Fatalf("Create(first) returned error: %v", err)
 	}
@@ -448,6 +525,7 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 		"",
 		secondRuntime,
 		"/tmp/second.endpoint",
+		nil,
 	); err != nil {
 		t.Fatalf("Create(second) returned error: %v", err)
 	}
@@ -499,6 +577,7 @@ func TestManagerReconcilePreservesLiveSession(t *testing.T) {
 		"",
 		sessionRuntime,
 		"/tmp/test.endpoint",
+		nil,
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -550,6 +629,7 @@ func TestManagerReconcileRemovesDeadSession(t *testing.T) {
 		"",
 		sessionRuntime,
 		"/tmp/test.endpoint",
+		nil,
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -596,6 +676,7 @@ func TestManagerReconcileIgnoresUnavailableBackend(t *testing.T) {
 		"",
 		sessionRuntime,
 		"/tmp/test.endpoint",
+		nil,
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -637,6 +718,7 @@ func TestManagerCreatePreservesNativeSessionName(t *testing.T) {
 		"native-work",
 		runtimePath,
 		endpoint,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -696,6 +778,7 @@ func TestManagerCreatePreservesEmptyNativeSessionName(t *testing.T) {
 		"",
 		runtimePath,
 		endpoint,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -756,6 +839,7 @@ func TestManagerCleanupDestroysLiveSessionAndRemovesRuntime(
 		"",
 		runtimePath,
 		endpoint,
+		nil,
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -803,6 +887,7 @@ func TestManagerCleanupRemovesStaleSessionRuntime(
 		"",
 		runtimePath,
 		endpoint,
+		nil,
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -848,6 +933,7 @@ func TestManagerCleanupPreservesRuntimeWhenBackendUnavailable(
 		"",
 		runtimePath,
 		endpoint,
+		nil,
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
