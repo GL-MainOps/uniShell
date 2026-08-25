@@ -46,6 +46,11 @@ func NewEnvironment(
 		)
 	}
 
+	shellPath, err := Resolve()
+	if err != nil {
+		return nil, err
+	}
+
 	path := buildPATH(
 		runtimeBin,
 		os.Getenv("PATH"),
@@ -53,11 +58,19 @@ func NewEnvironment(
 
 	env := os.Environ()
 
-	return setEnvironment(
+	env = setEnvironment(
 		env,
 		"PATH",
 		path,
-	), nil
+	)
+
+	env = setEnvironment(
+		env,
+		"SHELL",
+		shellPath,
+	)
+
+	return env, nil
 }
 
 func NewCommand(
@@ -138,10 +151,7 @@ func setEnvironment(
 	}
 
 	if !found {
-		result = append(
-			result,
-			prefix+value,
-		)
+		result = append(result, prefix+value)
 	}
 
 	return result

@@ -186,6 +186,81 @@ func TestNewEnvironmentIncludesRuntimePath(t *testing.T) {
 	}
 }
 
+func TestNewEnvironmentSetsResolvedShell(t *testing.T) {
+	shellPath := filepath.Join(t.TempDir(), "shell")
+
+	if err := os.WriteFile(
+		shellPath,
+		[]byte("#!/bin/sh\n"),
+		0700,
+	); err != nil {
+		t.Fatalf("write shell: %v", err)
+	}
+
+	t.Setenv("SHELL", shellPath)
+
+	env, err := NewEnvironment("/runtime/bin")
+	if err != nil {
+		t.Fatalf(
+			"NewEnvironment() returned error: %v",
+			err,
+		)
+	}
+
+	found := false
+
+	for _, entry := range env {
+		if entry == "SHELL="+shellPath {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatalf(
+			"resolved SHELL was not included in environment",
+		)
+	}
+}
+
+func TestNewEnvironmentFallsBackWhenConfiguredShellIsUnavailable(t *testing.T) {
+	shellPath := filepath.Join(
+		t.TempDir(),
+		"missing-shell",
+	)
+
+	t.Setenv("SHELL", shellPath)
+
+	env, err := NewEnvironment("/runtime/bin")
+	if err != nil {
+		t.Fatalf(
+			"NewEnvironment() returned error: %v",
+			err,
+		)
+	}
+
+	found := false
+
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "SHELL=") {
+			found = true
+
+			if entry == "SHELL="+shellPath {
+				t.Fatalf(
+					"unavailable configured shell was retained: %q",
+					entry,
+				)
+			}
+
+			break
+		}
+	}
+
+	if !found {
+		t.Fatal("NewEnvironment() did not include SHELL")
+	}
+}
+
 func TestNewCommandSetsShellEnvironment(t *testing.T) {
 	command, err := NewCommand(
 		"/bin/bash",

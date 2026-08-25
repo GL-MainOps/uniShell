@@ -15,22 +15,22 @@ import (
 type BundleSource func() ([]byte, error)
 
 type Options struct {
-	Version               string
-	Commit                string
-	Root                  string
-	Bundle                BundleSource
-	Multiplexer           *multiplexer.Manager
-	MultiplexerName       string
-	SessionName           string
+	Version                string
+	Commit                 string
+	Root                   string
+	Bundle                 BundleSource
+	Multiplexer            *multiplexer.Manager
+	MultiplexerName        string
+	SessionName            string
 	MultiplexerSessionName string
 }
 
 type App struct {
-	Version               string
-	Commit                string
-	AuthToken             string
-	Paths                 runtime.Paths
-	Bundle                BundleSource
+	Version                string
+	Commit                 string
+	AuthToken              string
+	Paths                  runtime.Paths
+	Bundle                 BundleSource
 	Multiplexer            *multiplexer.Manager
 	MultiplexerName        string
 	SessionName            string
@@ -262,16 +262,6 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		a.MultiplexerName+".sock",
 	)
 
-	shellPath, err := shell.Resolve()
-	if err != nil {
-		return cleanupRuntime(
-			fmt.Errorf(
-				"resolve shell: %w",
-				err,
-			),
-		)
-	}
-
 	environment, err := shell.NewEnvironment(
 		runtimeSession.Paths.Bin,
 	)
@@ -283,11 +273,6 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 			),
 		)
 	}
-
-	environment = setShellEnvironment(
-		environment,
-		shellPath,
-	)
 
 	managedSession, err := a.Multiplexer.Create(
 		a.MultiplexerName,
@@ -324,41 +309,4 @@ func (a *App) DiscoverMultiplexerSession() (*Session, error) {
 	return &Session{
 		Multiplexer: managed,
 	}, nil
-}
-
-func setShellEnvironment(
-	env []string,
-	shellPath string,
-) []string {
-	const key = "SHELL"
-	const prefix = key + "="
-
-	result := make([]string, 0, len(env)+1)
-	found := false
-
-	for _, entry := range env {
-		if len(entry) >= len(prefix) &&
-			entry[:len(prefix)] == prefix {
-			if !found {
-				result = append(
-					result,
-					prefix+shellPath,
-				)
-				found = true
-			}
-
-			continue
-		}
-
-		result = append(result, entry)
-	}
-
-	if !found {
-		result = append(
-			result,
-			prefix+shellPath,
-		)
-	}
-
-	return result
 }
