@@ -1,10 +1,14 @@
 package multiplexer
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
-	ErrUnavailable = errors.New("multiplexer is unavailable")
-	ErrUnsupported = errors.New("multiplexer capability is unsupported")
+	ErrUnavailable     = errors.New("multiplexer is unavailable")
+	ErrUnsupported     = errors.New("multiplexer capability is unsupported")
+	ErrSessionNotFound = errors.New("multiplexer session not found")
 )
 
 type Capability string
@@ -16,19 +20,46 @@ const (
 	CapabilityDestroy  Capability = "destroy"
 )
 
+type SessionState string
+
+const (
+	StateUnknown SessionState = "unknown"
+	StateAlive   SessionState = "alive"
+	StateStopped SessionState = "stopped"
+)
+
 type Session struct {
-	Name string
+	Name     string
+	Runtime  string
+	Endpoint string
 }
 
 type Backend interface {
 	Name() string
 	Capabilities() map[Capability]bool
 	Available() bool
+
 	Create(Session) error
 	Attach(Session) error
 	Detach(Session) error
 	IsAlive(Session) bool
 	Destroy(Session) error
+}
+
+func RequireCapability(
+	backend Backend,
+	capability Capability,
+) error {
+	if !backend.Capabilities()[capability] {
+		return fmt.Errorf(
+			"%s: %w: %s",
+			backend.Name(),
+			ErrUnsupported,
+			capability,
+		)
+	}
+
+	return nil
 }
 
 type Registry struct {
