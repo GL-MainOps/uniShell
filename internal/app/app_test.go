@@ -4,10 +4,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 )
 
@@ -533,5 +535,119 @@ func TestStartMultiplexerSessionCreatesManagedSession(t *testing.T) {
 
 	if err := session.Cleanup(); err != nil {
 		t.Fatalf("Cleanup() returned error: %v", err)
+	}
+}
+
+func TestNewLoadsMultiplexerOptionsFromEnvironment(t *testing.T) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
+	t.Setenv(
+		"UNISHELL_TMUX_OPTS",
+		`-f "/tmp/my config" -L work`,
+	)
+	t.Setenv(
+		"UNISHELL_ZELLIJ_OPTS",
+		`--layout "compact layout.kdl"`,
+	)
+
+	application, err := New(Options{
+		Version: "1.0.0",
+		Commit:  "test",
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	want := api.Options{
+		Tmux: api.TmuxOptions{
+			CreateArgs: []string{
+				"-f",
+				"/tmp/my config",
+				"-L",
+				"work",
+			},
+		},
+		Zellij: api.ZellijOptions{
+			CreateArgs: []string{
+				"--layout",
+				"compact layout.kdl",
+			},
+		},
+	}
+
+	if !reflect.DeepEqual(
+		application.MultiplexerOptions,
+		want,
+	) {
+		t.Fatalf(
+			"multiplexer options = %#v, want %#v",
+			application.MultiplexerOptions,
+			want,
+		)
+	}
+}
+
+func TestNewRejectsMalformedMultiplexerOptions(t *testing.T) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
+	t.Setenv(
+		"UNISHELL_TMUX_OPTS",
+		`--name "unterminated`,
+	)
+	t.Setenv(
+		"UNISHELL_ZELLIJ_OPTS",
+		"",
+	)
+
+	_, err := New(Options{
+		Version: "1.0.0",
+		Commit:  "test",
+	})
+
+	if err == nil {
+		t.Fatal(
+			"New() returned nil error, want multiplexer option error",
+		)
+	}
+}
+
+func TestNewUsesExplicitMultiplexerOptionsOverEnvironment(
+	t *testing.T,
+) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
+	t.Setenv(
+		"UNISHELL_TMUX_OPTS",
+		`-L environment`,
+	)
+	t.Setenv(
+		"UNISHELL_ZELLIJ_OPTS",
+		`--layout environment.kdl`,
+	)
+
+	want := api.Options{
+		Tmux: api.TmuxOptions{
+			CreateArgs: []string{
+				"-L",
+				"explicit",
+			},
+		},
+	}
+
+	application, err := New(Options{
+		Version:            "1.0.0",
+		Commit:             "test",
+		MultiplexerOptions: want,
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	if !reflect.DeepEqual(
+		application.MultiplexerOptions,
+		want,
+	) {
+		t.Fatalf(
+			"multiplexer options = %#v, want %#v",
+			application.MultiplexerOptions,
+			want,
+		)
 	}
 }

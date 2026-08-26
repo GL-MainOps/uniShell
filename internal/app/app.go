@@ -89,6 +89,20 @@ func New(options Options) (*App, error) {
 		sessionName = "default"
 	}
 
+	multiplexerOptions := options.MultiplexerOptions
+
+	if options.MultiplexerOptions.Tmux.CreateArgs == nil &&
+		options.MultiplexerOptions.Zellij.CreateArgs == nil {
+		multiplexerOptions, err =
+			multiplexer.ParseOptionsFromEnvironment()
+		if err != nil {
+			return nil, fmt.Errorf(
+				"resolve multiplexer options: %w",
+				err,
+			)
+		}
+	}
+
 	return &App{
 		Version:                version,
 		Commit:                 options.Commit,
@@ -99,7 +113,7 @@ func New(options Options) (*App, error) {
 		MultiplexerName:        multiplexerName,
 		SessionName:            sessionName,
 		MultiplexerSessionName: options.MultiplexerSessionName,
-		MultiplexerOptions:     options.MultiplexerOptions,
+		MultiplexerOptions:     multiplexerOptions,
 	}, nil
 }
 
