@@ -81,7 +81,7 @@ func New(options Options) (*App, error) {
 
 	multiplexerName := options.MultiplexerName
 	if multiplexerName == "" {
-		multiplexerName = multiplexer.DefaultName
+		multiplexerName = "tmux"
 	}
 
 	sessionName := options.SessionName

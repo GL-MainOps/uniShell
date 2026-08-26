@@ -1,6 +1,8 @@
 package tmux
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -267,5 +269,113 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 			gotArgs,
 			want,
 		)
+	}
+}
+
+func TestCreateUsesBundledConfig(t *testing.T) {
+	runtime := t.TempDir()
+
+	config := filepath.Join(
+		runtime,
+		"config",
+		"tmux",
+		"tmux.conf",
+	)
+
+	if err := os.MkdirAll(
+		filepath.Dir(config),
+		0700,
+	); err != nil {
+		t.Fatalf("create config directory: %v", err)
+	}
+
+	if err := os.WriteFile(
+		config,
+		[]byte("set -g mouse on\n"),
+		0600,
+	); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var got []string
+
+	backend := &Backend{
+		Binary: "fake-tmux",
+		Run: func(_ string, args ...string) error {
+			got = append([]string(nil), args...)
+			return nil
+		},
+	}
+
+	session := api.Session{
+		Name:       "work",
+		NativeName: "work",
+		Runtime:    runtime,
+		Endpoint:   filepath.Join(runtime, "tmux.sock"),
+	}
+
+	if err := backend.Create(session); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	wantPrefix := []string{
+		"-f",
+		config,
+		"-S",
+		session.Endpoint,
+		"new-session",
+		"-d",
+	}
+
+	if len(got) < len(wantPrefix) ||
+		!reflect.DeepEqual(
+			got[:len(wantPrefix)],
+			wantPrefix,
+		) {
+		t.Fatalf(
+			"args = %#v, want prefix %#v",
+			got,
+			wantPrefix,
+		)
+	}
+}
+
+func TestCreateRejectsLifecycleOptions(t *testing.T) {
+	tests := []string{
+		"-S",
+		"-L",
+		"-c",
+		"-D",
+		"-N",
+	}
+
+	for _, option := range tests {
+		t.Run(option, func(t *testing.T) {
+			backend := &Backend{
+				Binary: "fake-tmux",
+				Run: func(_ string, _ ...string) error {
+					t.Fatal("Run() must not be called")
+					return nil
+				},
+			}
+
+			err := backend.Create(api.Session{
+				NativeName: "work",
+				Runtime:    t.TempDir(),
+				Endpoint:   "/tmp/unishell.sock",
+				Options: api.Options{
+					Tmux: api.TmuxOptions{
+						CreateArgs: []string{option},
+					},
+				},
+			})
+
+			if err == nil {
+				t.Fatalf(
+					"Create() returned nil error for %q",
+					option,
+				)
+			}
+		})
 	}
 }

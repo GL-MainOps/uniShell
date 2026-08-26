@@ -1,6 +1,8 @@
 package zellij
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -371,5 +373,115 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 			gotArgs,
 			want,
 		)
+	}
+}
+
+func TestCreateUsesBundledConfig(t *testing.T) {
+	runtime := t.TempDir()
+
+	config := filepath.Join(
+		runtime,
+		"config",
+		"zellij",
+		"config.kdl",
+	)
+
+	if err := os.MkdirAll(
+		filepath.Dir(config),
+		0700,
+	); err != nil {
+		t.Fatalf("create config directory: %v", err)
+	}
+
+	if err := os.WriteFile(
+		config,
+		[]byte("pane_frames false\n"),
+		0600,
+	); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var got []string
+
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) ([]byte, error) {
+			got = append([]string(nil), args...)
+			return nil, nil
+		},
+	}
+
+	session := api.Session{
+		NativeName: "work",
+		Runtime:    runtime,
+	}
+
+	if err := backend.Create(session); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	wantPrefix := []string{
+		"--config",
+		config,
+		"attach",
+		"--create-background",
+	}
+
+	if len(got) < len(wantPrefix) ||
+		!reflect.DeepEqual(
+			got[:len(wantPrefix)],
+			wantPrefix,
+		) {
+		t.Fatalf(
+			"args = %#v, want prefix %#v",
+			got,
+			wantPrefix,
+		)
+	}
+}
+
+func TestCreateRejectsLifecycleOptions(t *testing.T) {
+	tests := []string{
+		"--session-name",
+		"--attach-to-session",
+		"--config",
+		"--config-dir",
+	}
+
+	for _, option := range tests {
+		t.Run(option, func(t *testing.T) {
+			backend := &Backend{
+				Binary: "fake-zellij",
+				Run: func(
+					_ string,
+					_ []string,
+					_ []string,
+				) ([]byte, error) {
+					t.Fatal("Run() must not be called")
+					return nil, nil
+				},
+			}
+
+			err := backend.Create(api.Session{
+				NativeName: "work",
+				Runtime:    t.TempDir(),
+				Options: api.Options{
+					Zellij: api.ZellijOptions{
+						CreateArgs: []string{option},
+					},
+				},
+			})
+
+			if err == nil {
+				t.Fatalf(
+					"Create() returned nil error for %q",
+					option,
+				)
+			}
+		})
 	}
 }

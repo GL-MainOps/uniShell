@@ -1,11 +1,13 @@
 package zellij
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/config"
 )
 
 type CommandRunner func(
@@ -15,13 +17,15 @@ type CommandRunner func(
 ) ([]byte, error)
 
 type Backend struct {
-	Binary string
-	Run    CommandRunner
+	Binary         string
+	Run            CommandRunner
+	ConfigResolver *config.Resolver
 }
 
 func New() *Backend {
 	return &Backend{
-		Binary: "zellij",
+		Binary:         "zellij",
+		ConfigResolver: config.NewResolver(),
 		Run: func(
 			name string,
 			args []string,
@@ -57,9 +61,38 @@ func (b *Backend) Available() bool {
 }
 
 func (b *Backend) Create(session api.Session) error {
-	args := []string{
+	args := make([]string, 0, 8)
+
+	configResolver := b.ConfigResolver
+	if configResolver == nil {
+		configResolver = config.NewResolver()
+	}
+
+	config, err := configResolver.Zellij(
+		session.Runtime,
+	)
+	if err != nil {
+		return err
+	}
+
+	if config != "" {
+		args = append(
+			args,
+			"--config",
+			config,
+		)
+	}
+
+	args = append(
+		args,
 		"attach",
 		"--create-background",
+	)
+
+	if err := validateCreateArgs(
+		session.Options.Zellij.CreateArgs,
+	); err != nil {
+		return err
 	}
 
 	args = append(
@@ -74,7 +107,7 @@ func (b *Backend) Create(session api.Session) error {
 		)
 	}
 
-	_, err := b.Run(
+	_, err = b.Run(
 		b.Binary,
 		args,
 		session.Env,
@@ -103,14 +136,12 @@ func (b *Backend) Attach(session api.Session) error {
 }
 
 func (b *Backend) Detach(session api.Session) error {
-	args := []string{
-		"action",
-		"detach",
-	}
-
 	_, err := b.Run(
 		b.Binary,
-		args,
+		[]string{
+			"action",
+			"detach",
+		},
 		nil,
 	)
 
@@ -160,4 +191,23 @@ func (b *Backend) Destroy(session api.Session) error {
 	)
 
 	return err
+}
+
+func validateCreateArgs(args []string) error {
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+
+		switch arg {
+		case "--session-name",
+			"--attach-to-session",
+			"--config",
+			"--config-dir":
+			return fmt.Errorf(
+				"zellij create option %q is controlled by uniShell",
+				arg,
+			)
+		}
+	}
+
+	return nil
 }

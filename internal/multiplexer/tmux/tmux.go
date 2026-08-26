@@ -6,18 +6,21 @@ import (
 	"os/exec"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/config"
 )
 
 type CommandRunner func(name string, args ...string) error
 
 type Backend struct {
-	Binary string
-	Run    CommandRunner
+	Binary         string
+	Run            CommandRunner
+	ConfigResolver *config.Resolver
 }
 
 func New() *Backend {
 	return &Backend{
-		Binary: "tmux",
+		Binary:         "tmux",
+		ConfigResolver: config.NewResolver(),
 		Run: func(name string, args ...string) error {
 			cmd := exec.Command(name, args...)
 			cmd.Stdin = os.Stdin
@@ -61,7 +64,16 @@ func (b *Backend) Create(session api.Session) error {
 		args = append(args, "-e", entry)
 	}
 
-	args = append(args, session.Options.Tmux.CreateArgs...)
+	if err := validateCreateArgs(
+		session.Options.Tmux.CreateArgs,
+	); err != nil {
+		return err
+	}
+
+	args = append(
+		args,
+		session.Options.Tmux.CreateArgs...,
+	)
 
 	if session.NativeName != "" {
 		args = append(
@@ -164,7 +176,31 @@ func (b *Backend) commandArgs(
 		)
 	}
 
-	result := make([]string, 0, len(args)+2)
+	result := make(
+		[]string,
+		0,
+		len(args)+4,
+	)
+
+	configResolver := b.ConfigResolver
+	if configResolver == nil {
+		configResolver = config.NewResolver()
+	}
+
+	config, err := configResolver.Tmux(
+		session.Runtime,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if config != "" {
+		result = append(
+			result,
+			"-f",
+			config,
+		)
+	}
 
 	result = append(
 		result,
@@ -175,4 +211,20 @@ func (b *Backend) commandArgs(
 	result = append(result, args...)
 
 	return result, nil
+}
+
+func validateCreateArgs(args []string) error {
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+
+		switch arg {
+		case "-S", "-L", "-c", "-D", "-N":
+			return fmt.Errorf(
+				"tmux create option %q is controlled by uniShell",
+				arg,
+			)
+		}
+	}
+
+	return nil
 }
