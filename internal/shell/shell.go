@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const sessionRuntimeDirEnvName = "UNISHELL_SESSION_RUNTIME_DIR"
+
 var ErrShellUnavailable = errors.New("shell is unavailable")
 
 type Command struct {
@@ -42,10 +44,17 @@ func Resolve() (string, error) {
 
 func NewEnvironment(
 	runtimeBin string,
+	sessionRuntime string,
 ) ([]string, error) {
 	if runtimeBin == "" {
 		return nil, errors.New(
 			"runtime bin path cannot be empty",
+		)
+	}
+
+	if sessionRuntime == "" {
+		return nil, errors.New(
+			"session runtime path cannot be empty",
 		)
 	}
 
@@ -73,12 +82,19 @@ func NewEnvironment(
 		shellPath,
 	)
 
+	env = setEnvironment(
+		env,
+		sessionRuntimeDirEnvName,
+		sessionRuntime,
+	)
+
 	return env, nil
 }
 
 func NewCommand(
 	shellPath string,
 	runtimeBin string,
+	sessionRuntime string,
 ) (Command, error) {
 	if shellPath == "" {
 		return Command{}, errors.New(
@@ -86,7 +102,10 @@ func NewCommand(
 		)
 	}
 
-	env, err := NewEnvironment(runtimeBin)
+	env, err := NewEnvironment(
+		runtimeBin,
+		sessionRuntime,
+	)
 	if err != nil {
 		return Command{}, err
 	}

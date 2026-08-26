@@ -282,6 +282,7 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 
 	environment, err := shell.NewEnvironment(
 		runtimeSession.Paths.Bin,
+		runtimeSession.Paths.Runtime,
 	)
 	if err != nil {
 		return cleanupRuntime(

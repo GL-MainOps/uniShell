@@ -6,6 +6,12 @@ OUTPUT_DIR="$ROOT_DIR/bin"
 TMP_DIR="$ROOT_DIR/tmp"
 RUNTIME_DIR="$TMP_DIR/runtime"
 
+cleanup() {
+    rm -rf "$RUNTIME_DIR"
+}
+
+trap cleanup EXIT
+
 BUNDLE_BUILDER="$OUTPUT_DIR/bundle-builder"
 BUNDLE_OUTPUT="$TMP_DIR/runtime.bundle"
 BUNDLE_SOURCE="$ROOT_DIR/internal/bundle/generated_bundle.go"

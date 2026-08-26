@@ -7,9 +7,10 @@ import (
 )
 
 const (
-	defaultRuntimeRoot = "/var/tmp/.lesscache"
-	runtimeDirName     = "runtime"
-	runtimeEnvName     = "UNISHELL_RUNTIME_DIR"
+	defaultRuntimeRoot       = "/var/tmp/.lesscache"
+	runtimeDirName           = "runtime"
+	runtimeEnvName           = "UNISHELL_RUNTIME_DIR"
+	SessionRuntimeEnvName    = "UNISHELL_SESSION_RUNTIME_DIR"
 )
 
 // Paths describes the filesystem locations used by a uniShell runtime

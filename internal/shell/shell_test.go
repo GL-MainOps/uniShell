@@ -91,6 +91,7 @@ func TestNewCommandBuildsRuntimeEnvironment(t *testing.T) {
 	command, err := NewCommand(
 		"/bin/sh",
 		"/runtime/bin",
+		"/runtime/session",
 	)
 	if err != nil {
 		t.Fatalf("NewCommand() returned error: %v", err)
@@ -110,16 +111,26 @@ func TestNewCommandBuildsRuntimeEnvironment(t *testing.T) {
 	}
 
 	foundPath := false
+	foundRuntime := false
 
 	for _, entry := range command.Env {
 		if entry == "PATH=/runtime/bin:"+os.Getenv("PATH") {
 			foundPath = true
-			break
+		}
+
+		if entry == "UNISHELL_SESSION_RUNTIME_DIR=/runtime/session" {
+			foundRuntime = true
 		}
 	}
 
 	if !foundPath {
 		t.Fatal("runtime PATH was not configured")
+	}
+
+	if !foundRuntime {
+		t.Fatal(
+			"UNISHELL_SESSION_RUNTIME_DIR was not configured",
+		)
 	}
 }
 
@@ -258,7 +269,6 @@ func TestResolveRejectsUnavailableConfiguredShell(
 		filepath.Join(t.TempDir(), "missing-shell"),
 	)
 
-	// Prevent the normal system fallback shells from being found.
 	t.Setenv("PATH", t.TempDir())
 
 	_, err := Resolve()
@@ -335,7 +345,10 @@ func TestResolveExecutableUsesPATH(t *testing.T) {
 func TestNewEnvironmentIncludesRuntimePath(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin")
 
-	env, err := NewEnvironment("/runtime/bin")
+	env, err := NewEnvironment(
+		"/runtime/bin",
+		"/runtime/session",
+	)
 	if err != nil {
 		t.Fatalf(
 			"NewEnvironment() returned error: %v",
@@ -359,6 +372,54 @@ func TestNewEnvironmentIncludesRuntimePath(t *testing.T) {
 	}
 }
 
+func TestNewEnvironmentIncludesSessionRuntimeDirectory(t *testing.T) {
+	env, err := NewEnvironment(
+		"/runtime/bin",
+		"/runtime/session",
+	)
+	if err != nil {
+		t.Fatalf(
+			"NewEnvironment() returned error: %v",
+			err,
+		)
+	}
+
+	want := "UNISHELL_SESSION_RUNTIME_DIR=/runtime/session"
+
+	for _, entry := range env {
+		if entry == want {
+			return
+		}
+	}
+
+	t.Fatalf(
+		"session runtime environment variable %q was not found",
+		want,
+	)
+}
+
+func TestNewEnvironmentRejectsEmptyRuntimeBin(t *testing.T) {
+	_, err := NewEnvironment(
+		"",
+		"/runtime/session",
+	)
+
+	if err == nil {
+		t.Fatal("NewEnvironment() returned nil error")
+	}
+}
+
+func TestNewEnvironmentRejectsEmptySessionRuntime(t *testing.T) {
+	_, err := NewEnvironment(
+		"/runtime/bin",
+		"",
+	)
+
+	if err == nil {
+		t.Fatal("NewEnvironment() returned nil error")
+	}
+}
+
 func TestNewEnvironmentSetsResolvedShell(t *testing.T) {
 	shellPath := filepath.Join(t.TempDir(), "shell")
 
@@ -372,7 +433,10 @@ func TestNewEnvironmentSetsResolvedShell(t *testing.T) {
 
 	t.Setenv("SHELL", shellPath)
 
-	env, err := NewEnvironment("/runtime/bin")
+	env, err := NewEnvironment(
+		"/runtime/bin",
+		"/runtime/session",
+	)
 	if err != nil {
 		t.Fatalf(
 			"NewEnvironment() returned error: %v",
@@ -406,7 +470,10 @@ func TestNewEnvironmentFallsBackWhenConfiguredShellIsUnavailable(
 
 	t.Setenv("SHELL", shellPath)
 
-	env, err := NewEnvironment("/runtime/bin")
+	env, err := NewEnvironment(
+		"/runtime/bin",
+		"/runtime/session",
+	)
 	if err != nil {
 		t.Fatalf(
 			"NewEnvironment() returned error: %v",
@@ -440,6 +507,7 @@ func TestNewCommandSetsShellEnvironment(t *testing.T) {
 	command, err := NewCommand(
 		"/bin/bash",
 		"/runtime/bin",
+		"/runtime/session",
 	)
 	if err != nil {
 		t.Fatalf(
