@@ -328,3 +328,48 @@ func TestDestroyUsesSessionName(t *testing.T) {
 		)
 	}
 }
+
+func TestCreateUsesConfiguredOptions(t *testing.T) {
+	var gotArgs []string
+
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) ([]byte, error) {
+			gotArgs = append([]string(nil), args...)
+			return nil, nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+		Options: api.Options{
+			Zellij: api.ZellijOptions{
+				CreateArgs: []string{
+					"--test-option",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	want := []string{
+		"attach",
+		"--create-background",
+		"--test-option",
+		"work",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			want,
+		)
+	}
+}

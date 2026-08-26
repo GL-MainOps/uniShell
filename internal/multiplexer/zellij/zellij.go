@@ -62,6 +62,11 @@ func (b *Backend) Create(session api.Session) error {
 		"--create-background",
 	}
 
+	args = append(
+		args,
+		session.Options.Zellij.CreateArgs...,
+	)
+
 	if session.NativeName != "" {
 		args = append(
 			args,
@@ -98,12 +103,14 @@ func (b *Backend) Attach(session api.Session) error {
 }
 
 func (b *Backend) Detach(session api.Session) error {
+	args := []string{
+		"action",
+		"detach",
+	}
+
 	_, err := b.Run(
 		b.Binary,
-		[]string{
-			"action",
-			"detach",
-		},
+		args,
 		nil,
 	)
 

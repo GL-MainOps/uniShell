@@ -61,6 +61,8 @@ func (b *Backend) Create(session api.Session) error {
 		args = append(args, "-e", entry)
 	}
 
+	args = append(args, session.Options.Tmux.CreateArgs...)
+
 	if session.NativeName != "" {
 		args = append(
 			args,

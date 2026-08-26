@@ -15,6 +15,7 @@ type Session struct {
 	Runtime    string
 	Endpoint   string
 	Env        []string
+	Options    Options
 }
 
 type Backend interface {

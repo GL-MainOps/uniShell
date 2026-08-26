@@ -8,6 +8,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/bundle"
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 	"gitlab.com/mainops/uniShell/internal/shell"
 )
@@ -23,6 +24,7 @@ type Options struct {
 	MultiplexerName        string
 	SessionName            string
 	MultiplexerSessionName string
+	MultiplexerOptions     api.Options
 }
 
 type App struct {
@@ -35,6 +37,7 @@ type App struct {
 	MultiplexerName        string
 	SessionName            string
 	MultiplexerSessionName string
+	MultiplexerOptions     api.Options
 }
 
 func New(options Options) (*App, error) {
@@ -96,6 +99,7 @@ func New(options Options) (*App, error) {
 		MultiplexerName:        multiplexerName,
 		SessionName:            sessionName,
 		MultiplexerSessionName: options.MultiplexerSessionName,
+		MultiplexerOptions:     options.MultiplexerOptions,
 	}, nil
 }
 
@@ -281,6 +285,7 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		runtimeSession.Paths.Runtime,
 		endpoint,
 		environment,
+		a.MultiplexerOptions,
 	)
 	if err != nil {
 		return cleanupRuntime(

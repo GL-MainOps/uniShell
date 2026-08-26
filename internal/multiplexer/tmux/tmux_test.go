@@ -224,3 +224,48 @@ func TestDestroyUsesSessionEndpointAndName(t *testing.T) {
 		t.Fatalf("args = %#v, want %#v", gotArgs, want)
 	}
 }
+
+func TestCreateUsesConfiguredOptions(t *testing.T) {
+	var gotArgs []string
+
+	backend := &Backend{
+		Binary: "fake-tmux",
+		Run: func(_ string, args ...string) error {
+			gotArgs = append([]string(nil), args...)
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+		Endpoint:   "/runtime/work/multiplexer/tmux.sock",
+		Options: api.Options{
+			Tmux: api.TmuxOptions{
+				CreateArgs: []string{
+					"--test-option",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	want := []string{
+		"-S",
+		"/runtime/work/multiplexer/tmux.sock",
+		"new-session",
+		"-d",
+		"--test-option",
+		"-s",
+		"work",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			want,
+		)
+	}
+}

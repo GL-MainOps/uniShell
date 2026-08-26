@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 )
 
 type Manager struct {
@@ -33,6 +35,7 @@ func (m *Manager) Create(
 	runtimePath string,
 	endpoint string,
 	env []string,
+	options api.Options,
 ) (*ManagedSession, error) {
 	backend, ok := m.registry.Get(backendName)
 	if !ok {
@@ -65,6 +68,7 @@ func (m *Manager) Create(
 		Runtime:    runtimePath,
 		Endpoint:   endpoint,
 		Env:        append([]string(nil), env...),
+		Options:    options,
 	}
 
 	if err := backend.Create(session); err != nil {
@@ -274,10 +278,7 @@ func (m *Manager) DiscoverByName(
 			return session, nil
 		}
 
-		if errors.Is(
-			err,
-			ErrSessionNotFound,
-		) {
+		if errors.Is(err, ErrSessionNotFound) {
 			continue
 		}
 

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 )
 
 const endpoint = "/tmp/test.endpoint"
@@ -84,6 +86,7 @@ func TestManagerCreateWritesMetadata(t *testing.T) {
 		runtimePath,
 		endpoint,
 		nil,
+		api.Options{},
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -153,6 +156,7 @@ func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
 		runtimePath,
 		endpoint,
 		env,
+		api.Options{},
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -194,6 +198,61 @@ func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
 	}
 }
 
+func TestManagerCreatePassesMultiplexerOptionsToBackend(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	options := api.Options{
+		Tmux: api.TmuxOptions{
+			CreateArgs: []string{
+				"--test-create",
+			},
+		},
+		Zellij: api.ZellijOptions{
+			CreateArgs: []string{
+				"--zellij-create",
+			},
+		},
+	}
+
+	_, err := manager.Create(
+		"test",
+		"default",
+		"native-work",
+		runtimePath,
+		endpoint,
+		nil,
+		options,
+	)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if !reflect.DeepEqual(
+		backend.createdSession.Options,
+		options,
+	) {
+		t.Fatalf(
+			"backend options = %#v, want %#v",
+			backend.createdSession.Options,
+			options,
+		)
+	}
+}
+
 func TestManagerAttachRequiresLiveSession(t *testing.T) {
 	runtimePath := filepath.Join(
 		t.TempDir(),
@@ -217,6 +276,7 @@ func TestManagerAttachRequiresLiveSession(t *testing.T) {
 		runtimePath,
 		endpoint,
 		nil,
+		api.Options{},
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -270,6 +330,7 @@ func TestManagerDestroyRemovesMetadata(t *testing.T) {
 		runtimePath,
 		endpoint,
 		nil,
+		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -310,6 +371,7 @@ func TestManagerDiscoverFindsLiveSession(t *testing.T) {
 		runtimePath,
 		endpoint,
 		nil,
+		api.Options{},
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -357,7 +419,7 @@ func TestManagerDiscoverFindsLiveSession(t *testing.T) {
 
 	if discovered.Session.NativeName != "native-default" {
 		t.Fatalf(
-			"discovered session native name = %q, want %q",
+			"discovered native name = %q, want %q",
 			discovered.Session.NativeName,
 			"native-default",
 		)
@@ -387,6 +449,7 @@ func TestManagerDiscoverRejectsDifferentSessionName(t *testing.T) {
 		runtimePath,
 		endpoint,
 		nil,
+		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -515,6 +578,7 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 		firstRuntime,
 		"/tmp/first.endpoint",
 		nil,
+		api.Options{},
 	); err != nil {
 		t.Fatalf("Create(first) returned error: %v", err)
 	}
@@ -526,6 +590,7 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 		secondRuntime,
 		"/tmp/second.endpoint",
 		nil,
+		api.Options{},
 	); err != nil {
 		t.Fatalf("Create(second) returned error: %v", err)
 	}
@@ -578,6 +643,7 @@ func TestManagerReconcilePreservesLiveSession(t *testing.T) {
 		sessionRuntime,
 		"/tmp/test.endpoint",
 		nil,
+		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -630,11 +696,11 @@ func TestManagerReconcileRemovesDeadSession(t *testing.T) {
 		sessionRuntime,
 		"/tmp/test.endpoint",
 		nil,
+		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	// Create() marks the fake backend alive. Make it stale explicitly.
 	backend.alive = false
 
 	if err := manager.Reconcile(versionRuntime); err != nil {
@@ -677,11 +743,11 @@ func TestManagerReconcileIgnoresUnavailableBackend(t *testing.T) {
 		sessionRuntime,
 		"/tmp/test.endpoint",
 		nil,
+		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	// Simulate the backend becoming unavailable after the session exists.
 	backend.available = false
 	backend.alive = false
 
@@ -719,6 +785,7 @@ func TestManagerCreatePreservesNativeSessionName(t *testing.T) {
 		runtimePath,
 		endpoint,
 		nil,
+		api.Options{},
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -779,6 +846,7 @@ func TestManagerCreatePreservesEmptyNativeSessionName(t *testing.T) {
 		runtimePath,
 		endpoint,
 		nil,
+		api.Options{},
 	)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -840,6 +908,7 @@ func TestManagerCleanupDestroysLiveSessionAndRemovesRuntime(
 		runtimePath,
 		endpoint,
 		nil,
+		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -888,6 +957,7 @@ func TestManagerCleanupRemovesStaleSessionRuntime(
 		runtimePath,
 		endpoint,
 		nil,
+		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -934,6 +1004,7 @@ func TestManagerCleanupPreservesRuntimeWhenBackendUnavailable(
 		runtimePath,
 		endpoint,
 		nil,
+		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
