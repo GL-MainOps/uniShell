@@ -9,6 +9,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	"gitlab.com/mainops/uniShell/internal/runtime"
 )
 
 func TestPrintErrorAuthenticationFailed(t *testing.T) {
@@ -82,6 +83,11 @@ type shellTestApplication struct {
 	discoverErr     error
 	startSession    *app.Session
 	startErr        error
+	preparedSession *runtime.Session
+	preparedErr     error
+	createdSession  *app.Session
+	createdErr      error
+	requestedShell  string
 }
 
 func (a *shellTestApplication) StartMultiplexerSession() (*app.Session, error) {
@@ -90,6 +96,24 @@ func (a *shellTestApplication) StartMultiplexerSession() (*app.Session, error) {
 
 func (a *shellTestApplication) DiscoverMultiplexerSession() (*app.Session, error) {
 	return a.discoverSession, a.discoverErr
+}
+
+func (a *shellTestApplication) RequestedShell() string {
+	return a.requestedShell
+}
+
+func (a *shellTestApplication) PrepareMultiplexerSession() (
+	*runtime.Session,
+	error,
+) {
+	return a.preparedSession, a.preparedErr
+}
+
+func (a *shellTestApplication) CreateMultiplexerSession(
+	*runtime.Session,
+	string,
+) (*app.Session, error) {
+	return a.createdSession, a.createdErr
 }
 
 type shellTestBackend struct {
@@ -145,16 +169,21 @@ func TestRunShellAttachesExistingSession(t *testing.T) {
 
 	session := &app.Session{
 		Multiplexer: &multiplexer.ManagedSession{
+			Metadata: multiplexer.Metadata{
+				ShellName: "bash",
+			},
 			Backend: backend,
 			Session: multiplexer.Session{
-				Name:     "default",
-				Endpoint: "/tmp/test.sock",
+				Name:      "default",
+				Endpoint:  "/tmp/test.sock",
+				ShellName: "bash",
 			},
 		},
 	}
 
 	application := &shellTestApplication{
 		discoverSession: session,
+		requestedShell:  "zsh",
 	}
 
 	if err := runShell(application, nil); err != nil {
@@ -186,8 +215,10 @@ func TestRunShellCreatesAndAttachesWhenSessionDoesNotExist(
 	}
 
 	application := &shellTestApplication{
-		discoverErr:  multiplexer.ErrSessionNotFound,
-		startSession: session,
+		discoverErr:     multiplexer.ErrSessionNotFound,
+		preparedSession: &runtime.Session{},
+		createdSession:  session,
+		requestedShell:  "bash",
 	}
 
 	if err := runShell(application, nil); err != nil {
@@ -221,8 +252,10 @@ func TestRunShellCleansNewSessionWhenAttachFails(t *testing.T) {
 	}
 
 	application := &shellTestApplication{
-		discoverErr:  multiplexer.ErrSessionNotFound,
-		startSession: session,
+		discoverErr:     multiplexer.ErrSessionNotFound,
+		preparedSession: &runtime.Session{},
+		createdSession:  session,
+		requestedShell:  "bash",
 	}
 
 	err := runShell(application, nil)

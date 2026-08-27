@@ -120,6 +120,10 @@ func New(options Options) (*App, error) {
 	}, nil
 }
 
+func (a *App) RequestedShell() string {
+	return a.Shell
+}
+
 func (a *App) StartSession() (*runtime.Session, error) {
 	if err := runtime.CleanupStale(a.Paths); err != nil {
 		return nil, fmt.Errorf(
@@ -186,7 +190,12 @@ func (a *App) StartSession() (*runtime.Session, error) {
 	return session, nil
 }
 
-func (a *App) StartMultiplexerSession() (*Session, error) {
+// PrepareMultiplexerSession creates and extracts a multiplexer runtime.
+//
+// The returned runtime remains owned by the caller. The caller must either
+// pass it to CreateMultiplexerSession and eventually clean it up, or clean
+// it directly when startup is abandoned.
+func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
 	if err := runtime.CleanupStale(a.Paths); err != nil {
 		return nil, fmt.Errorf(
 			"clean stale runtime sessions: %w",
@@ -221,14 +230,14 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		)
 	}
 
-	cleanupRuntime := func(err error) (*Session, error) {
+	cleanupOnError := func(err error) (*runtime.Session, error) {
 		_ = runtimeSession.Cleanup()
 		return nil, err
 	}
 
 	data, err := a.Bundle()
 	if err != nil {
-		return cleanupRuntime(
+		return cleanupOnError(
 			fmt.Errorf(
 				"load embedded runtime bundle: %w",
 				err,
@@ -241,7 +250,7 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		a.AuthToken,
 	)
 	if err != nil {
-		return cleanupRuntime(
+		return cleanupOnError(
 			fmt.Errorf(
 				"open runtime bundle: %w",
 				err,
@@ -253,7 +262,7 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		archive,
 		runtimeSession.Paths.Runtime,
 	); err != nil {
-		return cleanupRuntime(
+		return cleanupOnError(
 			fmt.Errorf(
 				"extract runtime bundle: %w",
 				err,
@@ -261,16 +270,27 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		)
 	}
 
+	return runtimeSession, nil
+}
+
+func (a *App) CreateMultiplexerSession(
+	runtimeSession *runtime.Session,
+	shellName string,
+) (*Session, error) {
+	if runtimeSession == nil {
+		return nil, fmt.Errorf(
+			"multiplexer runtime session is nil",
+		)
+	}
+
 	selectedShell, err := shell.Resolve(
-		a.Shell,
+		shellName,
 		runtimeSession.Paths.Bin,
 	)
 	if err != nil {
-		return cleanupRuntime(
-			fmt.Errorf(
-				"resolve shell: %w",
-				err,
-			),
+		return nil, fmt.Errorf(
+			"resolve shell: %w",
+			err,
 		)
 	}
 
@@ -283,11 +303,9 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		multiplexerRuntime,
 		0700,
 	); err != nil {
-		return cleanupRuntime(
-			fmt.Errorf(
-				"prepare multiplexer runtime: %w",
-				err,
-			),
+		return nil, fmt.Errorf(
+			"prepare multiplexer runtime: %w",
+			err,
 		)
 	}
 
@@ -302,11 +320,9 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		selectedShell,
 	)
 	if err != nil {
-		return cleanupRuntime(
-			fmt.Errorf(
-				"prepare shell environment: %w",
-				err,
-			),
+		return nil, fmt.Errorf(
+			"prepare shell environment: %w",
+			err,
 		)
 	}
 
@@ -322,11 +338,9 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		a.MultiplexerOptions,
 	)
 	if err != nil {
-		return cleanupRuntime(
-			fmt.Errorf(
-				"create multiplexer session: %w",
-				err,
-			),
+		return nil, fmt.Errorf(
+			"create multiplexer session: %w",
+			err,
 		)
 	}
 
@@ -334,6 +348,24 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		Runtime:     runtimeSession,
 		Multiplexer: managedSession,
 	}, nil
+}
+
+func (a *App) StartMultiplexerSession() (*Session, error) {
+	runtimeSession, err := a.PrepareMultiplexerSession()
+	if err != nil {
+		return nil, err
+	}
+
+	session, err := a.CreateMultiplexerSession(
+		runtimeSession,
+		a.Shell,
+	)
+	if err != nil {
+		_ = runtimeSession.Cleanup()
+		return nil, err
+	}
+
+	return session, nil
 }
 
 func (a *App) DiscoverMultiplexerSession() (*Session, error) {

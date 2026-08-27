@@ -110,6 +110,12 @@ func run(application *app.App, args []string) error {
 type shellApplication interface {
 	StartMultiplexerSession() (*app.Session, error)
 	DiscoverMultiplexerSession() (*app.Session, error)
+	RequestedShell() string
+	PrepareMultiplexerSession() (*runtime.Session, error)
+	CreateMultiplexerSession(
+		*runtime.Session,
+		string,
+	) (*app.Session, error)
 }
 
 func runShell(application shellApplication, args []string) error {
@@ -121,6 +127,8 @@ func runShell(application shellApplication, args []string) error {
 
 	session, err := application.DiscoverMultiplexerSession()
 	if err == nil {
+		printReattachMessage(application, session)
+
 		return session.Attach()
 	}
 
@@ -131,16 +139,74 @@ func runShell(application shellApplication, args []string) error {
 		)
 	}
 
-	session, err = application.StartMultiplexerSession()
+	runtimeSession, err := application.PrepareMultiplexerSession()
 	if err != nil {
 		return fmt.Errorf(
-			"start multiplexer session: %w",
+			"prepare multiplexer runtime: %w",
 			err,
 		)
 	}
 
+	cleanupRuntime := func(err error) error {
+		if cleanupErr := runtimeSession.Cleanup(); cleanupErr != nil {
+			return fmt.Errorf(
+				"%w; cleanup runtime session: %v",
+				err,
+				cleanupErr,
+			)
+		}
+
+		return err
+	}
+
+	ctx, stop := shellSelectionContext()
+	defer stop()
+
+	selected, err := selectShell(
+		ctx,
+		runtimeSession.Paths.Bin,
+		application.RequestedShell(),
+		os.Stdin,
+		os.Stdout,
+	)
+	if err != nil {
+		if errors.Is(err, errShellSelectionCancelled) {
+			return cleanupRuntime(
+				fmt.Errorf(
+					"shell selection cancelled",
+				),
+			)
+		}
+
+		return cleanupRuntime(
+			fmt.Errorf(
+				"select shell: %w",
+				err,
+			),
+		)
+	}
+
+	session, err = application.CreateMultiplexerSession(
+		runtimeSession,
+		selected,
+	)
+	if err != nil {
+		return cleanupRuntime(
+			fmt.Errorf(
+				"create multiplexer session: %w",
+				err,
+			),
+		)
+	}
+
 	if err := session.Attach(); err != nil {
-		_ = session.Cleanup()
+		if cleanupErr := session.Cleanup(); cleanupErr != nil {
+			return fmt.Errorf(
+				"attach new multiplexer session: %w; cleanup session: %v",
+				err,
+				cleanupErr,
+			)
+		}
 
 		return fmt.Errorf(
 			"attach new multiplexer session: %w",
@@ -149,6 +215,41 @@ func runShell(application shellApplication, args []string) error {
 	}
 
 	return nil
+}
+
+func printReattachMessage(
+	application shellApplication,
+	session *app.Session,
+) {
+	if session == nil ||
+		session.Multiplexer == nil {
+		return
+	}
+
+	existingShell := session.Multiplexer.Metadata.ShellName
+	if existingShell == "" {
+		return
+	}
+
+	requestedShell := application.RequestedShell()
+
+	if requestedShell == existingShell {
+		return
+	}
+
+	fmt.Println("Existing uniShell session found.")
+	fmt.Printf(
+		"Requested shell: %s\n",
+		requestedShell,
+	)
+	fmt.Printf(
+		"Existing session shell: %s\n",
+		existingShell,
+	)
+	fmt.Printf(
+		"Attaching to the existing %s session.\n",
+		existingShell,
+	)
 }
 
 type sessionApplication interface {
