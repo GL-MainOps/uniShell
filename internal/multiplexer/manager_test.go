@@ -85,6 +85,8 @@ func TestManagerCreateWritesMetadata(t *testing.T) {
 		"",
 		runtimePath,
 		endpoint,
+		"",
+		"",
 		nil,
 		api.Options{},
 	)
@@ -155,6 +157,8 @@ func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
 		"native-work",
 		runtimePath,
 		endpoint,
+		"bash",
+		"/bin/bash",
 		env,
 		api.Options{},
 	)
@@ -234,6 +238,8 @@ func TestManagerCreatePassesMultiplexerOptionsToBackend(
 		"native-work",
 		runtimePath,
 		endpoint,
+		"bash",
+		"/bin/bash",
 		nil,
 		options,
 	)
@@ -275,6 +281,8 @@ func TestManagerAttachRequiresLiveSession(t *testing.T) {
 		"",
 		runtimePath,
 		endpoint,
+		"",
+		"",
 		nil,
 		api.Options{},
 	)
@@ -329,6 +337,8 @@ func TestManagerDestroyRemovesMetadata(t *testing.T) {
 		"",
 		runtimePath,
 		endpoint,
+		"",
+		"",
 		nil,
 		api.Options{},
 	); err != nil {
@@ -370,6 +380,8 @@ func TestManagerDiscoverFindsLiveSession(t *testing.T) {
 		"native-default",
 		runtimePath,
 		endpoint,
+		"",
+		"",
 		nil,
 		api.Options{},
 	)
@@ -448,6 +460,8 @@ func TestManagerDiscoverRejectsDifferentSessionName(t *testing.T) {
 		"",
 		runtimePath,
 		endpoint,
+		"",
+		"",
 		nil,
 		api.Options{},
 	); err != nil {
@@ -577,6 +591,8 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 		"",
 		firstRuntime,
 		"/tmp/first.endpoint",
+		"",
+		"",
 		nil,
 		api.Options{},
 	); err != nil {
@@ -589,6 +605,8 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 		"",
 		secondRuntime,
 		"/tmp/second.endpoint",
+		"",
+		"",
 		nil,
 		api.Options{},
 	); err != nil {
@@ -642,6 +660,8 @@ func TestManagerReconcilePreservesLiveSession(t *testing.T) {
 		"",
 		sessionRuntime,
 		"/tmp/test.endpoint",
+		"",
+		"",
 		nil,
 		api.Options{},
 	); err != nil {
@@ -695,6 +715,8 @@ func TestManagerReconcileRemovesDeadSession(t *testing.T) {
 		"",
 		sessionRuntime,
 		"/tmp/test.endpoint",
+		"",
+		"",
 		nil,
 		api.Options{},
 	); err != nil {
@@ -742,6 +764,8 @@ func TestManagerReconcileIgnoresUnavailableBackend(t *testing.T) {
 		"",
 		sessionRuntime,
 		"/tmp/test.endpoint",
+		"",
+		"",
 		nil,
 		api.Options{},
 	); err != nil {
@@ -784,6 +808,8 @@ func TestManagerCreatePreservesNativeSessionName(t *testing.T) {
 		"native-work",
 		runtimePath,
 		endpoint,
+		"",
+		"",
 		nil,
 		api.Options{},
 	)
@@ -845,6 +871,8 @@ func TestManagerCreatePreservesEmptyNativeSessionName(t *testing.T) {
 		"",
 		runtimePath,
 		endpoint,
+		"",
+		"",
 		nil,
 		api.Options{},
 	)
@@ -907,6 +935,8 @@ func TestManagerCleanupDestroysLiveSessionAndRemovesRuntime(
 		"",
 		runtimePath,
 		endpoint,
+		"",
+		"",
 		nil,
 		api.Options{},
 	); err != nil {
@@ -956,6 +986,8 @@ func TestManagerCleanupRemovesStaleSessionRuntime(
 		"",
 		runtimePath,
 		endpoint,
+		"",
+		"",
 		nil,
 		api.Options{},
 	); err != nil {
@@ -1003,6 +1035,8 @@ func TestManagerCleanupPreservesRuntimeWhenBackendUnavailable(
 		"",
 		runtimePath,
 		endpoint,
+		"",
+		"",
 		nil,
 		api.Options{},
 	); err != nil {
@@ -1025,6 +1059,148 @@ func TestManagerCleanupPreservesRuntimeWhenBackendUnavailable(
 		t.Fatalf(
 			"runtime was removed while backend unavailable: %v",
 			err,
+		)
+	}
+}
+
+func TestManagerCreatePersistsShell(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	const (
+		shellName = "zsh"
+		shellPath = "/runtime/bin/zsh"
+	)
+
+	session, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+		shellName,
+		shellPath,
+		nil,
+		api.Options{},
+	)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if session.Metadata.ShellName != shellName {
+		t.Fatalf(
+			"metadata shell name = %q, want %q",
+			session.Metadata.ShellName,
+			shellName,
+		)
+	}
+
+	if session.Metadata.ShellPath != shellPath {
+		t.Fatalf(
+			"metadata shell path = %q, want %q",
+			session.Metadata.ShellPath,
+			shellPath,
+		)
+	}
+
+	if session.Session.ShellName != shellName {
+		t.Fatalf(
+			"session shell name = %q, want %q",
+			session.Session.ShellName,
+			shellName,
+		)
+	}
+
+	if session.Session.ShellPath != shellPath {
+		t.Fatalf(
+			"session shell path = %q, want %q",
+			session.Session.ShellPath,
+			shellPath,
+		)
+	}
+
+	metadata, err := ReadMetadata(runtimePath)
+	if err != nil {
+		t.Fatalf("ReadMetadata() returned error: %v", err)
+	}
+
+	if metadata.ShellName != shellName {
+		t.Fatalf(
+			"stored shell name = %q, want %q",
+			metadata.ShellName,
+			shellName,
+		)
+	}
+
+	if metadata.ShellPath != shellPath {
+		t.Fatalf(
+			"stored shell path = %q, want %q",
+			metadata.ShellPath,
+			shellPath,
+		)
+	}
+}
+
+func TestManagerAttachPreservesShell(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	created, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+		"fish",
+		"/runtime/bin/fish",
+		nil,
+		api.Options{},
+	)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	attached, err := manager.Attach(runtimePath)
+	if err != nil {
+		t.Fatalf("Attach() returned error: %v", err)
+	}
+
+	if attached.Session.ShellName != created.Session.ShellName {
+		t.Fatalf(
+			"attached shell name = %q, want %q",
+			attached.Session.ShellName,
+			created.Session.ShellName,
+		)
+	}
+
+	if attached.Session.ShellPath != created.Session.ShellPath {
+		t.Fatalf(
+			"attached shell path = %q, want %q",
+			attached.Session.ShellPath,
+			created.Session.ShellPath,
 		)
 	}
 }

@@ -34,6 +34,8 @@ func (m *Manager) Create(
 	nativeName string,
 	runtimePath string,
 	endpoint string,
+	shellName string,
+	shellPath string,
 	env []string,
 	options api.Options,
 ) (*ManagedSession, error) {
@@ -67,6 +69,8 @@ func (m *Manager) Create(
 		NativeName: nativeName,
 		Runtime:    runtimePath,
 		Endpoint:   endpoint,
+		ShellName:  shellName,
+		ShellPath:  shellPath,
 		Env:        append([]string(nil), env...),
 		Options:    options,
 	}
@@ -85,6 +89,8 @@ func (m *Manager) Create(
 		NativeName:  nativeName,
 		Multiplexer: backendName,
 		Endpoint:    endpoint,
+		ShellName:   shellName,
+		ShellPath:   shellPath,
 		CreatedAt:   time.Now().UTC(),
 	}
 
@@ -128,6 +134,8 @@ func (m *Manager) Attach(
 		NativeName: metadata.NativeName,
 		Runtime:    runtimePath,
 		Endpoint:   metadata.Endpoint,
+		ShellName:  metadata.ShellName,
+		ShellPath:  metadata.ShellPath,
 	}
 
 	if !backend.IsAlive(session) {
@@ -165,6 +173,8 @@ func (m *Manager) Destroy(
 		NativeName: metadata.NativeName,
 		Runtime:    runtimePath,
 		Endpoint:   metadata.Endpoint,
+		ShellName:  metadata.ShellName,
+		ShellPath:  metadata.ShellPath,
 	}
 
 	if backend.IsAlive(session) {
@@ -231,6 +241,8 @@ func (m *Manager) Discover(
 		NativeName: metadata.NativeName,
 		Runtime:    runtimePath,
 		Endpoint:   metadata.Endpoint,
+		ShellName:  metadata.ShellName,
+		ShellPath:  metadata.ShellPath,
 	}
 
 	if !backend.IsAlive(session) {
@@ -342,6 +354,8 @@ func (m *Manager) Reconcile(
 			NativeName: metadata.NativeName,
 			Runtime:    runtimePath,
 			Endpoint:   metadata.Endpoint,
+			ShellName:  metadata.ShellName,
+			ShellPath:  metadata.ShellPath,
 		}
 
 		if backend.IsAlive(session) {
@@ -402,6 +416,8 @@ func (m *Manager) Cleanup(
 		NativeName: metadata.NativeName,
 		Runtime:    runtimePath,
 		Endpoint:   metadata.Endpoint,
+		ShellName:  metadata.ShellName,
+		ShellPath:  metadata.ShellPath,
 	}
 
 	if backend.IsAlive(session) {

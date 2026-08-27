@@ -14,6 +14,8 @@ type Session struct {
 	NativeName string
 	Runtime    string
 	Endpoint   string
+	ShellName  string
+	ShellPath  string
 	Env        []string
 	Options    Options
 }

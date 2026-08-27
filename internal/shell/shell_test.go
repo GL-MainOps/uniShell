@@ -1,11 +1,40 @@
 package shell
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func executable(t *testing.T, dir, name string) string {
+	t.Helper()
+
+	path := filepath.Join(dir, name)
+
+	if err := os.WriteFile(
+		path,
+		[]byte("#!/bin/sh\n"),
+		0700,
+	); err != nil {
+		t.Fatalf("write executable: %v", err)
+	}
+
+	return path
+}
+
+func findEnv(env []string, key string) (string, bool) {
+	prefix := key + "="
+
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return strings.TrimPrefix(entry, prefix), true
+		}
+	}
+
+	return "", false
+}
 
 func TestBuildPATHPrependsRuntimeBin(t *testing.T) {
 	got := buildPATH(
@@ -88,8 +117,14 @@ func TestSetEnvironmentAddsMissingValue(t *testing.T) {
 }
 
 func TestNewCommandBuildsRuntimeEnvironment(t *testing.T) {
+	selected := Shell{
+		Name:   "bash",
+		Path:   "/bin/bash",
+		Source: SourceHost,
+	}
+
 	command, err := NewCommand(
-		"/bin/sh",
+		selected,
 		"/runtime/bin",
 		"/runtime/session",
 	)
@@ -97,39 +132,47 @@ func TestNewCommandBuildsRuntimeEnvironment(t *testing.T) {
 		t.Fatalf("NewCommand() returned error: %v", err)
 	}
 
-	if command.Path != "/bin/sh" {
+	if command.Path != selected.Path {
 		t.Fatalf(
 			"command path = %q, want %q",
 			command.Path,
-			"/bin/sh",
+			selected.Path,
 		)
 	}
 
 	if len(command.Args) != 1 ||
-		command.Args[0] != "/bin/sh" {
+		command.Args[0] != selected.Path {
 		t.Fatalf("unexpected command args: %#v", command.Args)
 	}
 
-	foundPath := false
-	foundRuntime := false
-
-	for _, entry := range command.Env {
-		if entry == "PATH=/runtime/bin:"+os.Getenv("PATH") {
-			foundPath = true
-		}
-
-		if entry == "UNISHELL_SESSION_RUNTIME_DIR=/runtime/session" {
-			foundRuntime = true
-		}
+	shellPath, ok := findEnv(command.Env, "SHELL")
+	if !ok {
+		t.Fatal("SHELL was not configured")
 	}
 
-	if !foundPath {
-		t.Fatal("runtime PATH was not configured")
+	if shellPath != selected.Path {
+		t.Fatalf(
+			"SHELL = %q, want %q",
+			shellPath,
+			selected.Path,
+		)
 	}
 
-	if !foundRuntime {
+	runtimePath, ok := findEnv(
+		command.Env,
+		SessionRuntimeDirEnvName,
+	)
+	if !ok {
 		t.Fatal(
 			"UNISHELL_SESSION_RUNTIME_DIR was not configured",
+		)
+	}
+
+	if runtimePath != "/runtime/session" {
+		t.Fatalf(
+			"session runtime = %q, want %q",
+			runtimePath,
+			"/runtime/session",
 		)
 	}
 }
@@ -170,110 +213,253 @@ func TestIsExecutableRejectsDirectory(t *testing.T) {
 	}
 }
 
-func TestResolveUsesConfiguredShell(t *testing.T) {
-	shellPath := filepath.Join(t.TempDir(), "custom-shell")
+func TestResolveExplicitShell(t *testing.T) {
+	runtimeBin := t.TempDir()
+	bundled := executable(t, runtimeBin, "zsh")
 
-	if err := os.WriteFile(
-		shellPath,
-		[]byte("#!/bin/sh\n"),
-		0700,
-	); err != nil {
-		t.Fatalf("write shell: %v", err)
-	}
+	t.Setenv(ShellEnvName, "fish")
+	t.Setenv("SHELL", "/bin/bash")
 
-	t.Setenv("SHELL", shellPath)
-
-	got, err := Resolve()
+	got, err := Resolve("zsh", runtimeBin)
 	if err != nil {
 		t.Fatalf("Resolve() returned error: %v", err)
 	}
 
-	want, err := filepath.Abs(shellPath)
-	if err != nil {
-		t.Fatalf("resolve test path: %v", err)
+	if got.Name != "zsh" {
+		t.Fatalf(
+			"shell name = %q, want %q",
+			got.Name,
+			"zsh",
+		)
 	}
 
-	if got != want {
+	if got.Path != bundled {
 		t.Fatalf(
-			"Resolve() = %q, want %q",
-			got,
-			want,
+			"shell path = %q, want %q",
+			got.Path,
+			bundled,
+		)
+	}
+
+	if got.Source != SourceBundled {
+		t.Fatalf(
+			"shell source = %q, want %q",
+			got.Source,
+			SourceBundled,
 		)
 	}
 }
 
-func TestResolveUsesConfiguredShellFromPATH(t *testing.T) {
-	dir := t.TempDir()
-	shellPath := filepath.Join(dir, "custom-shell")
+func TestResolveUsesUNISHELLShellBeforeSHELL(t *testing.T) {
+	runtimeBin := t.TempDir()
+	bundled := executable(t, runtimeBin, "fish")
 
-	if err := os.WriteFile(
-		shellPath,
-		[]byte("#!/bin/sh\n"),
-		0700,
-	); err != nil {
-		t.Fatalf("write shell: %v", err)
-	}
+	t.Setenv(ShellEnvName, "fish")
+	t.Setenv("SHELL", "/bin/bash")
 
-	t.Setenv("PATH", dir)
-	t.Setenv("SHELL", "custom-shell")
-
-	got, err := Resolve()
+	got, err := Resolve("", runtimeBin)
 	if err != nil {
 		t.Fatalf("Resolve() returned error: %v", err)
 	}
 
-	if got != shellPath {
+	if got.Name != "fish" {
 		t.Fatalf(
-			"Resolve() = %q, want %q",
-			got,
+			"shell name = %q, want %q",
+			got.Name,
+			"fish",
+		)
+	}
+
+	if got.Path != bundled {
+		t.Fatalf(
+			"shell path = %q, want %q",
+			got.Path,
+			bundled,
+		)
+	}
+
+	if got.Source != SourceBundled {
+		t.Fatalf(
+			"shell source = %q, want %q",
+			got.Source,
+			SourceBundled,
+		)
+	}
+}
+
+func TestResolveUsesSHELLBasename(t *testing.T) {
+	dir := t.TempDir()
+	shellPath := executable(t, dir, "zsh")
+
+	t.Setenv(ShellEnvName, "")
+	t.Setenv("SHELL", shellPath)
+	t.Setenv("PATH", dir)
+
+	got, err := Resolve("", "")
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+
+	if got.Name != "zsh" {
+		t.Fatalf(
+			"shell name = %q, want %q",
+			got.Name,
+			"zsh",
+		)
+	}
+
+	if got.Path != shellPath {
+		t.Fatalf(
+			"shell path = %q, want %q",
+			got.Path,
 			shellPath,
 		)
 	}
-}
 
-func TestResolveFallsBackToAvailableShellFromPATH(t *testing.T) {
-	dir := t.TempDir()
-
-	fallback := filepath.Join(dir, "fish")
-
-	if err := os.WriteFile(
-		fallback,
-		[]byte("#!/bin/sh\n"),
-		0700,
-	); err != nil {
-		t.Fatalf("write fallback shell: %v", err)
-	}
-
-	t.Setenv("SHELL", filepath.Join(dir, "missing-shell"))
-	t.Setenv("PATH", dir)
-
-	got, err := Resolve()
-	if err != nil {
-		t.Fatalf("Resolve() returned error: %v", err)
-	}
-
-	if got != fallback {
+	if got.Source != SourceHost {
 		t.Fatalf(
-			"Resolve() = %q, want %q",
-			got,
-			fallback,
+			"shell source = %q, want %q",
+			got.Source,
+			SourceHost,
 		)
 	}
 }
 
-func TestResolveRejectsUnavailableConfiguredShell(
-	t *testing.T,
-) {
-	t.Setenv(
-		"SHELL",
-		filepath.Join(t.TempDir(), "missing-shell"),
-	)
+func TestResolveFallsBackToBashWhenNoShellConfigured(t *testing.T) {
+	t.Setenv(ShellEnvName, "")
+	t.Setenv("SHELL", "")
 
+	got, err := Resolve("", "")
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+
+	if got.Name != "bash" {
+		t.Fatalf(
+			"shell name = %q, want %q",
+			got.Name,
+			"bash",
+		)
+	}
+
+	if got.Source != SourceHost {
+		t.Fatalf(
+			"shell source = %q, want %q",
+			got.Source,
+			SourceHost,
+		)
+	}
+}
+
+func TestResolvePrefersBundledNonBashShell(t *testing.T) {
+	runtimeBin := t.TempDir()
+	bundled := executable(t, runtimeBin, "zsh")
+
+	hostDir := t.TempDir()
+	host := executable(t, hostDir, "zsh")
+
+	t.Setenv("PATH", hostDir)
+
+	got, err := Resolve("zsh", runtimeBin)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+
+	if got.Path != bundled {
+		t.Fatalf(
+			"shell path = %q, want bundled %q",
+			got.Path,
+			bundled,
+		)
+	}
+
+	if got.Source != SourceBundled {
+		t.Fatalf(
+			"shell source = %q, want %q",
+			got.Source,
+			SourceBundled,
+		)
+	}
+
+	_ = host
+}
+
+func TestResolveFallsBackToHostForNonBashShell(t *testing.T) {
+	runtimeBin := t.TempDir()
+	hostDir := t.TempDir()
+	host := executable(t, hostDir, "fish")
+
+	t.Setenv("PATH", hostDir)
+
+	got, err := Resolve("fish", runtimeBin)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+
+	if got.Path != host {
+		t.Fatalf(
+			"shell path = %q, want %q",
+			got.Path,
+			host,
+		)
+	}
+
+	if got.Source != SourceHost {
+		t.Fatalf(
+			"shell source = %q, want %q",
+			got.Source,
+			SourceHost,
+		)
+	}
+}
+
+func TestResolveBashUsesHostPATH(t *testing.T) {
+	runtimeBin := t.TempDir()
+	hostDir := t.TempDir()
+	host := executable(t, hostDir, "bash")
+
+	t.Setenv("PATH", hostDir)
+
+	got, err := Resolve("bash", runtimeBin)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+
+	if got.Path != host {
+		t.Fatalf(
+			"shell path = %q, want %q",
+			got.Path,
+			host,
+		)
+	}
+
+	if got.Source != SourceHost {
+		t.Fatalf(
+			"shell source = %q, want %q",
+			got.Source,
+			SourceHost,
+		)
+	}
+}
+
+func TestResolveRejectsUnsupportedExplicitShell(t *testing.T) {
+	_, err := Resolve("ksh", t.TempDir())
+
+	if !errors.Is(err, ErrShellUnsupported) {
+		t.Fatalf(
+			"Resolve() error = %v, want %v",
+			err,
+			ErrShellUnsupported,
+		)
+	}
+}
+
+func TestResolveRejectsUnavailableShell(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 
-	_, err := Resolve()
+	_, err := Resolve("fish", t.TempDir())
 
-	if err != ErrShellUnavailable {
+	if !errors.Is(err, ErrShellUnavailable) {
 		t.Fatalf(
 			"Resolve() error = %v, want %v",
 			err,
@@ -283,15 +469,7 @@ func TestResolveRejectsUnavailableConfiguredShell(
 }
 
 func TestResolveExecutableUsesAbsolutePath(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "shell")
-
-	if err := os.WriteFile(
-		path,
-		[]byte("#!/bin/sh\n"),
-		0700,
-	); err != nil {
-		t.Fatalf("write executable: %v", err)
-	}
+	path := executable(t, t.TempDir(), "shell")
 
 	got, ok := resolveExecutable(path)
 
@@ -315,15 +493,7 @@ func TestResolveExecutableUsesAbsolutePath(t *testing.T) {
 
 func TestResolveExecutableUsesPATH(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "shell")
-
-	if err := os.WriteFile(
-		path,
-		[]byte("#!/bin/sh\n"),
-		0700,
-	); err != nil {
-		t.Fatalf("write executable: %v", err)
-	}
+	path := executable(t, dir, "shell")
 
 	t.Setenv("PATH", dir)
 
@@ -344,6 +514,7 @@ func TestResolveExecutableUsesPATH(t *testing.T) {
 
 func TestNewEnvironmentIncludesRuntimePath(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv(ShellEnvName, "bash")
 
 	env, err := NewEnvironment(
 		"/runtime/bin",
@@ -356,23 +527,25 @@ func TestNewEnvironmentIncludesRuntimePath(t *testing.T) {
 		)
 	}
 
-	found := false
-
-	for _, entry := range env {
-		if entry == "PATH=/runtime/bin:/usr/bin:/bin" {
-			found = true
-			break
-		}
+	path, ok := findEnv(env, "PATH")
+	if !ok {
+		t.Fatal("PATH was not included")
 	}
 
-	if !found {
-		t.Fatal(
-			"runtime PATH was not included in environment",
+	want := "/runtime/bin:/usr/bin:/bin"
+
+	if path != want {
+		t.Fatalf(
+			"PATH = %q, want %q",
+			path,
+			want,
 		)
 	}
 }
 
 func TestNewEnvironmentIncludesSessionRuntimeDirectory(t *testing.T) {
+	t.Setenv(ShellEnvName, "bash")
+
 	env, err := NewEnvironment(
 		"/runtime/bin",
 		"/runtime/session",
@@ -384,18 +557,23 @@ func TestNewEnvironmentIncludesSessionRuntimeDirectory(t *testing.T) {
 		)
 	}
 
-	want := "UNISHELL_SESSION_RUNTIME_DIR=/runtime/session"
-
-	for _, entry := range env {
-		if entry == want {
-			return
-		}
+	runtimePath, ok := findEnv(
+		env,
+		SessionRuntimeDirEnvName,
+	)
+	if !ok {
+		t.Fatal(
+			"UNISHELL_SESSION_RUNTIME_DIR was not included",
+		)
 	}
 
-	t.Fatalf(
-		"session runtime environment variable %q was not found",
-		want,
-	)
+	if runtimePath != "/runtime/session" {
+		t.Fatalf(
+			"session runtime = %q, want %q",
+			runtimePath,
+			"/runtime/session",
+		)
+	}
 }
 
 func TestNewEnvironmentRejectsEmptyRuntimeBin(t *testing.T) {
@@ -420,92 +598,64 @@ func TestNewEnvironmentRejectsEmptySessionRuntime(t *testing.T) {
 	}
 }
 
-func TestNewEnvironmentSetsResolvedShell(t *testing.T) {
-	shellPath := filepath.Join(t.TempDir(), "shell")
-
-	if err := os.WriteFile(
-		shellPath,
-		[]byte("#!/bin/sh\n"),
-		0700,
-	); err != nil {
-		t.Fatalf("write shell: %v", err)
+func TestNewEnvironmentForShellSetsResolvedShell(t *testing.T) {
+	selected := Shell{
+		Name:   "zsh",
+		Path:   "/runtime/bin/zsh",
+		Source: SourceBundled,
 	}
 
-	t.Setenv("SHELL", shellPath)
-
-	env, err := NewEnvironment(
+	env, err := NewEnvironmentForShell(
 		"/runtime/bin",
 		"/runtime/session",
+		selected,
 	)
 	if err != nil {
 		t.Fatalf(
-			"NewEnvironment() returned error: %v",
+			"NewEnvironmentForShell() returned error: %v",
 			err,
 		)
 	}
 
-	found := false
-
-	for _, entry := range env {
-		if entry == "SHELL="+shellPath {
-			found = true
-			break
-		}
+	shellPath, ok := findEnv(env, "SHELL")
+	if !ok {
+		t.Fatal("SHELL was not included")
 	}
 
-	if !found {
+	if shellPath != selected.Path {
 		t.Fatalf(
-			"resolved SHELL was not included in environment",
+			"SHELL = %q, want %q",
+			shellPath,
+			selected.Path,
 		)
 	}
 }
 
-func TestNewEnvironmentFallsBackWhenConfiguredShellIsUnavailable(
-	t *testing.T,
-) {
-	shellPath := filepath.Join(
-		t.TempDir(),
-		"missing-shell",
-	)
-
-	t.Setenv("SHELL", shellPath)
-
-	env, err := NewEnvironment(
+func TestNewEnvironmentForShellRejectsIncompleteShell(t *testing.T) {
+	_, err := NewEnvironmentForShell(
 		"/runtime/bin",
 		"/runtime/session",
+		Shell{
+			Name: "zsh",
+		},
 	)
-	if err != nil {
-		t.Fatalf(
-			"NewEnvironment() returned error: %v",
-			err,
+
+	if err == nil {
+		t.Fatal(
+			"NewEnvironmentForShell() returned nil error",
 		)
-	}
-
-	found := false
-
-	for _, entry := range env {
-		if strings.HasPrefix(entry, "SHELL=") {
-			found = true
-
-			if entry == "SHELL="+shellPath {
-				t.Fatalf(
-					"unavailable configured shell was retained: %q",
-					entry,
-				)
-			}
-
-			break
-		}
-	}
-
-	if !found {
-		t.Fatal("NewEnvironment() did not include SHELL")
 	}
 }
 
 func TestNewCommandSetsShellEnvironment(t *testing.T) {
+	selected := Shell{
+		Name:   "bash",
+		Path:   "/bin/bash",
+		Source: SourceHost,
+	}
+
 	command, err := NewCommand(
-		"/bin/bash",
+		selected,
 		"/runtime/bin",
 		"/runtime/session",
 	)
@@ -516,16 +666,28 @@ func TestNewCommandSetsShellEnvironment(t *testing.T) {
 		)
 	}
 
-	found := false
-
-	for _, entry := range command.Env {
-		if entry == "SHELL=/bin/bash" {
-			found = true
-			break
-		}
+	shellPath, ok := findEnv(command.Env, "SHELL")
+	if !ok {
+		t.Fatal("SHELL was not configured")
 	}
 
-	if !found {
-		t.Fatal("SHELL was not configured")
+	if shellPath != selected.Path {
+		t.Fatalf(
+			"SHELL = %q, want %q",
+			shellPath,
+			selected.Path,
+		)
+	}
+}
+
+func TestNewCommandRejectsEmptyShellPath(t *testing.T) {
+	_, err := NewCommand(
+		Shell{Name: "bash"},
+		"/runtime/bin",
+		"/runtime/session",
+	)
+
+	if err == nil {
+		t.Fatal("NewCommand() returned nil error")
 	}
 }

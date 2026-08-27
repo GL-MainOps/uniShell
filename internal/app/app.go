@@ -25,6 +25,7 @@ type Options struct {
 	SessionName            string
 	MultiplexerSessionName string
 	MultiplexerOptions     api.Options
+	Shell                  string
 }
 
 type App struct {
@@ -38,6 +39,7 @@ type App struct {
 	SessionName            string
 	MultiplexerSessionName string
 	MultiplexerOptions     api.Options
+	Shell                  string
 }
 
 func New(options Options) (*App, error) {
@@ -114,6 +116,7 @@ func New(options Options) (*App, error) {
 		SessionName:            sessionName,
 		MultiplexerSessionName: options.MultiplexerSessionName,
 		MultiplexerOptions:     multiplexerOptions,
+		Shell:                  options.Shell,
 	}, nil
 }
 
@@ -258,6 +261,19 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		)
 	}
 
+	selectedShell, err := shell.Resolve(
+		a.Shell,
+		runtimeSession.Paths.Bin,
+	)
+	if err != nil {
+		return cleanupRuntime(
+			fmt.Errorf(
+				"resolve shell: %w",
+				err,
+			),
+		)
+	}
+
 	multiplexerRuntime := filepath.Join(
 		runtimeSession.Paths.Runtime,
 		"multiplexer",
@@ -280,9 +296,10 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		a.MultiplexerName+".sock",
 	)
 
-	environment, err := shell.NewEnvironment(
+	environment, err := shell.NewEnvironmentForShell(
 		runtimeSession.Paths.Bin,
 		runtimeSession.Paths.Runtime,
+		selectedShell,
 	)
 	if err != nil {
 		return cleanupRuntime(
@@ -299,6 +316,8 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		a.MultiplexerSessionName,
 		runtimeSession.Paths.Runtime,
 		endpoint,
+		selectedShell.Name,
+		selectedShell.Path,
 		environment,
 		a.MultiplexerOptions,
 	)

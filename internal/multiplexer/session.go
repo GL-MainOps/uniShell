@@ -16,6 +16,8 @@ type Metadata struct {
 	NativeName  string    `json:"native_name,omitempty"`
 	Multiplexer string    `json:"multiplexer"`
 	Endpoint    string    `json:"endpoint,omitempty"`
+	ShellName   string    `json:"shell_name,omitempty"`
+	ShellPath   string    `json:"shell_path,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 

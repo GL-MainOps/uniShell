@@ -17,11 +17,21 @@ var (
 	commit  = "unknown"
 )
 
+type commandOptions struct {
+	Shell string
+}
+
 func main() {
 	runtimeDir := flag.String(
 		"runtime-dir",
 		"",
 		"uniShell runtime directory",
+	)
+
+	shellName := flag.String(
+		"shell",
+		"",
+		"shell to use",
 	)
 
 	flag.Parse()
@@ -30,13 +40,17 @@ func main() {
 		Version: version,
 		Commit:  commit,
 		Root:    *runtimeDir,
+		Shell:   *shellName,
 	})
 	if err != nil {
 		printError(err)
 		os.Exit(1)
 	}
 
-	if err := run(application, flag.Args()); err != nil {
+	if err := run(
+		application,
+		flag.Args(),
+	); err != nil {
 		printError(err)
 		os.Exit(1)
 	}

@@ -9,9 +9,28 @@ import (
 	"strings"
 )
 
-const sessionRuntimeDirEnvName = "UNISHELL_SESSION_RUNTIME_DIR"
+const (
+	SessionRuntimeDirEnvName = "UNISHELL_SESSION_RUNTIME_DIR"
+	ShellEnvName             = "UNISHELL_SHELL"
+)
 
-var ErrShellUnavailable = errors.New("shell is unavailable")
+var (
+	ErrShellUnavailable = errors.New("shell is unavailable")
+	ErrShellUnsupported = errors.New("shell is unsupported")
+)
+
+type Shell struct {
+	Name   string
+	Path   string
+	Source Source
+}
+
+type Source string
+
+const (
+	SourceBundled Source = "bundled"
+	SourceHost    Source = "host"
+)
 
 type Command struct {
 	Path string
@@ -19,27 +38,69 @@ type Command struct {
 	Env  []string
 }
 
-func Resolve() (string, error) {
-	if configured := os.Getenv("SHELL"); configured != "" {
-		if path, ok := resolveExecutable(configured); ok {
-			return path, nil
-		}
+var supportedShells = []string{
+	"bash",
+	"zsh",
+	"fish",
+	"nushell",
+}
+
+func SupportedShells() []string {
+	return append([]string(nil), supportedShells...)
+}
+
+// Resolve selects the shell according to:
+//
+//  1. explicit shell name
+//  2. UNISHELL_SHELL
+//  3. $SHELL basename
+//  4. bash
+//
+// Shell executable resolution is separate:
+//
+//   - bash: host PATH
+//   - zsh/fish/nushell: bundled runtime binary, then host PATH
+func Resolve(explicit, runtimeBin string) (Shell, error) {
+	requested, explicitRequest := requestedShell(explicit)
+
+	if requested == "" {
+		requested = "bash"
 	}
 
-	for _, candidate := range []string{
-		"sh",
-		"bash",
-		"zsh",
-		"fish",
-		"ksh",
-		"dash",
-	} {
-		if path, ok := resolveExecutable(candidate); ok {
-			return path, nil
+	if !isSupported(requested) {
+		if explicitRequest {
+			return Shell{}, fmt.Errorf(
+				"%w: %q",
+				ErrShellUnsupported,
+				requested,
+			)
 		}
+
+		return Shell{}, fmt.Errorf(
+			"%w: %q",
+			ErrShellUnsupported,
+			requested,
+		)
 	}
 
-	return "", ErrShellUnavailable
+	path, source, ok := resolveShell(requested, runtimeBin)
+	if !ok {
+		return Shell{}, fmt.Errorf(
+			"%w: %q",
+			ErrShellUnavailable,
+			requested,
+		)
+	}
+
+	return Shell{
+		Name:   requested,
+		Path:   path,
+		Source: source,
+	}, nil
+}
+
+func ResolveFromEnvironment(runtimeBin string) (Shell, error) {
+	return Resolve("", runtimeBin)
 }
 
 func NewEnvironment(
@@ -58,9 +119,39 @@ func NewEnvironment(
 		)
 	}
 
-	shellPath, err := Resolve()
+	selected, err := ResolveFromEnvironment(runtimeBin)
 	if err != nil {
 		return nil, err
+	}
+
+	return NewEnvironmentForShell(
+		runtimeBin,
+		sessionRuntime,
+		selected,
+	)
+}
+
+func NewEnvironmentForShell(
+	runtimeBin string,
+	sessionRuntime string,
+	selected Shell,
+) ([]string, error) {
+	if runtimeBin == "" {
+		return nil, errors.New(
+			"runtime bin path cannot be empty",
+		)
+	}
+
+	if sessionRuntime == "" {
+		return nil, errors.New(
+			"session runtime path cannot be empty",
+		)
+	}
+
+	if selected.Name == "" || selected.Path == "" {
+		return nil, errors.New(
+			"selected shell is incomplete",
+		)
 	}
 
 	path := buildPATH(
@@ -79,12 +170,12 @@ func NewEnvironment(
 	env = setEnvironment(
 		env,
 		"SHELL",
-		shellPath,
+		selected.Path,
 	)
 
 	env = setEnvironment(
 		env,
-		sessionRuntimeDirEnvName,
+		SessionRuntimeDirEnvName,
 		sessionRuntime,
 	)
 
@@ -92,33 +183,28 @@ func NewEnvironment(
 }
 
 func NewCommand(
-	shellPath string,
+	selected Shell,
 	runtimeBin string,
 	sessionRuntime string,
 ) (Command, error) {
-	if shellPath == "" {
+	if selected.Path == "" {
 		return Command{}, errors.New(
 			"shell path cannot be empty",
 		)
 	}
 
-	env, err := NewEnvironment(
+	env, err := NewEnvironmentForShell(
 		runtimeBin,
 		sessionRuntime,
+		selected,
 	)
 	if err != nil {
 		return Command{}, err
 	}
 
-	env = setEnvironment(
-		env,
-		"SHELL",
-		shellPath,
-	)
-
 	return Command{
-		Path: shellPath,
-		Args: []string{shellPath},
+		Path: selected.Path,
+		Args: []string{selected.Path},
 		Env:  env,
 	}, nil
 }
@@ -135,6 +221,64 @@ func (c Command) Run() error {
 	}
 
 	return nil
+}
+
+func requestedShell(explicit string) (string, bool) {
+	if explicit != "" {
+		return normalizeShellName(explicit), true
+	}
+
+	if configured := strings.TrimSpace(
+		os.Getenv(ShellEnvName),
+	); configured != "" {
+		return normalizeShellName(configured), true
+	}
+
+	if configured := strings.TrimSpace(
+		os.Getenv("SHELL"),
+	); configured != "" {
+		return normalizeShellName(configured), false
+	}
+
+	return "bash", false
+}
+
+func normalizeShellName(value string) string {
+	return strings.ToLower(
+		filepath.Base(
+			strings.TrimSpace(value),
+		),
+	)
+}
+
+func isSupported(name string) bool {
+	for _, candidate := range supportedShells {
+		if candidate == name {
+			return true
+		}
+	}
+
+	return false
+}
+
+func resolveShell(
+	name string,
+	runtimeBin string,
+) (string, Source, bool) {
+	if name != "bash" && runtimeBin != "" {
+		bundled := filepath.Join(runtimeBin, name)
+
+		if isExecutable(bundled) {
+			return bundled, SourceBundled, true
+		}
+	}
+
+	host, err := exec.LookPath(name)
+	if err != nil {
+		return "", "", false
+	}
+
+	return host, SourceHost, true
 }
 
 func buildPATH(runtimeBin, existing string) string {
