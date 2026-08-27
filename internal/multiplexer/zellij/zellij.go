@@ -14,11 +14,18 @@ type CommandRunner func(
 	name string,
 	args []string,
 	env []string,
+) error
+
+type QuietCommandRunner func(
+	name string,
+	args []string,
+	env []string,
 ) ([]byte, error)
 
 type Backend struct {
 	Binary         string
 	Run            CommandRunner
+	RunQuiet       QuietCommandRunner
 	ConfigResolver *config.Resolver
 }
 
@@ -30,11 +37,21 @@ func New() *Backend {
 			name string,
 			args []string,
 			env []string,
-		) ([]byte, error) {
+		) error {
 			cmd := exec.Command(name, args...)
 			cmd.Stdin = os.Stdin
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
+			cmd.Env = env
+
+			return cmd.Run()
+		},
+		RunQuiet: func(
+			name string,
+			args []string,
+			env []string,
+		) ([]byte, error) {
+			cmd := exec.Command(name, args...)
 			cmd.Env = env
 
 			return cmd.Output()
@@ -107,13 +124,11 @@ func (b *Backend) Create(session api.Session) error {
 		)
 	}
 
-	_, err = b.Run(
+	return b.Run(
 		b.Binary,
 		args,
 		session.Env,
 	)
-
-	return err
 }
 
 func (b *Backend) Attach(session api.Session) error {
@@ -126,17 +141,15 @@ func (b *Backend) Attach(session api.Session) error {
 		)
 	}
 
-	_, err := b.Run(
+	return b.Run(
 		b.Binary,
 		args,
 		nil,
 	)
-
-	return err
 }
 
 func (b *Backend) Detach(session api.Session) error {
-	_, err := b.Run(
+	return b.Run(
 		b.Binary,
 		[]string{
 			"action",
@@ -144,12 +157,24 @@ func (b *Backend) Detach(session api.Session) error {
 		},
 		nil,
 	)
-
-	return err
 }
 
 func (b *Backend) IsAlive(session api.Session) bool {
-	output, err := b.Run(
+	runner := b.RunQuiet
+	if runner == nil {
+		runner = func(
+			name string,
+			args []string,
+			env []string,
+		) ([]byte, error) {
+			cmd := exec.Command(name, args...)
+			cmd.Env = env
+
+			return cmd.Output()
+		}
+	}
+
+	output, err := runner(
 		b.Binary,
 		[]string{"list-sessions"},
 		nil,
@@ -184,13 +209,11 @@ func (b *Backend) Destroy(session api.Session) error {
 		)
 	}
 
-	_, err := b.Run(
+	return b.Run(
 		b.Binary,
 		args,
 		nil,
 	)
-
-	return err
 }
 
 func validateCreateArgs(args []string) error {

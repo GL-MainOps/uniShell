@@ -21,10 +21,10 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 			_ string,
 			args []string,
 			env []string,
-		) ([]byte, error) {
+		) error {
 			gotArgs = append([]string(nil), args...)
 			gotEnv = append([]string(nil), env...)
-			return nil, nil
+			return nil
 		},
 	}
 
@@ -76,10 +76,10 @@ func TestCreateWithoutSessionNameUsesNativeDefault(t *testing.T) {
 			_ string,
 			args []string,
 			env []string,
-		) ([]byte, error) {
+		) error {
 			gotArgs = append([]string(nil), args...)
 			gotEnv = append([]string(nil), env...)
-			return nil, nil
+			return nil
 		},
 	}
 
@@ -128,10 +128,10 @@ func TestAttachUsesSessionName(t *testing.T) {
 			_ string,
 			args []string,
 			env []string,
-		) ([]byte, error) {
+		) error {
 			gotArgs = append([]string(nil), args...)
 			gotEnv = append([]string(nil), env...)
-			return nil, nil
+			return nil
 		},
 	}
 
@@ -178,10 +178,10 @@ func TestDetachDoesNotUseSessionEnvironment(t *testing.T) {
 			_ string,
 			args []string,
 			env []string,
-		) ([]byte, error) {
+		) error {
 			gotArgs = append([]string(nil), args...)
 			gotEnv = append([]string(nil), env...)
-			return nil, nil
+			return nil
 		},
 	}
 
@@ -216,14 +216,26 @@ func TestDetachDoesNotUseSessionEnvironment(t *testing.T) {
 	}
 }
 
-func TestIsAliveUsesSessionName(t *testing.T) {
+func TestIsAliveUsesQuietRunner(t *testing.T) {
+	called := false
+
 	backend := &Backend{
 		Binary: "fake-zellij",
 		Run: func(
 			_ string,
+			_ []string,
+			_ []string,
+		) error {
+			t.Fatal("Run() must not be called by IsAlive()")
+			return nil
+		},
+		RunQuiet: func(
+			_ string,
 			args []string,
 			_ []string,
 		) ([]byte, error) {
+			called = true
+
 			want := []string{"list-sessions"}
 
 			if !reflect.DeepEqual(args, want) {
@@ -243,12 +255,16 @@ func TestIsAliveUsesSessionName(t *testing.T) {
 	}) {
 		t.Fatal("IsAlive() = false, want true")
 	}
+
+	if !called {
+		t.Fatal("RunQuiet() was not called")
+	}
 }
 
 func TestIsAliveRejectsMissingSession(t *testing.T) {
 	backend := &Backend{
 		Binary: "fake-zellij",
-		Run: func(
+		RunQuiet: func(
 			_ string,
 			_ []string,
 			_ []string,
@@ -267,7 +283,7 @@ func TestIsAliveRejectsMissingSession(t *testing.T) {
 func TestIsAliveWithoutSessionNameDetectsAnySession(t *testing.T) {
 	backend := &Backend{
 		Binary: "fake-zellij",
-		Run: func(
+		RunQuiet: func(
 			_ string,
 			_ []string,
 			_ []string,
@@ -293,10 +309,10 @@ func TestDestroyUsesSessionName(t *testing.T) {
 			_ string,
 			args []string,
 			env []string,
-		) ([]byte, error) {
+		) error {
 			gotArgs = append([]string(nil), args...)
 			gotEnv = append([]string(nil), env...)
-			return nil, nil
+			return nil
 		},
 	}
 
@@ -340,9 +356,9 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 			_ string,
 			args []string,
 			_ []string,
-		) ([]byte, error) {
+		) error {
 			gotArgs = append([]string(nil), args...)
-			return nil, nil
+			return nil
 		},
 	}
 
@@ -409,9 +425,9 @@ func TestCreateUsesBundledConfig(t *testing.T) {
 			_ string,
 			args []string,
 			_ []string,
-		) ([]byte, error) {
+		) error {
 			got = append([]string(nil), args...)
-			return nil, nil
+			return nil
 		},
 	}
 
@@ -460,9 +476,9 @@ func TestCreateRejectsLifecycleOptions(t *testing.T) {
 					_ string,
 					_ []string,
 					_ []string,
-				) ([]byte, error) {
+				) error {
 					t.Fatal("Run() must not be called")
-					return nil, nil
+					return nil
 				},
 			}
 
