@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 
@@ -17,40 +16,25 @@ var (
 	commit  = "unknown"
 )
 
-type commandOptions struct {
-	Shell string
-}
-
 func main() {
-	runtimeDir := flag.String(
-		"runtime-dir",
-		"",
-		"uniShell runtime directory",
-	)
-
-	shellName := flag.String(
-		"shell",
-		"",
-		"shell to use",
-	)
-
-	flag.Parse()
+	options, args, err := parseCLIArgs(os.Args[1:])
+	if err != nil {
+		printError(err)
+		os.Exit(1)
+	}
 
 	application, err := app.New(app.Options{
 		Version: version,
 		Commit:  commit,
-		Root:    *runtimeDir,
-		Shell:   *shellName,
+		Root:    options.RuntimeDir,
+		Shell:   options.Shell,
 	})
 	if err != nil {
 		printError(err)
 		os.Exit(1)
 	}
 
-	if err := run(
-		application,
-		flag.Args(),
-	); err != nil {
+	if err := run(application, args); err != nil {
 		printError(err)
 		os.Exit(1)
 	}
@@ -116,7 +100,10 @@ func run(application *app.App, args []string) error {
 		return nil
 
 	default:
-		return fmt.Errorf("unknown command %q; use 'help' for usage", command)
+		return fmt.Errorf(
+			"unknown command %q; use 'help' for usage",
+			command,
+		)
 	}
 }
 
@@ -252,7 +239,7 @@ func printHelp() {
 	fmt.Println(`uniShell - portable Linux shell environment
 
 Usage:
-  unishell [command]
+  unishell [command] [options]
 
 Commands:
   shell       Start or attach to the uniShell environment
@@ -262,5 +249,11 @@ Commands:
   detach      Detach from the uniShell multiplexer session
   doctor      Diagnose the uniShell environment
   version     Display version information
-  help        Display this help message`)
+  help        Display this help message
+
+Options:
+  --shell NAME
+              Select the shell to use
+  --runtime-dir PATH
+              Select the uniShell runtime directory`)
 }
