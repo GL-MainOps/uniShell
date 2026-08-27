@@ -2,7 +2,10 @@ package app
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 )
@@ -13,6 +16,7 @@ type sessionTestBackend struct {
 	destroyed  bool
 	attached   bool
 	detached   bool
+	alive      bool
 }
 
 func (b *sessionTestBackend) Name() string {
@@ -47,12 +51,69 @@ func (b *sessionTestBackend) Detach(multiplexer.Session) error {
 }
 
 func (b *sessionTestBackend) IsAlive(multiplexer.Session) bool {
-	return true
+	return b.alive
 }
 
 func (b *sessionTestBackend) Destroy(multiplexer.Session) error {
 	b.destroyed = true
 	return b.destroyErr
+}
+
+func newManagedTestSession(
+	t *testing.T,
+	backend *sessionTestBackend,
+) (*Session, string) {
+	t.Helper()
+
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	if err := multiplexer.WriteMetadata(
+		runtimePath,
+		multiplexer.Metadata{
+			ID:          "test-session",
+			Name:        "default",
+			Multiplexer: "test",
+			Endpoint: filepath.Join(
+				runtimePath,
+				"multiplexer",
+				"test.sock",
+			),
+			CreatedAt: time.Now().UTC(),
+		},
+	); err != nil {
+		t.Fatalf(
+			"WriteMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	return &Session{
+		Multiplexer: &multiplexer.ManagedSession{
+			Metadata: multiplexer.Metadata{
+				ID:          "test-session",
+				Name:        "default",
+				Multiplexer: "test",
+				Endpoint: filepath.Join(
+					runtimePath,
+					"multiplexer",
+					"test.sock",
+				),
+			},
+			Backend: backend,
+			Session: multiplexer.Session{
+				Name: "default",
+				Endpoint: filepath.Join(
+					runtimePath,
+					"multiplexer",
+					"test.sock",
+				),
+				Runtime: runtimePath,
+			},
+		},
+	}, runtimePath
 }
 
 func TestSessionCleanupDestroysMultiplexer(t *testing.T) {
@@ -126,7 +187,9 @@ func TestSessionCleanupContinuesRuntimeCleanupAfterMultiplexerFailure(
 }
 
 func TestSessionAttachCallsMultiplexer(t *testing.T) {
-	backend := &sessionTestBackend{}
+	backend := &sessionTestBackend{
+		alive: true,
+	}
 
 	session := &Session{
 		Multiplexer: &multiplexer.ManagedSession{
@@ -148,8 +211,83 @@ func TestSessionAttachCallsMultiplexer(t *testing.T) {
 	}
 }
 
+func TestSessionAttachPreservesLiveRuntime(t *testing.T) {
+	backend := &sessionTestBackend{
+		alive: true,
+	}
+
+	session, runtimePath := newManagedTestSession(
+		t,
+		backend,
+	)
+
+	if err := session.Attach(); err != nil {
+		t.Fatalf(
+			"Attach() returned error: %v",
+			err,
+		)
+	}
+
+	if !backend.attached {
+		t.Fatal("Attach() did not call multiplexer backend")
+	}
+
+	if backend.destroyed {
+		t.Fatal(
+			"Attach() destroyed a live multiplexer session",
+		)
+	}
+
+	if _, err := os.Stat(runtimePath); err != nil {
+		t.Fatalf(
+			"live multiplexer runtime was removed: %v",
+			err,
+		)
+	}
+}
+
+func TestSessionAttachCleansExitedRuntime(t *testing.T) {
+	backend := &sessionTestBackend{
+		alive: false,
+	}
+
+	session, runtimePath := newManagedTestSession(
+		t,
+		backend,
+	)
+
+	if err := session.Attach(); err != nil {
+		t.Fatalf(
+			"Attach() returned error: %v",
+			err,
+		)
+	}
+
+	if !backend.attached {
+		t.Fatal("Attach() did not call multiplexer backend")
+	}
+
+	if backend.destroyed {
+		t.Fatal(
+			"Attach() destroyed an already exited multiplexer session",
+		)
+	}
+
+	if _, err := os.Stat(runtimePath); !errors.Is(
+		err,
+		os.ErrNotExist,
+	) {
+		t.Fatalf(
+			"exited multiplexer runtime still exists, stat error = %v",
+			err,
+		)
+	}
+}
+
 func TestSessionDetachCallsMultiplexer(t *testing.T) {
-	backend := &sessionTestBackend{}
+	backend := &sessionTestBackend{
+		alive: true,
+	}
 
 	session := &Session{
 		Multiplexer: &multiplexer.ManagedSession{
@@ -180,6 +318,7 @@ func TestSessionDetachReturnsMultiplexerError(t *testing.T) {
 
 	backend := &sessionTestBackend{
 		detachErr: wantErr,
+		alive:     true,
 	}
 
 	session := &Session{

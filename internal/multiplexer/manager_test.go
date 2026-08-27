@@ -1204,3 +1204,236 @@ func TestManagerAttachPreservesShell(t *testing.T) {
 		)
 	}
 }
+
+func TestManagerReconcileSessionPreservesLiveSession(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+		"",
+		"",
+		nil,
+		api.Options{},
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(runtimePath, "payload"),
+		[]byte("runtime"),
+		0600,
+	); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+
+	if err := manager.ReconcileSession(runtimePath); err != nil {
+		t.Fatalf(
+			"ReconcileSession() returned error: %v",
+			err,
+		)
+	}
+
+	if _, err := os.Stat(runtimePath); err != nil {
+		t.Fatalf(
+			"live session runtime was removed: %v",
+			err,
+		)
+	}
+
+	if backend.destroyed {
+		t.Fatal(
+			"ReconcileSession() destroyed live session",
+		)
+	}
+}
+
+func TestManagerReconcileSessionRemovesExitedSession(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+		"",
+		"",
+		nil,
+		api.Options{},
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	// Simulate the user exiting the multiplexer session.
+	backend.alive = false
+
+	if err := manager.ReconcileSession(runtimePath); err != nil {
+		t.Fatalf(
+			"ReconcileSession() returned error: %v",
+			err,
+		)
+	}
+
+	if _, err := os.Stat(runtimePath); !errors.Is(
+		err,
+		os.ErrNotExist,
+	) {
+		t.Fatalf(
+			"exited session runtime still exists, stat error = %v",
+			err,
+		)
+	}
+
+	if backend.destroyed {
+		t.Fatal(
+			"ReconcileSession() destroyed an already exited session",
+		)
+	}
+}
+
+func TestManagerReconcileSessionPreservesRuntimeWhenBackendUnavailable(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+		"",
+		"",
+		nil,
+		api.Options{},
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	backend.available = false
+
+	err := manager.ReconcileSession(runtimePath)
+
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf(
+			"ReconcileSession() error = %v, want %v",
+			err,
+			ErrUnavailable,
+		)
+	}
+
+	if _, err := os.Stat(runtimePath); err != nil {
+		t.Fatalf(
+			"runtime was removed while backend was unavailable: %v",
+			err,
+		)
+	}
+
+	if backend.destroyed {
+		t.Fatal(
+			"ReconcileSession() destroyed session while backend was unavailable",
+		)
+	}
+}
+
+func TestManagerReconcileSessionIsIdempotent(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+		"",
+		"",
+		nil,
+		api.Options{},
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	backend.alive = false
+
+	if err := manager.ReconcileSession(runtimePath); err != nil {
+		t.Fatalf(
+			"first ReconcileSession() returned error: %v",
+			err,
+		)
+	}
+
+	if err := manager.ReconcileSession(runtimePath); err != nil {
+		t.Fatalf(
+			"second ReconcileSession() returned error: %v",
+			err,
+		)
+	}
+
+	if _, err := os.Stat(runtimePath); !errors.Is(
+		err,
+		os.ErrNotExist,
+	) {
+		t.Fatalf(
+			"runtime still exists after repeated reconciliation, stat error = %v",
+			err,
+		)
+	}
+}

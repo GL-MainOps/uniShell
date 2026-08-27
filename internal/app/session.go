@@ -37,6 +37,22 @@ func (s *Session) Attach() error {
 		)
 	}
 
+	runtimePath := s.Multiplexer.Session.Runtime
+	if runtimePath == "" {
+		return nil
+	}
+
+	manager := multiplexer.NewManager(
+		multiplexer.NewRegistry(s.Multiplexer.Backend),
+	)
+
+	if err := manager.ReconcileSession(runtimePath); err != nil {
+		return fmt.Errorf(
+			"reconcile multiplexer session after attach: %w",
+			err,
+		)
+	}
+
 	return nil
 }
 
