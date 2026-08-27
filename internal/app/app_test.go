@@ -32,6 +32,26 @@ func TestNewUsesDefaultRuntimeRoot(t *testing.T) {
 	}
 }
 
+func TestNewDefaultsToNoMultiplexer(t *testing.T) {
+	t.Setenv("UNISHELL_RUNTIME_DIR", "")
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
+
+	application, err := New(Options{
+		Version: "1.0.0",
+		Commit:  "test",
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	if application.MultiplexerName != "" {
+		t.Fatalf(
+			"multiplexer name = %q, want empty",
+			application.MultiplexerName,
+		)
+	}
+}
+
 func TestNewUsesEnvironmentRuntimeRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "unishell")
 	t.Setenv("UNISHELL_RUNTIME_DIR", root)
@@ -526,6 +546,73 @@ func TestStartMultiplexerSessionCreatesManagedSession(t *testing.T) {
 		t.Fatalf(
 			"extracted runtime payload is missing: %v",
 			err,
+		)
+	}
+
+	if !backend.created {
+		t.Fatal("multiplexer backend Create() was not called")
+	}
+
+	if err := session.Cleanup(); err != nil {
+		t.Fatalf("Cleanup() returned error: %v", err)
+	}
+}
+
+func TestCreateMultiplexerSessionUsesProvidedMultiplexer(
+	t *testing.T,
+) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-fixture-token")
+
+	backend := &appTestBackend{}
+
+	manager := multiplexer.NewManager(
+		multiplexer.NewRegistry(backend),
+	)
+
+	application, err := New(Options{
+		Version:     "1.0.0",
+		Commit:      "test",
+		Root:        t.TempDir(),
+		Bundle:      testBundleSource(t),
+		Multiplexer: manager,
+		Shell:       "bash",
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	runtimeSession := &runtime.Session{
+		Paths: runtime.Paths{
+			Bin:     t.TempDir(),
+			Runtime: t.TempDir(),
+		},
+	}
+
+	session, err := application.CreateMultiplexerSession(
+		runtimeSession,
+		"test",
+		"bash",
+	)
+	if err != nil {
+		t.Fatalf(
+			"CreateMultiplexerSession() returned error: %v",
+			err,
+		)
+	}
+
+	if session == nil {
+		t.Fatal("CreateMultiplexerSession() returned nil session")
+	}
+
+	if session.Multiplexer == nil {
+		t.Fatal("multiplexer session is nil")
+	}
+
+	if session.Multiplexer.Metadata.Multiplexer != "test" {
+		t.Fatalf(
+			"multiplexer = %q, want %q",
+			session.Multiplexer.Metadata.Multiplexer,
+			"test",
 		)
 	}
 

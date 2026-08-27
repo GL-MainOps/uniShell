@@ -28,7 +28,7 @@ func TestRunShellCreatesThenReattachesExistingMultiplexerSession(
 		Root:            root,
 		Bundle:          lifecycleTestBundleSource(t),
 		Multiplexer:     manager,
-		MultiplexerName: "test",
+		MultiplexerName: "tmux",
 		SessionName:     "default",
 	})
 	if err != nil {
@@ -159,7 +159,7 @@ type lifecycleTestBackend struct {
 }
 
 func (b *lifecycleTestBackend) Name() string {
-	return "test"
+	return "tmux"
 }
 
 func (b *lifecycleTestBackend) Capabilities() map[multiplexer.Capability]bool {

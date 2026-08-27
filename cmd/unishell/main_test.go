@@ -79,19 +79,39 @@ func TestPrintErrorGenericError(t *testing.T) {
 }
 
 type shellTestApplication struct {
-	discoverSession *app.Session
-	discoverErr     error
-	startSession    *app.Session
-	startErr        error
-	preparedSession *runtime.Session
-	preparedErr     error
-	createdSession  *app.Session
-	createdErr      error
-	requestedShell  string
+	discoverSession      *app.Session
+	discoverErr          error
+	startSession         *app.Session
+	startErr             error
+	preparedSession      *runtime.Session
+	preparedErr          error
+	createdSession       *app.Session
+	createdErr           error
+	requestedShell       string
+	requestedMultiplexer string
+	runtimeSession       *runtime.Session
+	runtimeSessionErr    error
+	authErr              error
+	createdMultiplexer   string
 }
 
 func (a *shellTestApplication) StartMultiplexerSession() (*app.Session, error) {
 	return a.startSession, a.startErr
+}
+
+func (a *shellTestApplication) ValidateAuthentication() error {
+	return a.authErr
+}
+
+func (a *shellTestApplication) StartSession() (
+	*runtime.Session,
+	error,
+) {
+	return a.runtimeSession, a.runtimeSessionErr
+}
+
+func (a *shellTestApplication) RequestedMultiplexer() string {
+	return a.requestedMultiplexer
 }
 
 func (a *shellTestApplication) DiscoverMultiplexerSession() (*app.Session, error) {
@@ -110,9 +130,11 @@ func (a *shellTestApplication) PrepareMultiplexerSession() (
 }
 
 func (a *shellTestApplication) CreateMultiplexerSession(
-	*runtime.Session,
-	string,
+	runtimeSession *runtime.Session,
+	multiplexerName string,
+	shellName string,
 ) (*app.Session, error) {
+	a.createdMultiplexer = multiplexerName
 	return a.createdSession, a.createdErr
 }
 
@@ -182,8 +204,9 @@ func TestRunShellAttachesExistingSession(t *testing.T) {
 	}
 
 	application := &shellTestApplication{
-		discoverSession: session,
-		requestedShell:  "zsh",
+		discoverSession:      session,
+		requestedShell:       "zsh",
+		requestedMultiplexer: "tmux",
 	}
 
 	if err := runShell(application, nil); err != nil {
@@ -215,10 +238,11 @@ func TestRunShellCreatesAndAttachesWhenSessionDoesNotExist(
 	}
 
 	application := &shellTestApplication{
-		discoverErr:     multiplexer.ErrSessionNotFound,
-		preparedSession: &runtime.Session{},
-		createdSession:  session,
-		requestedShell:  "bash",
+		discoverErr:          multiplexer.ErrSessionNotFound,
+		preparedSession:      &runtime.Session{},
+		createdSession:       session,
+		requestedShell:       "bash",
+		requestedMultiplexer: "tmux",
 	}
 
 	if err := runShell(application, nil); err != nil {
@@ -252,10 +276,11 @@ func TestRunShellCleansNewSessionWhenAttachFails(t *testing.T) {
 	}
 
 	application := &shellTestApplication{
-		discoverErr:     multiplexer.ErrSessionNotFound,
-		preparedSession: &runtime.Session{},
-		createdSession:  session,
-		requestedShell:  "bash",
+		discoverErr:          multiplexer.ErrSessionNotFound,
+		preparedSession:      &runtime.Session{},
+		createdSession:       session,
+		requestedShell:       "bash",
+		requestedMultiplexer: "tmux",
 	}
 
 	err := runShell(application, nil)
@@ -285,7 +310,8 @@ func TestRunShellDoesNotCreateWhenDiscoveryFailsUnexpectedly(
 	discoverErr := errors.New("discovery failed")
 
 	application := &shellTestApplication{
-		discoverErr: discoverErr,
+		discoverErr:          discoverErr,
+		requestedMultiplexer: "tmux",
 	}
 
 	err := runShell(application, nil)
@@ -474,5 +500,37 @@ func TestRunCleanRejectsArguments(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("runClean() returned nil error")
+	}
+}
+
+func TestRunShellAuthenticatesBeforeMultiplexerSelection(
+	t *testing.T,
+) {
+	authErr := errors.New("invalid auth token")
+
+	application := &shellTestApplication{
+		authErr: authErr,
+	}
+
+	err := runShell(
+		application,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("runShell() returned nil error")
+	}
+
+	if !errors.Is(err, authErr) {
+		t.Fatalf(
+			"runShell() error = %v, want auth error",
+			err,
+		)
+	}
+
+	if application.createdMultiplexer != "" {
+		t.Fatalf(
+			"created multiplexer = %q, want empty",
+			application.createdMultiplexer,
+		)
 	}
 }

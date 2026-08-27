@@ -23,24 +23,65 @@ in project configuration.
 
 ### `UNISHELL_MULTIPLEXER`
 
-Selects the multiplexer backend.
+Selects the multiplexer behavior for the shell session.
 
 Supported values:
 
 - `tmux`
 - `zellij`
+- `none`
+- `disabled`
 
-Default:
+Behavior:
 
-```text
-tmux
-```
+- `tmux` launches or reattaches to a tmux session.
+- `zellij` launches or reattaches to a Zellij session.
+- `none` starts a normal enhanced shell without a multiplexer.
+- `disabled` starts a normal enhanced shell without a multiplexer.
+- If the variable is unset, uniShell starts a normal enhanced shell
+  without a multiplexer.
+- Any other value is rejected and, when running interactively,
+  uniShell prompts the user to choose between tmux, Zellij, no
+  multiplexer, or quitting.
 
 Equivalent flag:
 
 ```text
 --multiplexer
 ```
+
+Command-line precedence:
+
+```text
+--multiplexer
+    ↓
+UNISHELL_MULTIPLEXER
+    ↓
+no multiplexer
+```
+
+Examples:
+
+```bash
+UNISHELL_MULTIPLEXER=tmux unishell
+UNISHELL_MULTIPLEXER=zellij unishell
+UNISHELL_MULTIPLEXER=none unishell
+UNISHELL_MULTIPLEXER=disabled unishell
+unishell --multiplexer tmux
+unishell --multiplexer zellij
+unishell --multiplexer none
+```
+
+When an invalid value is supplied interactively, uniShell presents:
+
+```text
+1. tmux
+2. zellij
+3. none
+4. quit
+```
+
+Pressing `Ctrl+C` or selecting `quit` cancels startup safely.
 
 ### `UNISHELL_SESSION`
 

@@ -70,7 +70,8 @@ func TestRunShellUsesMultiplexerAsInteractiveEntryPoint(
 	}
 
 	application := &shellTestApplication{
-		discoverSession: session,
+		discoverSession:      session,
+		requestedMultiplexer: "tmux",
 	}
 
 	if err := runShell(application, nil); err != nil {
@@ -150,7 +151,8 @@ func TestRunShellPropagatesMultiplexerAttachFailure(
 	}
 
 	application := &shellTestApplication{
-		discoverSession: session,
+		discoverSession:      session,
+		requestedMultiplexer: "tmux",
 	}
 
 	err := runShell(application, nil)

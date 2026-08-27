@@ -82,9 +82,6 @@ func New(options Options) (*App, error) {
 	}
 
 	multiplexerName := options.MultiplexerName
-	if multiplexerName == "" {
-		multiplexerName = "tmux"
-	}
 
 	sessionName := options.SessionName
 	if sessionName == "" {
@@ -122,6 +119,32 @@ func New(options Options) (*App, error) {
 
 func (a *App) RequestedShell() string {
 	return a.Shell
+}
+
+func (a *App) RequestedMultiplexer() string {
+	return a.MultiplexerName
+}
+
+func (a *App) ValidateAuthentication() error {
+	data, err := a.Bundle()
+	if err != nil {
+		return fmt.Errorf(
+			"load embedded runtime bundle: %w",
+			err,
+		)
+	}
+
+	if _, err := bundle.Open(
+		data,
+		a.AuthToken,
+	); err != nil {
+		return fmt.Errorf(
+			"authenticate runtime bundle: %w",
+			err,
+		)
+	}
+
+	return nil
 }
 
 func (a *App) StartSession() (*runtime.Session, error) {
@@ -275,6 +298,7 @@ func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
 
 func (a *App) CreateMultiplexerSession(
 	runtimeSession *runtime.Session,
+	multiplexerName string,
 	shellName string,
 ) (*Session, error) {
 	if runtimeSession == nil {
@@ -311,7 +335,7 @@ func (a *App) CreateMultiplexerSession(
 
 	endpoint := filepath.Join(
 		multiplexerRuntime,
-		a.MultiplexerName+".sock",
+		multiplexerName+".sock",
 	)
 
 	environment, err := shell.NewEnvironmentForShell(
@@ -327,7 +351,7 @@ func (a *App) CreateMultiplexerSession(
 	}
 
 	managedSession, err := a.Multiplexer.Create(
-		a.MultiplexerName,
+		multiplexerName,
 		a.SessionName,
 		a.MultiplexerSessionName,
 		runtimeSession.Paths.Runtime,
@@ -358,6 +382,7 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 
 	session, err := a.CreateMultiplexerSession(
 		runtimeSession,
+		a.MultiplexerName,
 		a.Shell,
 	)
 	if err != nil {

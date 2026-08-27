@@ -117,6 +117,39 @@ func TestParseCLIArgs(t *testing.T) {
 			},
 		},
 		{
+			name: "multiplexer option",
+			args: []string{
+				"--multiplexer",
+				"zellij",
+			},
+			wantOptions: cliOptions{
+				Multiplexer: "zellij",
+			},
+		},
+		{
+			name: "multiplexer equals option",
+			args: []string{
+				"--multiplexer=zellij",
+			},
+			wantOptions: cliOptions{
+				Multiplexer: "zellij",
+			},
+		},
+		{
+			name: "multiplexer option after command",
+			args: []string{
+				"shell",
+				"--multiplexer",
+				"tmux",
+			},
+			wantOptions: cliOptions{
+				Multiplexer: "tmux",
+			},
+			wantArgs: []string{
+				"shell",
+			},
+		},
+		{
 			name: "command arguments remain untouched",
 			args: []string{
 				"version",
@@ -197,6 +230,77 @@ func TestParseCLIArgsRejectsMissingRuntimeDirectory(t *testing.T) {
 func TestParseCLIArgsRejectsEmptyRuntimeDirectory(t *testing.T) {
 	_, _, err := parseCLIArgs([]string{
 		"--runtime-dir=",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+}
+
+func TestParseCLIArgsUsesMultiplexerEnvironment(t *testing.T) {
+	t.Setenv(
+		multiplexerEnvName,
+		"zellij",
+	)
+
+	options, _, err := parseCLIArgs(nil)
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.Multiplexer != "zellij" {
+		t.Fatalf(
+			"multiplexer = %q, want %q",
+			options.Multiplexer,
+			"zellij",
+		)
+	}
+}
+
+func TestParseCLIArgsExplicitMultiplexerOverridesEnvironment(
+	t *testing.T,
+) {
+	t.Setenv(
+		multiplexerEnvName,
+		"tmux",
+	)
+
+	options, _, err := parseCLIArgs([]string{
+		"--multiplexer",
+		"zellij",
+	})
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.Multiplexer != "zellij" {
+		t.Fatalf(
+			"multiplexer = %q, want %q",
+			options.Multiplexer,
+			"zellij",
+		)
+	}
+}
+
+func TestParseCLIArgsRejectsMissingMultiplexer(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--multiplexer",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+}
+
+func TestParseCLIArgsRejectsEmptyMultiplexer(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--multiplexer=",
 	})
 
 	if err == nil {

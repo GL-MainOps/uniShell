@@ -144,6 +144,7 @@ func selectShellFromReader(
 			)
 
 			if cancelled {
+				fmt.Fprintln(out)
 				return "", errShellSelectionCancelled
 			}
 
@@ -196,6 +197,7 @@ func selectShellFromTerminal(
 		)
 
 		if cancelled {
+			fmt.Fprintln(out)
 			return "", errShellSelectionCancelled
 		}
 

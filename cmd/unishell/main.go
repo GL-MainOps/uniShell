@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/runtime"
+	"gitlab.com/mainops/uniShell/internal/shell"
 )
 
 var (
@@ -24,10 +26,11 @@ func main() {
 	}
 
 	application, err := app.New(app.Options{
-		Version: version,
-		Commit:  commit,
-		Root:    options.RuntimeDir,
-		Shell:   options.Shell,
+		Version:         version,
+		Commit:          commit,
+		Root:            options.RuntimeDir,
+		Shell:           options.Shell,
+		MultiplexerName: options.Multiplexer,
 	})
 	if err != nil {
 		printError(err)
@@ -108,12 +111,16 @@ func run(application *app.App, args []string) error {
 }
 
 type shellApplication interface {
+	ValidateAuthentication() error
+	StartSession() (*runtime.Session, error)
 	StartMultiplexerSession() (*app.Session, error)
 	DiscoverMultiplexerSession() (*app.Session, error)
 	RequestedShell() string
+	RequestedMultiplexer() string
 	PrepareMultiplexerSession() (*runtime.Session, error)
 	CreateMultiplexerSession(
 		*runtime.Session,
+		string,
 		string,
 	) (*app.Session, error)
 }
@@ -125,6 +132,131 @@ func runShell(application shellApplication, args []string) error {
 		)
 	}
 
+	if err := application.ValidateAuthentication(); err != nil {
+		return fmt.Errorf(
+			"authenticate runtime bundle: %w",
+			err,
+		)
+	}
+
+	ctx, stop := shellSelectionContext()
+	defer stop()
+
+	multiplexerName, err := selectMultiplexer(
+		ctx,
+		application.RequestedMultiplexer(),
+		os.Stdin,
+		os.Stdout,
+	)
+	if err != nil {
+		if errors.Is(
+			err,
+			errMultiplexerSelectionCancelled,
+		) {
+			return fmt.Errorf(
+				"multiplexer selection cancelled",
+			)
+		}
+
+		return fmt.Errorf(
+			"select multiplexer: %w",
+			err,
+		)
+	}
+
+	if multiplexerName == multiplexerNone {
+		return runDirectShell(
+			application,
+			ctx,
+		)
+	}
+
+	return runMultiplexerShell(
+		application,
+		ctx,
+		multiplexerName,
+	)
+}
+
+func runDirectShell(
+	application shellApplication,
+	ctx context.Context,
+) error {
+	runtimeSession, err := application.StartSession()
+	if err != nil {
+		return fmt.Errorf(
+			"prepare shell runtime: %w",
+			err,
+		)
+	}
+
+	cleanupRuntime := func(err error) error {
+		if cleanupErr := runtimeSession.Cleanup(); cleanupErr != nil {
+			return fmt.Errorf(
+				"%w; cleanup runtime session: %v",
+				err,
+				cleanupErr,
+			)
+		}
+
+		return err
+	}
+
+	selected, err := selectShell(
+		ctx,
+		runtimeSession.Paths.Bin,
+		application.RequestedShell(),
+		os.Stdin,
+		os.Stdout,
+	)
+	if err != nil {
+		return cleanupRuntime(
+			fmt.Errorf(
+				"select shell: %w",
+				err,
+			),
+		)
+	}
+
+	resolved, err := shell.Resolve(
+		selected,
+		runtimeSession.Paths.Bin,
+	)
+	if err != nil {
+		return cleanupRuntime(
+			fmt.Errorf(
+				"resolve shell: %w",
+				err,
+			),
+		)
+	}
+
+	command, err := shell.NewCommand(
+		resolved,
+		runtimeSession.Paths.Bin,
+		runtimeSession.Paths.Runtime,
+	)
+	if err != nil {
+		return cleanupRuntime(
+			fmt.Errorf(
+				"prepare shell command: %w",
+				err,
+			),
+		)
+	}
+
+	if err := command.Run(); err != nil {
+		return cleanupRuntime(err)
+	}
+
+	return runtimeSession.Cleanup()
+}
+
+func runMultiplexerShell(
+	application shellApplication,
+	ctx context.Context,
+	multiplexerName string,
+) error {
 	session, err := application.DiscoverMultiplexerSession()
 	if err == nil {
 		printReattachMessage(application, session)
@@ -159,9 +291,6 @@ func runShell(application shellApplication, args []string) error {
 		return err
 	}
 
-	ctx, stop := shellSelectionContext()
-	defer stop()
-
 	selected, err := selectShell(
 		ctx,
 		runtimeSession.Paths.Bin,
@@ -188,6 +317,7 @@ func runShell(application shellApplication, args []string) error {
 
 	session, err = application.CreateMultiplexerSession(
 		runtimeSession,
+		multiplexerName,
 		selected,
 	)
 	if err != nil {
@@ -340,21 +470,85 @@ func printHelp() {
 	fmt.Println(`uniShell - portable Linux shell environment
 
 Usage:
-  unishell [command] [options]
+  unishell [options] [command]
 
 Commands:
   shell       Start or attach to the uniShell environment
-  install     Install the uniShell runtime
-  update      Update the uniShell runtime
-  clean       Remove the uniShell runtime
-  detach      Detach from the uniShell multiplexer session
-  doctor      Diagnose the uniShell environment
+  install     Install the uniShell runtime (not implemented)
+  update      Update the uniShell runtime (not implemented)
+  clean       Remove the current uniShell multiplexer runtime
+  detach      Detach from the current uniShell multiplexer session
+  doctor      Diagnose the uniShell environment (not implemented)
   version     Display version information
   help        Display this help message
 
 Options:
   --shell NAME
-              Select the shell to use
+      Select the shell to use.
+
   --runtime-dir PATH
-              Select the uniShell runtime directory`)
+      Select the uniShell runtime root directory.
+
+  --multiplexer NAME
+      Select the multiplexer to use.
+
+      Accepted values:
+        tmux
+        zellij
+        none
+        disabled
+
+      If --multiplexer is omitted, uniShell starts a normal
+      enhanced shell without a multiplexer.
+
+      An invalid value starts an interactive selection:
+        1. tmux
+        2. zellij
+        3. none
+        4. quit
+
+      Ctrl+C or selecting quit safely cancels startup.
+
+Environment:
+  UNISHELL_SHELL
+      Shell selection fallback when --shell is not specified.
+
+  UNISHELL_MULTIPLEXER
+      Multiplexer selection fallback when --multiplexer is not specified.
+
+      Accepted values are:
+        tmux
+        zellij
+        none
+        disabled
+
+  UNISHELL_RUNTIME_DIR
+      Default runtime root when --runtime-dir is not specified.
+
+  UNISHELL_TMUX_OPTS
+      Additional tmux creation options.
+
+  UNISHELL_ZELLIJ_OPTS
+      Additional Zellij creation options.
+
+Behavior:
+  With no multiplexer selected, uniShell prepares an isolated runtime,
+  starts the selected enhanced shell directly, and removes the session
+  runtime when the shell exits.
+
+  With tmux or Zellij selected, uniShell creates or reattaches to the
+  multiplexer session. Detaching preserves the session runtime so it can
+  be reattached later. The runtime is removed only after the multiplexer
+  session has actually exited.
+
+  The uniShell runtime root itself is preserved; cleanup removes only
+  the session-specific runtime.
+
+Examples:
+  unishell
+  unishell --shell zsh
+  unishell --multiplexer tmux
+  unishell --multiplexer zellij
+  unishell --multiplexer none
+  UNISHELL_MULTIPLEXER=tmux unishell`)
 }

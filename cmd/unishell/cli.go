@@ -2,17 +2,25 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
+const multiplexerEnvName = "UNISHELL_MULTIPLEXER"
+
 type cliOptions struct {
-	RuntimeDir string
-	Shell      string
+	RuntimeDir  string
+	Shell       string
+	Multiplexer string
 }
 
 func parseCLIArgs(args []string) (cliOptions, []string, error) {
 	var options cliOptions
 	var commandArgs []string
+
+	options.Multiplexer = strings.TrimSpace(
+		os.Getenv(multiplexerEnvName),
+	)
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -59,6 +67,30 @@ func parseCLIArgs(args []string) (cliOptions, []string, error) {
 			}
 
 			options.Shell = value
+
+		case arg == "--multiplexer":
+			if i+1 >= len(args) {
+				return cliOptions{}, nil, fmt.Errorf(
+					"--multiplexer requires a value",
+				)
+			}
+
+			options.Multiplexer = args[i+1]
+			i++
+
+		case strings.HasPrefix(arg, "--multiplexer="):
+			value := strings.TrimPrefix(
+				arg,
+				"--multiplexer=",
+			)
+
+			if value == "" {
+				return cliOptions{}, nil, fmt.Errorf(
+					"--multiplexer requires a value",
+				)
+			}
+
+			options.Multiplexer = value
 
 		default:
 			commandArgs = append(commandArgs, arg)
