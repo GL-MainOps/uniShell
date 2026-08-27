@@ -1,0 +1,91 @@
+# uniShell shared shell configuration example.
+#
+# This file describes shell-neutral configuration.
+# Shell adapters translate these settings into native shell syntax.
+#
+# Supported shells:
+#   - bash
+#   - zsh
+#   - fish
+#   - nushell
+#
+# Currently supported features:
+#   - environment variables
+#   - PATH entries
+#   - aliases
+#
+# Intentionally not represented here yet:
+#   - functions
+#   - keybindings
+#   - prompts
+#
+# Values are configuration data, not shell code.
+# Shell-specific behavior belongs in the corresponding shell configuration.
+
+# ---------------------------------------------------------------------------
+# Environment variables
+# ---------------------------------------------------------------------------
+
+# [environment]
+#
+# Set environment variables in the generated shell configuration.
+#
+# EDITOR = "vim"
+# VISUAL = "$EDITOR"
+# PAGER = "less"
+# FZF_DEFAULT_OPTS = "--height=40%"
+
+# ---------------------------------------------------------------------------
+# PATH
+# ---------------------------------------------------------------------------
+
+# [path]
+#
+# Entries listed under `add` are added to PATH by the shell adapter.
+#
+# [path]
+# add = [
+#     "$HOME/.local/bin",
+#     "$HOME/bin",
+# ]
+
+# Multiple entries are supported and retain their declared order.
+#
+# add = [
+#     "$HOME/.local/bin",
+#     "$HOME/bin",
+#     "$UNISHELL_BIN",
+# ]
+
+# ---------------------------------------------------------------------------
+# Aliases
+# ---------------------------------------------------------------------------
+
+# [aliases]
+#
+# Define shell-neutral command aliases.
+#
+# ll = "ls -lah"
+# la = "ls -A"
+# gs = "git status"
+# gd = "git diff"
+
+# ---------------------------------------------------------------------------
+# Complete example
+# ---------------------------------------------------------------------------
+
+# [environment]
+# EDITOR = "vim"
+# VISUAL = "$EDITOR"
+#
+# [path]
+# add = [
+#     "$HOME/.local/bin",
+#     "$HOME/bin",
+# ]
+#
+# [aliases]
+# ll = "ls -lah"
+# la = "ls -A"
+# gs = "git status"
+# gd = "git diff"
