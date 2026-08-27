@@ -14,6 +14,7 @@ type CommandRunner func(name string, args ...string) error
 type Backend struct {
 	Binary         string
 	Run            CommandRunner
+	RunQuiet       CommandRunner
 	ConfigResolver *config.Resolver
 }
 
@@ -27,6 +28,10 @@ func New() *Backend {
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 
+			return cmd.Run()
+		},
+		RunQuiet: func(name string, args ...string) error {
+			cmd := exec.Command(name, args...)
 			return cmd.Run()
 		},
 	}
@@ -143,7 +148,15 @@ func (b *Backend) IsAlive(session api.Session) bool {
 		)
 	}
 
-	return b.Run(b.Binary, args...) == nil
+	runner := b.RunQuiet
+	if runner == nil {
+		runner = func(name string, args ...string) error {
+			cmd := exec.Command(name, args...)
+			return cmd.Run()
+		}
+	}
+
+	return runner(b.Binary, args...) == nil
 }
 
 func (b *Backend) Destroy(session api.Session) error {

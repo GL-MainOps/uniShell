@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -170,6 +171,10 @@ func TestIsAliveUsesSessionEndpointAndName(t *testing.T) {
 	backend := &Backend{
 		Binary: "fake-tmux",
 		Run: func(_ string, args ...string) error {
+			t.Fatal("IsAlive() must not use Run")
+			return nil
+		},
+		RunQuiet: func(_ string, args ...string) error {
 			gotArgs = append([]string(nil), args...)
 			return nil
 		},
@@ -188,6 +193,37 @@ func TestIsAliveUsesSessionEndpointAndName(t *testing.T) {
 		"has-session",
 		"-t",
 		"work",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf("args = %#v, want %#v", gotArgs, want)
+	}
+}
+
+func TestIsAliveReturnsFalseWhenSessionDoesNotExist(t *testing.T) {
+	var gotArgs []string
+
+	backend := &Backend{
+		Binary: "fake-tmux",
+		RunQuiet: func(_ string, args ...string) error {
+			gotArgs = append([]string(nil), args...)
+			return fmt.Errorf("no server running")
+		},
+	}
+
+	if backend.IsAlive(api.Session{
+		NativeName: "missing",
+		Endpoint:   "/runtime/missing/multiplexer/tmux.sock",
+	}) {
+		t.Fatal("IsAlive() = true, want false")
+	}
+
+	want := []string{
+		"-S",
+		"/runtime/missing/multiplexer/tmux.sock",
+		"has-session",
+		"-t",
+		"missing",
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
