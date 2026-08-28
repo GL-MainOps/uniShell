@@ -16,6 +16,7 @@ type Session struct {
 	Endpoint   string
 	ShellName  string
 	ShellPath  string
+	ShellArgs  []string
 	Env        []string
 	Options    Options
 }
