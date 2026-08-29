@@ -126,6 +126,7 @@ type shellApplication interface {
 		*runtime.Session,
 		string,
 		string,
+		shell.Startup,
 	) (*app.Session, error)
 }
 
@@ -379,10 +380,33 @@ func runMultiplexerShell(
 		)
 	}
 
+	resolved, err := shell.Resolve(
+		selected,
+		runtimeSession.Paths.Bin,
+	)
+	if err != nil {
+		return cleanupRuntime(
+			fmt.Errorf(
+				"resolve shell: %w",
+				err,
+			),
+		)
+	}
+
+	startup, err := prepareShellStartup(
+		application,
+		resolved,
+		runtimeSession.Paths.Runtime,
+	)
+	if err != nil {
+		return cleanupRuntime(err)
+	}
+
 	session, err = application.CreateMultiplexerSession(
 		runtimeSession,
 		multiplexerName,
 		selected,
+		startup,
 	)
 	if err != nil {
 		return cleanupRuntime(

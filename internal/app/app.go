@@ -314,6 +314,7 @@ func (a *App) CreateMultiplexerSession(
 	runtimeSession *runtime.Session,
 	multiplexerName string,
 	shellName string,
+	startup shell.Startup,
 ) (*Session, error) {
 	if runtimeSession == nil {
 		return nil, fmt.Errorf(
@@ -372,6 +373,7 @@ func (a *App) CreateMultiplexerSession(
 		endpoint,
 		selectedShell.Name,
 		selectedShell.Path,
+		startup.Args,
 		environment,
 		a.MultiplexerOptions,
 	)
@@ -398,6 +400,7 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		runtimeSession,
 		a.MultiplexerName,
 		a.Shell,
+		shell.Startup{},
 	)
 	if err != nil {
 		_ = runtimeSession.Cleanup()

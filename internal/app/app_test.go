@@ -11,6 +11,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 	"gitlab.com/mainops/uniShell/internal/runtime"
+	"gitlab.com/mainops/uniShell/internal/shell"
 )
 
 func TestNewUsesDefaultRuntimeRoot(t *testing.T) {
@@ -592,6 +593,7 @@ func TestCreateMultiplexerSessionUsesProvidedMultiplexer(
 		runtimeSession,
 		"test",
 		"bash",
+		shell.Startup{},
 	)
 	if err != nil {
 		t.Fatalf(

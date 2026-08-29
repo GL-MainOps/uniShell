@@ -36,6 +36,7 @@ func (m *Manager) Create(
 	endpoint string,
 	shellName string,
 	shellPath string,
+	shellArgs []string,
 	env []string,
 	options api.Options,
 ) (*ManagedSession, error) {
@@ -71,6 +72,7 @@ func (m *Manager) Create(
 		Endpoint:   endpoint,
 		ShellName:  shellName,
 		ShellPath:  shellPath,
+		ShellArgs:  append([]string(nil), shellArgs...),
 		Env:        append([]string(nil), env...),
 		Options:    options,
 	}

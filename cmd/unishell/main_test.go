@@ -10,6 +10,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/runtime"
+	"gitlab.com/mainops/uniShell/internal/shell"
 )
 
 func TestPrintErrorAuthenticationFailed(t *testing.T) {
@@ -93,6 +94,7 @@ type shellTestApplication struct {
 	runtimeSessionErr    error
 	authErr              error
 	createdMultiplexer   string
+	createdStartup       shell.Startup
 }
 
 func (a *shellTestApplication) StartMultiplexerSession() (*app.Session, error) {
@@ -141,8 +143,10 @@ func (a *shellTestApplication) CreateMultiplexerSession(
 	runtimeSession *runtime.Session,
 	multiplexerName string,
 	shellName string,
+	startup shell.Startup,
 ) (*app.Session, error) {
 	a.createdMultiplexer = multiplexerName
+	a.createdStartup = startup
 	return a.createdSession, a.createdErr
 }
 

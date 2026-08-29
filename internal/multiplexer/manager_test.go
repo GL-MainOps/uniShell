@@ -88,6 +88,7 @@ func TestManagerCreateWritesMetadata(t *testing.T) {
 		"",
 		"",
 		nil,
+		nil,
 		api.Options{},
 	)
 	if err != nil {
@@ -159,6 +160,7 @@ func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
 		endpoint,
 		"bash",
 		"/bin/bash",
+		nil,
 		env,
 		api.Options{},
 	)
@@ -241,6 +243,7 @@ func TestManagerCreatePassesMultiplexerOptionsToBackend(
 		"bash",
 		"/bin/bash",
 		nil,
+		nil,
 		options,
 	)
 	if err != nil {
@@ -283,6 +286,7 @@ func TestManagerAttachRequiresLiveSession(t *testing.T) {
 		endpoint,
 		"",
 		"",
+		nil,
 		nil,
 		api.Options{},
 	)
@@ -340,6 +344,7 @@ func TestManagerDestroyRemovesMetadata(t *testing.T) {
 		"",
 		"",
 		nil,
+		nil,
 		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -382,6 +387,7 @@ func TestManagerDiscoverFindsLiveSession(t *testing.T) {
 		endpoint,
 		"",
 		"",
+		nil,
 		nil,
 		api.Options{},
 	)
@@ -462,6 +468,7 @@ func TestManagerDiscoverRejectsDifferentSessionName(t *testing.T) {
 		endpoint,
 		"",
 		"",
+		nil,
 		nil,
 		api.Options{},
 	); err != nil {
@@ -594,6 +601,7 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 		"",
 		"",
 		nil,
+		nil,
 		api.Options{},
 	); err != nil {
 		t.Fatalf("Create(first) returned error: %v", err)
@@ -607,6 +615,7 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 		"/tmp/second.endpoint",
 		"",
 		"",
+		nil,
 		nil,
 		api.Options{},
 	); err != nil {
@@ -663,6 +672,7 @@ func TestManagerReconcilePreservesLiveSession(t *testing.T) {
 		"",
 		"",
 		nil,
+		nil,
 		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -718,6 +728,7 @@ func TestManagerReconcileRemovesDeadSession(t *testing.T) {
 		"",
 		"",
 		nil,
+		nil,
 		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -767,6 +778,7 @@ func TestManagerReconcileIgnoresUnavailableBackend(t *testing.T) {
 		"",
 		"",
 		nil,
+		nil,
 		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -810,6 +822,7 @@ func TestManagerCreatePreservesNativeSessionName(t *testing.T) {
 		endpoint,
 		"",
 		"",
+		nil,
 		nil,
 		api.Options{},
 	)
@@ -873,6 +886,7 @@ func TestManagerCreatePreservesEmptyNativeSessionName(t *testing.T) {
 		endpoint,
 		"",
 		"",
+		nil,
 		nil,
 		api.Options{},
 	)
@@ -938,6 +952,7 @@ func TestManagerCleanupDestroysLiveSessionAndRemovesRuntime(
 		"",
 		"",
 		nil,
+		nil,
 		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -989,6 +1004,7 @@ func TestManagerCleanupRemovesStaleSessionRuntime(
 		"",
 		"",
 		nil,
+		nil,
 		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -1037,6 +1053,7 @@ func TestManagerCleanupPreservesRuntimeWhenBackendUnavailable(
 		endpoint,
 		"",
 		"",
+		nil,
 		nil,
 		api.Options{},
 	); err != nil {
@@ -1091,6 +1108,7 @@ func TestManagerCreatePersistsShell(t *testing.T) {
 		endpoint,
 		shellName,
 		shellPath,
+		nil,
 		nil,
 		api.Options{},
 	)
@@ -1177,6 +1195,7 @@ func TestManagerAttachPreservesShell(t *testing.T) {
 		"fish",
 		"/runtime/bin/fish",
 		nil,
+		nil,
 		api.Options{},
 	)
 	if err != nil {
@@ -1229,6 +1248,7 @@ func TestManagerReconcileSessionPreservesLiveSession(t *testing.T) {
 		endpoint,
 		"",
 		"",
+		nil,
 		nil,
 		api.Options{},
 	); err != nil {
@@ -1291,6 +1311,7 @@ func TestManagerReconcileSessionRemovesExitedSession(
 		"",
 		"",
 		nil,
+		nil,
 		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -1350,6 +1371,7 @@ func TestManagerReconcileSessionPreservesRuntimeWhenBackendUnavailable(
 		"",
 		"",
 		nil,
+		nil,
 		api.Options{},
 	); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -1405,6 +1427,7 @@ func TestManagerReconcileSessionIsIdempotent(t *testing.T) {
 		endpoint,
 		"",
 		"",
+		nil,
 		nil,
 		api.Options{},
 	); err != nil {
