@@ -204,6 +204,73 @@ func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
 	}
 }
 
+func TestManagerCreatePassesShellToBackend(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	shellName := "bash"
+	shellPath := "/runtime/bin/bash"
+
+	session, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+		shellName,
+		shellPath,
+		nil,
+		nil,
+		api.Options{},
+	)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if backend.createdSession.ShellName != shellName {
+		t.Fatalf(
+			"backend shell name = %q, want %q",
+			backend.createdSession.ShellName,
+			shellName,
+		)
+	}
+
+	if backend.createdSession.ShellPath != shellPath {
+		t.Fatalf(
+			"backend shell path = %q, want %q",
+			backend.createdSession.ShellPath,
+			shellPath,
+		)
+	}
+
+	if session.Session.ShellName != shellName {
+		t.Fatalf(
+			"session shell name = %q, want %q",
+			session.Session.ShellName,
+			shellName,
+		)
+	}
+
+	if session.Session.ShellPath != shellPath {
+		t.Fatalf(
+			"session shell path = %q, want %q",
+			session.Session.ShellPath,
+			shellPath,
+		)
+	}
+}
+
 func TestManagerCreatePassesMultiplexerOptionsToBackend(
 	t *testing.T,
 ) {

@@ -84,6 +84,54 @@ func TestCreateUsesSessionEnvironment(t *testing.T) {
 	}
 }
 
+func TestCreateUsesShellPathAndArgs(t *testing.T) {
+	var gotArgs []string
+
+	backend := &Backend{
+		Binary: "fake-tmux",
+		Run: func(_ string, args ...string) error {
+			gotArgs = append([]string(nil), args...)
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+		Endpoint:   "/runtime/work/multiplexer/tmux.sock",
+		ShellName:  "bash",
+		ShellPath:  "/runtime/bin/bash",
+		ShellArgs: []string{
+			"--noprofile",
+			"--rcfile",
+			"/runtime/config/shell-generated/work.bash",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	want := []string{
+		"-S",
+		"/runtime/work/multiplexer/tmux.sock",
+		"new-session",
+		"-d",
+		"-s",
+		"work",
+		"/runtime/bin/bash",
+		"--noprofile",
+		"--rcfile",
+		"/runtime/config/shell-generated/work.bash",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			want,
+		)
+	}
+}
+
 func TestCreateRejectsMissingEndpoint(t *testing.T) {
 	backend := &Backend{
 		Binary: "fake-tmux",

@@ -127,6 +127,7 @@ func TestNewCommandBuildsRuntimeEnvironment(t *testing.T) {
 		selected,
 		"/runtime/bin",
 		"/runtime/session",
+		Startup{},
 	)
 	if err != nil {
 		t.Fatalf("NewCommand() returned error: %v", err)
@@ -173,6 +174,143 @@ func TestNewCommandBuildsRuntimeEnvironment(t *testing.T) {
 			"session runtime = %q, want %q",
 			runtimePath,
 			"/runtime/session",
+		)
+	}
+}
+
+func TestNewCommandAppliesStartupArguments(t *testing.T) {
+	selected := Shell{
+		Name:   "bash",
+		Path:   "/bin/bash",
+		Source: SourceHost,
+	}
+
+	command, err := NewCommand(
+		selected,
+		"/runtime/bin",
+		"/runtime/session",
+		Startup{
+			Args: []string{
+				"--noprofile",
+				"--rcfile",
+				"/runtime/config/shell/server.bash",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewCommand() returned error: %v", err)
+	}
+
+	want := []string{
+		selected.Path,
+		"--noprofile",
+		"--rcfile",
+		"/runtime/config/shell/server.bash",
+	}
+
+	if len(command.Args) != len(want) {
+		t.Fatalf(
+			"command args = %#v, want %#v",
+			command.Args,
+			want,
+		)
+	}
+
+	for i := range want {
+		if command.Args[i] != want[i] {
+			t.Fatalf(
+				"command args = %#v, want %#v",
+				command.Args,
+				want,
+			)
+		}
+	}
+}
+
+func TestNewCommandAppliesStartupEnvironment(t *testing.T) {
+	selected := Shell{
+		Name:   "bash",
+		Path:   "/bin/bash",
+		Source: SourceHost,
+	}
+
+	command, err := NewCommand(
+		selected,
+		"/runtime/bin",
+		"/runtime/session",
+		Startup{
+			Env: map[string]string{
+				"ZDOTDIR":    "/runtime/config/shell/zsh",
+				"TEST_VALUE": "profile-value",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewCommand() returned error: %v", err)
+	}
+
+	got, ok := findEnv(command.Env, "ZDOTDIR")
+	if !ok {
+		t.Fatal("ZDOTDIR was not included")
+	}
+
+	if got != "/runtime/config/shell/zsh" {
+		t.Fatalf(
+			"ZDOTDIR = %q, want %q",
+			got,
+			"/runtime/config/shell/zsh",
+		)
+	}
+
+	got, ok = findEnv(command.Env, "TEST_VALUE")
+	if !ok {
+		t.Fatal("TEST_VALUE was not included")
+	}
+
+	if got != "profile-value" {
+		t.Fatalf(
+			"TEST_VALUE = %q, want %q",
+			got,
+			"profile-value",
+		)
+	}
+}
+
+func TestNewCommandStartupEnvironmentOverridesExistingValue(
+	t *testing.T,
+) {
+	t.Setenv("ZDOTDIR", "/host/zsh")
+
+	selected := Shell{
+		Name:   "zsh",
+		Path:   "/bin/zsh",
+		Source: SourceHost,
+	}
+
+	command, err := NewCommand(
+		selected,
+		"/runtime/bin",
+		"/runtime/session",
+		Startup{
+			Env: map[string]string{
+				"ZDOTDIR": "/runtime/config/shell/zsh",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewCommand() returned error: %v", err)
+	}
+
+	got, ok := findEnv(command.Env, "ZDOTDIR")
+	if !ok {
+		t.Fatal("ZDOTDIR was not included")
+	}
+
+	if got != "/runtime/config/shell/zsh" {
+		t.Fatalf(
+			"ZDOTDIR = %q, want %q",
+			got,
+			"/runtime/config/shell/zsh",
 		)
 	}
 }
@@ -658,6 +796,7 @@ func TestNewCommandSetsShellEnvironment(t *testing.T) {
 		selected,
 		"/runtime/bin",
 		"/runtime/session",
+		Startup{},
 	)
 	if err != nil {
 		t.Fatalf(
@@ -685,6 +824,7 @@ func TestNewCommandRejectsEmptyShellPath(t *testing.T) {
 		Shell{Name: "bash"},
 		"/runtime/bin",
 		"/runtime/session",
+		Startup{},
 	)
 
 	if err == nil {

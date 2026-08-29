@@ -116,12 +116,15 @@ type shellApplication interface {
 	StartMultiplexerSession() (*app.Session, error)
 	DiscoverMultiplexerSession() (*app.Session, error)
 	RequestedShell() string
+	RequestedShellProfile() string
+	RequestedNoSharedRC() bool
 	RequestedMultiplexer() string
 	PrepareMultiplexerSession() (*runtime.Session, error)
 	CreateMultiplexerSession(
 		*runtime.Session,
 		string,
 		string,
+		shell.Startup,
 	) (*app.Session, error)
 }
 
@@ -178,6 +181,19 @@ func runShell(application shellApplication, args []string) error {
 	)
 }
 
+func prepareShellStartup(
+	application shellApplication,
+	resolved shell.Shell,
+	runtimeDir string,
+) (shell.Startup, error) {
+	return shell.PrepareProfileStartupFromProfile(
+		runtimeDir,
+		resolved.Name,
+		application.RequestedShellProfile(),
+		!application.RequestedNoSharedRC(),
+	)
+}
+
 func runDirectShell(
 	application shellApplication,
 	ctx context.Context,
@@ -231,10 +247,20 @@ func runDirectShell(
 		)
 	}
 
+	startup, err := prepareShellStartup(
+		application,
+		resolved,
+		runtimeSession.Paths.Runtime,
+	)
+	if err != nil {
+		return cleanupRuntime(err)
+	}
+
 	command, err := shell.NewCommand(
 		resolved,
 		runtimeSession.Paths.Bin,
 		runtimeSession.Paths.Runtime,
+		startup,
 	)
 	if err != nil {
 		return cleanupRuntime(
@@ -315,10 +341,33 @@ func runMultiplexerShell(
 		)
 	}
 
+	resolved, err := shell.Resolve(
+		selected,
+		runtimeSession.Paths.Bin,
+	)
+	if err != nil {
+		return cleanupRuntime(
+			fmt.Errorf(
+				"resolve shell: %w",
+				err,
+			),
+		)
+	}
+
+	startup, err := prepareShellStartup(
+		application,
+		resolved,
+		runtimeSession.Paths.Runtime,
+	)
+	if err != nil {
+		return cleanupRuntime(err)
+	}
+
 	session, err = application.CreateMultiplexerSession(
 		runtimeSession,
 		multiplexerName,
 		selected,
+		startup,
 	)
 	if err != nil {
 		return cleanupRuntime(

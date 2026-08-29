@@ -127,6 +127,61 @@ func TestParseCLIArgs(t *testing.T) {
 			},
 		},
 		{
+			name: "shell profile option",
+			args: []string{
+				"--shell-profile",
+				"server",
+			},
+			wantOptions: cliOptions{
+				ShellProfile: "server",
+			},
+		},
+		{
+			name: "shell profile equals option",
+			args: []string{
+				"--shell-profile=server",
+			},
+			wantOptions: cliOptions{
+				ShellProfile: "server",
+			},
+		},
+		{
+			name: "shell profile option after command",
+			args: []string{
+				"shell",
+				"--shell-profile",
+				"server",
+			},
+			wantOptions: cliOptions{
+				ShellProfile: "server",
+			},
+			wantArgs: []string{
+				"shell",
+			},
+		},
+		{
+			name: "no shared rc option",
+			args: []string{
+				"--no-shared-rc",
+			},
+			wantOptions: cliOptions{
+				NoSharedRC: true,
+			},
+		},
+		{
+			name: "no shared rc option after command",
+			args: []string{
+				"shell",
+				"--no-shared-rc",
+			},
+			wantOptions: cliOptions{
+				NoSharedRC: true,
+			},
+			wantArgs: []string{
+				"shell",
+			},
+		},
+		{
 			name: "multiplexer equals option",
 			args: []string{
 				"--multiplexer=zellij",
@@ -305,5 +360,167 @@ func TestParseCLIArgsRejectsEmptyMultiplexer(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("parseCLIArgs() returned nil error")
+	}
+}
+
+func TestParseCLIArgsRejectsMissingShellProfile(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--shell-profile",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+
+	if err.Error() != "--shell-profile requires a profile name" {
+		t.Fatalf(
+			"error = %q, want %q",
+			err.Error(),
+			"--shell-profile requires a profile name",
+		)
+	}
+}
+
+func TestParseCLIArgsRejectsEmptyShellProfile(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--shell-profile=",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+
+	if err.Error() != "--shell-profile requires a profile name" {
+		t.Fatalf(
+			"error = %q, want %q",
+			err.Error(),
+			"--shell-profile requires a profile name",
+		)
+	}
+}
+
+func TestParseCLIArgsRejectsWhitespaceShellProfile(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--shell-profile",
+		"   ",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+
+	if err.Error() != "--shell-profile requires a profile name" {
+		t.Fatalf(
+			"error = %q, want %q",
+			err.Error(),
+			"--shell-profile requires a profile name",
+		)
+	}
+}
+
+func TestParseCLIArgsExplicitShellProfileOverridesEnvironment(
+	t *testing.T,
+) {
+	t.Setenv(
+		shellProfileEnvName,
+		"home",
+	)
+
+	options, _, err := parseCLIArgs([]string{
+		"--shell-profile",
+		"server",
+	})
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.ShellProfile != "server" {
+		t.Fatalf(
+			"shell profile = %q, want %q",
+			options.ShellProfile,
+			"server",
+		)
+	}
+}
+
+func TestParseCLIArgsTrimsShellProfileEnvironment(t *testing.T) {
+	t.Setenv(
+		shellProfileEnvName,
+		"  server  ",
+	)
+
+	options, _, err := parseCLIArgs(nil)
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.ShellProfile != "server" {
+		t.Fatalf(
+			"shell profile = %q, want %q",
+			options.ShellProfile,
+			"server",
+		)
+	}
+}
+
+func TestParseCLIArgsNoSharedRCDoesNotConsumeCommandArgument(
+	t *testing.T,
+) {
+	options, commandArgs, err := parseCLIArgs([]string{
+		"shell",
+		"--no-shared-rc",
+		"argument",
+	})
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if !options.NoSharedRC {
+		t.Fatal("NoSharedRC = false, want true")
+	}
+
+	wantArgs := []string{
+		"shell",
+		"argument",
+	}
+
+	if !reflect.DeepEqual(commandArgs, wantArgs) {
+		t.Fatalf(
+			"args = %#v, want %#v",
+			commandArgs,
+			wantArgs,
+		)
+	}
+}
+
+func TestParseCLIArgsUsesShellProfileEnvironment(t *testing.T) {
+	t.Setenv(
+		shellProfileEnvName,
+		"server",
+	)
+
+	options, _, err := parseCLIArgs(nil)
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.ShellProfile != "server" {
+		t.Fatalf(
+			"shell profile = %q, want %q",
+			options.ShellProfile,
+			"server",
+		)
 	}
 }

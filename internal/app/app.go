@@ -314,6 +314,7 @@ func (a *App) CreateMultiplexerSession(
 	runtimeSession *runtime.Session,
 	multiplexerName string,
 	shellName string,
+	startup shell.Startup,
 ) (*Session, error) {
 	if runtimeSession == nil {
 		return nil, fmt.Errorf(
@@ -372,7 +373,7 @@ func (a *App) CreateMultiplexerSession(
 		endpoint,
 		selectedShell.Name,
 		selectedShell.Path,
-		nil,
+		startup.Args,
 		environment,
 		a.MultiplexerOptions,
 	)
@@ -395,10 +396,34 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		return nil, err
 	}
 
+	selected, err := shell.Resolve(
+		a.Shell,
+		runtimeSession.Paths.Bin,
+	)
+	if err != nil {
+		_ = runtimeSession.Cleanup()
+		return nil, fmt.Errorf(
+			"resolve shell: %w",
+			err,
+		)
+	}
+
+	startup, err := shell.PrepareProfileStartupFromProfile(
+		runtimeSession.Paths.Runtime,
+		selected.Name,
+		a.ShellProfile,
+		!a.NoSharedRC,
+	)
+	if err != nil {
+		_ = runtimeSession.Cleanup()
+		return nil, err
+	}
+
 	session, err := a.CreateMultiplexerSession(
 		runtimeSession,
 		a.MultiplexerName,
-		a.Shell,
+		selected.Name,
+		startup,
 	)
 	if err != nil {
 		_ = runtimeSession.Cleanup()

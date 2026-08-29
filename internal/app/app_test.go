@@ -11,6 +11,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 	"gitlab.com/mainops/uniShell/internal/runtime"
+	"gitlab.com/mainops/uniShell/internal/shell"
 )
 
 func TestNewUsesDefaultRuntimeRoot(t *testing.T) {
@@ -393,6 +394,41 @@ func TestStartSessionFailureLeavesNoSessionRuntime(t *testing.T) {
 	}
 }
 
+func TestNewPropagatesShellProfileOptions(t *testing.T) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
+
+	application, err := New(Options{
+		Version:      "1.0.0",
+		Commit:       "test",
+		Shell:        "bash",
+		ShellProfile: "server",
+		NoSharedRC:   true,
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	if application.RequestedShell() != "bash" {
+		t.Fatalf(
+			"requested shell = %q, want %q",
+			application.RequestedShell(),
+			"bash",
+		)
+	}
+
+	if application.RequestedShellProfile() != "server" {
+		t.Fatalf(
+			"requested shell profile = %q, want %q",
+			application.RequestedShellProfile(),
+			"server",
+		)
+	}
+
+	if !application.RequestedNoSharedRC() {
+		t.Fatal("RequestedNoSharedRC() = false, want true")
+	}
+}
+
 func TestNewUsesProvidedMultiplexerManager(t *testing.T) {
 	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
 
@@ -592,6 +628,7 @@ func TestCreateMultiplexerSessionUsesProvidedMultiplexer(
 		runtimeSession,
 		"test",
 		"bash",
+		shell.Startup{},
 	)
 	if err != nil {
 		t.Fatalf(

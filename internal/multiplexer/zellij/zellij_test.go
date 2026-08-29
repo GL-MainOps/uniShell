@@ -64,6 +64,75 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 	}
 }
 
+func TestCreateUsesShellPathAndArgs(t *testing.T) {
+	var (
+		gotArgs []string
+		gotEnv  []string
+	)
+
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			args []string,
+			env []string,
+		) error {
+			gotArgs = append([]string(nil), args...)
+			gotEnv = append([]string(nil), env...)
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+		ShellPath:  "/runtime/bin/bash",
+		ShellArgs: []string{
+			"--noprofile",
+			"--rcfile",
+			"/runtime/config/shell-generated/work.bash",
+		},
+		Env: []string{
+			"PATH=/runtime/work/bin:/usr/bin",
+			"UNISHELL_SHELL=/runtime/bin/bash",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	wantArgs := []string{
+		"attach",
+		"--create-background",
+		"work",
+		"--",
+		"/runtime/bin/bash",
+		"--noprofile",
+		"--rcfile",
+		"/runtime/config/shell-generated/work.bash",
+	}
+
+	if !reflect.DeepEqual(gotArgs, wantArgs) {
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			wantArgs,
+		)
+	}
+
+	wantEnv := []string{
+		"PATH=/runtime/work/bin:/usr/bin",
+		"UNISHELL_SHELL=/runtime/bin/bash",
+	}
+
+	if !reflect.DeepEqual(gotEnv, wantEnv) {
+		t.Fatalf(
+			"env = %#v, want %#v",
+			gotEnv,
+			wantEnv,
+		)
+	}
+}
+
 func TestCreateWithoutSessionNameUsesNativeDefault(t *testing.T) {
 	var (
 		gotArgs []string
