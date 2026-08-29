@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 	"gitlab.com/mainops/uniShell/internal/shell"
+	"gitlab.com/mainops/uniShell/internal/shell/profile"
 )
 
 var (
@@ -116,6 +118,8 @@ type shellApplication interface {
 	StartMultiplexerSession() (*app.Session, error)
 	DiscoverMultiplexerSession() (*app.Session, error)
 	RequestedShell() string
+	RequestedShellProfile() string
+	RequestedNoSharedRC() bool
 	RequestedMultiplexer() string
 	PrepareMultiplexerSession() (*runtime.Session, error)
 	CreateMultiplexerSession(
@@ -178,6 +182,56 @@ func runShell(application shellApplication, args []string) error {
 	)
 }
 
+func prepareShellStartup(
+	application shellApplication,
+	selected shell.Shell,
+	runtimeDir string,
+) (shell.Startup, error) {
+	profileName := application.RequestedShellProfile()
+	if profileName == "" {
+		return shell.Startup{}, nil
+	}
+
+	profileRoot := filepath.Join(
+		runtimeDir,
+		"config",
+		"shell",
+	)
+
+	loader := profile.NewLoader(profileRoot)
+
+	includeShared := !application.RequestedNoSharedRC()
+
+	loaded, err := loader.Load(
+		selected.Name,
+		profileName,
+		includeShared,
+	)
+	if err != nil {
+		return shell.Startup{}, fmt.Errorf(
+			"load shell profile %q: %w",
+			profileName,
+			err,
+		)
+	}
+
+	startup, err := shell.PrepareProfileStartup(
+		runtimeDir,
+		selected.Name,
+		profileName,
+		loaded,
+		includeShared,
+	)
+	if err != nil {
+		return shell.Startup{}, fmt.Errorf(
+			"prepare shell profile startup: %w",
+			err,
+		)
+	}
+
+	return startup, nil
+}
+
 func runDirectShell(
 	application shellApplication,
 	ctx context.Context,
@@ -231,10 +285,20 @@ func runDirectShell(
 		)
 	}
 
+	startup, err := prepareShellStartup(
+		application,
+		resolved,
+		runtimeSession.Paths.Runtime,
+	)
+	if err != nil {
+		return cleanupRuntime(err)
+	}
+
 	command, err := shell.NewCommand(
 		resolved,
 		runtimeSession.Paths.Bin,
 		runtimeSession.Paths.Runtime,
+		startup,
 	)
 	if err != nil {
 		return cleanupRuntime(

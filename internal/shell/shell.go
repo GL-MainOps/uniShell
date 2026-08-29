@@ -186,6 +186,7 @@ func NewCommand(
 	selected Shell,
 	runtimeBin string,
 	sessionRuntime string,
+	startup Startup,
 ) (Command, error) {
 	if selected.Path == "" {
 		return Command{}, errors.New(
@@ -202,9 +203,16 @@ func NewCommand(
 		return Command{}, err
 	}
 
+	for key, value := range startup.Env {
+		env = setEnvironment(env, key, value)
+	}
+
+	args := []string{selected.Path}
+	args = append(args, startup.Args...)
+
 	return Command{
 		Path: selected.Path,
-		Args: []string{selected.Path},
+		Args: args,
 		Env:  env,
 	}, nil
 }

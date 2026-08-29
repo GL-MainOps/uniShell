@@ -26,6 +26,8 @@ type Options struct {
 	MultiplexerSessionName string
 	MultiplexerOptions     api.Options
 	Shell                  string
+	ShellProfile           string
+	NoSharedRC             bool
 }
 
 type App struct {
@@ -40,6 +42,8 @@ type App struct {
 	MultiplexerSessionName string
 	MultiplexerOptions     api.Options
 	Shell                  string
+	ShellProfile           string
+	NoSharedRC             bool
 }
 
 func New(options Options) (*App, error) {
@@ -114,11 +118,21 @@ func New(options Options) (*App, error) {
 		MultiplexerSessionName: options.MultiplexerSessionName,
 		MultiplexerOptions:     multiplexerOptions,
 		Shell:                  options.Shell,
+		ShellProfile:           options.ShellProfile,
+		NoSharedRC:             options.NoSharedRC,
 	}, nil
 }
 
 func (a *App) RequestedShell() string {
 	return a.Shell
+}
+
+func (a *App) RequestedShellProfile() string {
+	return a.ShellProfile
+}
+
+func (a *App) RequestedNoSharedRC() bool {
+	return a.NoSharedRC
 }
 
 func (a *App) RequestedMultiplexer() string {

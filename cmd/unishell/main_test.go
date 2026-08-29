@@ -122,6 +122,14 @@ func (a *shellTestApplication) RequestedShell() string {
 	return a.requestedShell
 }
 
+func (a *shellTestApplication) RequestedShellProfile() string {
+	return ""
+}
+
+func (a *shellTestApplication) RequestedNoSharedRC() bool {
+	return false
+}
+
 func (a *shellTestApplication) PrepareMultiplexerSession() (
 	*runtime.Session,
 	error,
