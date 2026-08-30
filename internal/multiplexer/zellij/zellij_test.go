@@ -35,6 +35,7 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 
 	err := backend.Create(api.Session{
 		NativeName: "work",
+		ShellPath:  "/runtime/bin/bash",
 		Env:        wantEnv,
 	})
 	if err != nil {
@@ -45,6 +46,8 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 		"attach",
 		"--create-background",
 		"work",
+		"--",
+		"/runtime/bin/bash",
 	}
 
 	if !reflect.DeepEqual(gotArgs, wantArgs) {
@@ -60,6 +63,75 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 			"env = %#v, want %#v",
 			gotEnv,
 			wantEnv,
+		)
+	}
+}
+
+func TestCreateUsesSessionShellPath(t *testing.T) {
+	var gotArgs []string
+
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
+			gotArgs = append([]string(nil), args...)
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+		ShellPath:  "/runtime/bin/zsh",
+	})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	want := []string{
+		"attach",
+		"--create-background",
+		"work",
+		"--",
+		"/runtime/bin/zsh",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			want,
+		)
+	}
+}
+
+func TestCreateRejectsEmptyShellPath(t *testing.T) {
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) error {
+			t.Fatal("Run() must not be called")
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+	})
+	if err == nil {
+		t.Fatal("Create() returned nil error, want empty shell path error")
+	}
+
+	if err.Error() != "zellij shell path cannot be empty" {
+		t.Fatalf(
+			"Create() error = %q, want %q",
+			err.Error(),
+			"zellij shell path cannot be empty",
 		)
 	}
 }
@@ -364,6 +436,7 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 
 	err := backend.Create(api.Session{
 		NativeName: "work",
+		ShellPath:  "/runtime/bin/bash",
 		Options: api.Options{
 			Zellij: api.ZellijOptions{
 				CreateArgs: []string{
@@ -381,6 +454,8 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 		"--create-background",
 		"--test-option",
 		"work",
+		"--",
+		"/runtime/bin/bash",
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
@@ -433,6 +508,7 @@ func TestCreateUsesBundledConfig(t *testing.T) {
 
 	session := api.Session{
 		NativeName: "work",
+		ShellPath:  "/runtime/bin/bash",
 		Runtime:    runtime,
 	}
 

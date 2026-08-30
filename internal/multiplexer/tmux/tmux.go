@@ -56,7 +56,26 @@ func (b *Backend) Available() bool {
 }
 
 func (b *Backend) Create(session api.Session) error {
+	if session.ShellPath == "" {
+		return fmt.Errorf("tmux shell path cannot be empty")
+	}
+
 	args, err := b.commandArgs(
+		session,
+		"set-option",
+		"-g",
+		"default-shell",
+		session.ShellPath,
+	)
+	if err != nil {
+		return err
+	}
+
+	if err := b.Run(b.Binary, args...); err != nil {
+		return err
+	}
+
+	args, err = b.commandArgs(
 		session,
 		"new-session",
 		"-d",

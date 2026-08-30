@@ -112,6 +112,10 @@ func (b *Backend) Create(session api.Session) error {
 		return err
 	}
 
+	if session.NativeName != "" && session.ShellPath == "" {
+		return fmt.Errorf("zellij shell path cannot be empty")
+	}
+
 	args = append(
 		args,
 		session.Options.Zellij.CreateArgs...,
@@ -121,6 +125,8 @@ func (b *Backend) Create(session api.Session) error {
 		args = append(
 			args,
 			session.NativeName,
+			"--",
+			session.ShellPath,
 		)
 	}
 
