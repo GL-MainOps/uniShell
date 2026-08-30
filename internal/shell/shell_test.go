@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -649,6 +650,33 @@ func TestNewEnvironmentForShellRejectsIncompleteShell(t *testing.T) {
 	}
 }
 
+func TestNewCommandRejectsEmptyHandoffPath(t *testing.T) {
+	_, err := NewCommand(
+		Shell{
+			Name: "bash",
+			Path: "/bin/bash",
+		},
+		"/runtime/bin",
+		"/runtime/session",
+		Startup{},
+		&Handoff{},
+	)
+
+	if err == nil {
+		t.Fatal(
+			"NewCommand() returned nil error",
+		)
+	}
+
+	if err.Error() != "handoff path cannot be empty" {
+		t.Fatalf(
+			"error = %q, want %q",
+			err.Error(),
+			"handoff path cannot be empty",
+		)
+	}
+}
+
 func TestNewCommandSetsShellEnvironment(t *testing.T) {
 	selected := Shell{
 		Name:   "bash",
@@ -680,6 +708,112 @@ func TestNewCommandSetsShellEnvironment(t *testing.T) {
 			"SHELL = %q, want %q",
 			shellPath,
 			selected.Path,
+		)
+	}
+}
+
+func TestNewCommandBuildsShellHandoff(t *testing.T) {
+	tests := []struct {
+		name      string
+		shellName string
+		shellPath string
+		wantArgs  []string
+	}{
+		{
+			name:      "bash",
+			shellName: "bash",
+			shellPath: "/bin/bash",
+			wantArgs: []string{
+				"/bin/bash",
+				"-i",
+				"-c",
+				`exec '/runtime/bin/tmux' '-L' 'unishell'`,
+			},
+		},
+		{
+			name:      "zsh",
+			shellName: "zsh",
+			shellPath: "/runtime/bin/zsh",
+			wantArgs: []string{
+				"/runtime/bin/zsh",
+				"-i",
+				"-c",
+				`exec '/runtime/bin/tmux' '-L' 'unishell'`,
+			},
+		},
+		{
+			name:      "fish",
+			shellName: "fish",
+			shellPath: "/runtime/bin/fish",
+			wantArgs: []string{
+				"/runtime/bin/fish",
+				"-c",
+				`exec '/runtime/bin/tmux' '-L' 'unishell'`,
+			},
+		},
+		{
+			name:      "nushell",
+			shellName: "nushell",
+			shellPath: "/runtime/bin/nushell",
+			wantArgs: []string{
+				"/runtime/bin/nushell",
+				"-c",
+				`exec "/runtime/bin/tmux" "-L" "unishell"`,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command, err := NewCommand(
+				Shell{
+					Name: test.shellName,
+					Path: test.shellPath,
+				},
+				"/runtime/bin",
+				"/runtime/session",
+				Startup{},
+				&Handoff{
+					Path: "/runtime/bin/tmux",
+					Args: []string{
+						"-L",
+						"unishell",
+					},
+				},
+			)
+			if err != nil {
+				t.Fatalf(
+					"NewCommand() returned error: %v",
+					err,
+				)
+			}
+
+			if !reflect.DeepEqual(
+				command.Args,
+				test.wantArgs,
+			) {
+				t.Fatalf(
+					"Args = %#v, want %#v",
+					command.Args,
+					test.wantArgs,
+				)
+			}
+		})
+	}
+}
+
+func TestNushellQuote(t *testing.T) {
+	value := `/runtime/it's/"config"\path`
+
+	got := nushellQuote(value)
+	want := `"/runtime/it\'s/\"config\"\\path"`
+
+	if got != want {
+		t.Fatalf(
+			"nushellQuote(%q) = %q, want %q",
+			value,
+			got,
+			want,
 		)
 	}
 }

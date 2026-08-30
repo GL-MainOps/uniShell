@@ -217,20 +217,15 @@ func NewCommand(
 	args = append(args, startup.Args...)
 
 	if handoff != nil {
-		if handoff.Path == "" {
-			return Command{}, errors.New(
-				"handoff path cannot be empty",
-			)
+		handoffArgs, err := buildHandoffArgs(
+			selected.Name,
+			*handoff,
+		)
+		if err != nil {
+			return Command{}, err
 		}
 
-		args = append(
-			args,
-			handoff.Path,
-		)
-		args = append(
-			args,
-			handoff.Args...,
-		)
+		args = append(args, handoffArgs...)
 	}
 
 	return Command{
@@ -238,6 +233,74 @@ func NewCommand(
 		Args: args,
 		Env:  env,
 	}, nil
+}
+
+func buildHandoffArgs(
+	shellName string,
+	handoff Handoff,
+) ([]string, error) {
+	if handoff.Path == "" {
+		return nil, errors.New(
+			"handoff path cannot be empty",
+		)
+	}
+
+	command := buildHandoffCommand(
+		shellName,
+		handoff,
+	)
+
+	switch shellName {
+	case "bash", "zsh":
+		return []string{
+			"-i",
+			"-c",
+			command,
+		}, nil
+
+	case "fish", "nushell":
+		return []string{
+			"-c",
+			command,
+		}, nil
+
+	default:
+		return nil, fmt.Errorf(
+			"unsupported shell: %q",
+			shellName,
+		)
+	}
+}
+
+func buildHandoffCommand(
+	shellName string,
+	handoff Handoff,
+) string {
+	parts := make([]string, 0, len(handoff.Args)+2)
+	parts = append(parts, "exec")
+
+	quote := shellQuote
+	if shellName == "nushell" {
+		quote = nushellQuote
+	}
+
+	parts = append(parts, quote(handoff.Path))
+
+	for _, arg := range handoff.Args {
+		parts = append(parts, quote(arg))
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func nushellQuote(value string) string {
+	return `"` +
+		strings.NewReplacer(
+			`\`, `\\`,
+			`"`, `\"`,
+			`'`, `\'`,
+		).Replace(value) +
+		`"`
 }
 
 func (c Command) Run() error {

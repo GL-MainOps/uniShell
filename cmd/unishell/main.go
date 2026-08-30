@@ -300,6 +300,7 @@ func runDirectShell(
 		runtimeSession.Paths.Bin,
 		runtimeSession.Paths.Runtime,
 		startup,
+		nil,
 	)
 	if err != nil {
 		return cleanupRuntime(
