@@ -154,6 +154,7 @@ type shellTestBackend struct {
 	attached  bool
 	detached  bool
 	destroyed bool
+	alive     bool
 	attachErr error
 	detachErr error
 }
@@ -190,7 +191,7 @@ func (b *shellTestBackend) Detach(multiplexer.Session) error {
 }
 
 func (b *shellTestBackend) IsAlive(multiplexer.Session) bool {
-	return true
+	return b.alive
 }
 
 func (b *shellTestBackend) Destroy(multiplexer.Session) error {
@@ -199,7 +200,9 @@ func (b *shellTestBackend) Destroy(multiplexer.Session) error {
 }
 
 func TestRunShellAttachesExistingSession(t *testing.T) {
-	backend := &shellTestBackend{}
+	backend := &shellTestBackend{
+		alive: true,
+	}
 
 	session := &app.Session{
 		Multiplexer: &multiplexer.ManagedSession{
@@ -237,7 +240,9 @@ func TestRunShellAttachesExistingSession(t *testing.T) {
 func TestRunShellCreatesAndAttachesWhenSessionDoesNotExist(
 	t *testing.T,
 ) {
-	backend := &shellTestBackend{}
+	backend := &shellTestBackend{
+		alive: true,
+	}
 
 	session := &app.Session{
 		Multiplexer: &multiplexer.ManagedSession{
