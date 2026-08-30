@@ -38,6 +38,11 @@ type Command struct {
 	Env  []string
 }
 
+type Handoff struct {
+	Path string
+	Args []string
+}
+
 var supportedShells = []string{
 	"bash",
 	"zsh",
@@ -187,6 +192,7 @@ func NewCommand(
 	runtimeBin string,
 	sessionRuntime string,
 	startup Startup,
+	handoff *Handoff,
 ) (Command, error) {
 	if selected.Path == "" {
 		return Command{}, errors.New(
@@ -209,6 +215,23 @@ func NewCommand(
 
 	args := []string{selected.Path}
 	args = append(args, startup.Args...)
+
+	if handoff != nil {
+		if handoff.Path == "" {
+			return Command{}, errors.New(
+				"handoff path cannot be empty",
+			)
+		}
+
+		args = append(
+			args,
+			handoff.Path,
+		)
+		args = append(
+			args,
+			handoff.Args...,
+		)
+	}
 
 	return Command{
 		Path: selected.Path,

@@ -128,6 +128,7 @@ func TestNewCommandBuildsRuntimeEnvironment(t *testing.T) {
 		"/runtime/bin",
 		"/runtime/session",
 		Startup{},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("NewCommand() returned error: %v", err)
@@ -660,6 +661,7 @@ func TestNewCommandSetsShellEnvironment(t *testing.T) {
 		"/runtime/bin",
 		"/runtime/session",
 		Startup{},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf(
@@ -688,6 +690,7 @@ func TestNewCommandRejectsEmptyShellPath(t *testing.T) {
 		"/runtime/bin",
 		"/runtime/session",
 		Startup{},
+		nil,
 	)
 
 	if err == nil {

@@ -1,5 +1,5 @@
 # Un-needed files
-docker-compose.yml
+docker/
 
 # Go build output
 /bin/
