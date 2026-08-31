@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 	"gitlab.com/mainops/uniShell/internal/multiplexer/config"
@@ -55,27 +56,36 @@ func (b *Backend) Available() bool {
 	return err == nil
 }
 
+func prepareSocketPath(socketPath string) error {
+	parent := filepath.Dir(socketPath)
+
+	if err := os.MkdirAll(parent, 0700); err != nil {
+		return fmt.Errorf(
+			"create tmux socket directory: %w",
+			err,
+		)
+	}
+
+	if err := os.Chmod(parent, 0700); err != nil {
+		return fmt.Errorf(
+			"secure tmux socket directory: %w",
+			err,
+		)
+	}
+
+	return nil
+}
+
 func (b *Backend) Create(session api.Session) error {
 	if session.ShellPath == "" {
 		return fmt.Errorf("tmux shell path cannot be empty")
 	}
 
+	if err := prepareSocketPath(session.Endpoint); err != nil {
+		return err
+	}
+
 	args, err := b.commandArgs(
-		session,
-		"set-option",
-		"-g",
-		"default-shell",
-		session.ShellPath,
-	)
-	if err != nil {
-		return err
-	}
-
-	if err := b.Run(b.Binary, args...); err != nil {
-		return err
-	}
-
-	args, err = b.commandArgs(
 		session,
 		"new-session",
 		"-d",
@@ -106,6 +116,11 @@ func (b *Backend) Create(session api.Session) error {
 			session.NativeName,
 		)
 	}
+
+	args = append(
+		args,
+		session.ShellPath,
+	)
 
 	return b.Run(b.Binary, args...)
 }

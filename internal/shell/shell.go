@@ -311,6 +311,12 @@ func (c Command) Run() error {
 	cmd.Env = c.Env
 
 	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) &&
+			exitErr.ExitCode() == 130 {
+			return nil
+		}
+
 		return fmt.Errorf("run shell: %w", err)
 	}
 
@@ -359,15 +365,20 @@ func resolveShell(
 	name string,
 	runtimeBin string,
 ) (string, Source, bool) {
+	executableName := name
+	if name == "nushell" {
+		executableName = "nu"
+	}
+
 	if name != "bash" && runtimeBin != "" {
-		bundled := filepath.Join(runtimeBin, name)
+		bundled := filepath.Join(runtimeBin, executableName)
 
 		if isExecutable(bundled) {
 			return bundled, SourceBundled, true
 		}
 	}
 
-	host, err := exec.LookPath(name)
+	host, err := exec.LookPath(executableName)
 	if err != nil {
 		return "", "", false
 	}

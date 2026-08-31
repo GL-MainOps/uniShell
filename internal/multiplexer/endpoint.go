@@ -2,8 +2,6 @@ package multiplexer
 
 import (
 	"errors"
-	"fmt"
-	"os"
 	"path/filepath"
 )
 
@@ -23,26 +21,4 @@ func ResolveTmuxSocket(runtimePath, configuredPath string) (string, error) {
 		"multiplexer",
 		defaultTmuxSocketName,
 	), nil
-}
-
-func PrepareTmuxSocketPath(socketPath string) error {
-	parent := filepath.Dir(socketPath)
-
-	if err := os.MkdirAll(parent, 0700); err != nil {
-		return fmt.Errorf(
-			"create tmux socket directory %q: %w",
-			parent,
-			err,
-		)
-	}
-
-	if err := os.Chmod(parent, 0700); err != nil {
-		return fmt.Errorf(
-			"set tmux socket directory permissions %q: %w",
-			parent,
-			err,
-		)
-	}
-
-	return nil
 }

@@ -77,7 +77,20 @@ func (m *Manager) Create(
 		Options:    options,
 	}
 
-	if err := backend.Create(session); err != nil {
+	var createdNativeName = nativeName
+
+	if creator, ok := backend.(api.NativeNameCreator); ok {
+		createdNativeName, err = creator.CreateWithNativeName(
+			session,
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"create %s session: %w",
+				backendName,
+				err,
+			)
+		}
+	} else if err := backend.Create(session); err != nil {
 		return nil, fmt.Errorf(
 			"create %s session: %w",
 			backendName,
@@ -85,10 +98,12 @@ func (m *Manager) Create(
 		)
 	}
 
+	session.NativeName = createdNativeName
+
 	metadata := Metadata{
 		ID:          id,
 		Name:        sessionName,
-		NativeName:  nativeName,
+		NativeName:  createdNativeName,
 		Multiplexer: backendName,
 		Endpoint:    endpoint,
 		ShellName:   shellName,

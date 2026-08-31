@@ -1,6 +1,8 @@
 package zellij
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -78,6 +80,19 @@ func (b *Backend) Available() bool {
 }
 
 func (b *Backend) Create(session api.Session) error {
+	_, err := b.create(session)
+	return err
+}
+
+func (b *Backend) CreateWithNativeName(
+	session api.Session,
+) (string, error) {
+	return b.create(session)
+}
+
+func (b *Backend) create(
+	session api.Session,
+) (string, error) {
 	args := make([]string, 0, 8)
 
 	configResolver := b.ConfigResolver
@@ -85,18 +100,18 @@ func (b *Backend) Create(session api.Session) error {
 		configResolver = config.NewResolver()
 	}
 
-	config, err := configResolver.Zellij(
+	configPath, err := configResolver.Zellij(
 		session.Runtime,
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	if config != "" {
+	if configPath != "" {
 		args = append(
 			args,
 			"--config",
-			config,
+			configPath,
 		)
 	}
 
@@ -109,11 +124,13 @@ func (b *Backend) Create(session api.Session) error {
 	if err := validateCreateArgs(
 		session.Options.Zellij.CreateArgs,
 	); err != nil {
-		return err
+		return "", err
 	}
 
-	if session.NativeName != "" && session.ShellPath == "" {
-		return fmt.Errorf("zellij shell path cannot be empty")
+	if session.ShellPath == "" {
+		return "", fmt.Errorf(
+			"zellij shell path cannot be empty",
+		)
 	}
 
 	args = append(
@@ -128,13 +145,54 @@ func (b *Backend) Create(session api.Session) error {
 			"--",
 			session.ShellPath,
 		)
+
+		if err := b.Run(
+			b.Binary,
+			args,
+			session.Env,
+		); err != nil {
+			return "", err
+		}
+
+		return session.NativeName, nil
 	}
 
-	return b.Run(
+	nativeName, err := generateNativeName()
+	if err != nil {
+		return "", fmt.Errorf(
+			"generate zellij native session name: %w",
+			err,
+		)
+	}
+
+	args = append(
+		args,
+		nativeName,
+		"--",
+		session.ShellPath,
+	)
+
+	if err := b.Run(
 		b.Binary,
 		args,
 		session.Env,
-	)
+	); err != nil {
+		return "", err
+	}
+
+	return nativeName, nil
+}
+
+func generateNativeName() (string, error) {
+	const size = 16
+
+	data := make([]byte, size)
+
+	if _, err := rand.Read(data); err != nil {
+		return "", err
+	}
+
+	return "unishell-" + hex.EncodeToString(data), nil
 }
 
 func (b *Backend) Attach(session api.Session) error {

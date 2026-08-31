@@ -13,6 +13,12 @@ import (
 func TestCreateUsesSessionEndpointAndName(t *testing.T) {
 	var gotArgs [][]string
 
+	endpoint := filepath.Join(
+		t.TempDir(),
+		"multiplexer",
+		"tmux.sock",
+	)
+
 	backend := &Backend{
 		Binary: "fake-tmux",
 		Run: func(_ string, args ...string) error {
@@ -27,7 +33,7 @@ func TestCreateUsesSessionEndpointAndName(t *testing.T) {
 	err := backend.Create(api.Session{
 		NativeName: "work",
 		ShellPath:  "/runtime/bin/bash",
-		Endpoint:   "/runtime/work/multiplexer/tmux.sock",
+		Endpoint:   endpoint,
 	})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
@@ -36,19 +42,12 @@ func TestCreateUsesSessionEndpointAndName(t *testing.T) {
 	want := [][]string{
 		{
 			"-S",
-			"/runtime/work/multiplexer/tmux.sock",
-			"set-option",
-			"-g",
-			"default-shell",
-			"/runtime/bin/bash",
-		},
-		{
-			"-S",
-			"/runtime/work/multiplexer/tmux.sock",
+			endpoint,
 			"new-session",
 			"-d",
 			"-s",
 			"work",
+			"/runtime/bin/bash",
 		},
 	}
 
@@ -57,8 +56,14 @@ func TestCreateUsesSessionEndpointAndName(t *testing.T) {
 	}
 }
 
-func TestCreateSetsShellBeforeCreatingSession(t *testing.T) {
+func TestCreateSetsShellForSession(t *testing.T) {
 	var gotArgs [][]string
+
+	endpoint := filepath.Join(
+		t.TempDir(),
+		"multiplexer",
+		"tmux.sock",
+	)
 
 	backend := &Backend{
 		Binary: "fake-tmux",
@@ -74,39 +79,31 @@ func TestCreateSetsShellBeforeCreatingSession(t *testing.T) {
 	err := backend.Create(api.Session{
 		NativeName: "work",
 		ShellPath:  "/runtime/bin/zsh",
-		Endpoint:   "/runtime/work/multiplexer/tmux.sock",
+		Endpoint:   endpoint,
 	})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	if len(gotArgs) != 2 {
-		t.Fatalf("tmux invocations = %d, want 2", len(gotArgs))
+	if len(gotArgs) != 1 {
+		t.Fatalf("tmux invocations = %d, want 1", len(gotArgs))
 	}
 
-	wantSetShell := []string{
+	want := []string{
 		"-S",
-		"/runtime/work/multiplexer/tmux.sock",
-		"set-option",
-		"-g",
-		"default-shell",
+		endpoint,
+		"new-session",
+		"-d",
+		"-s",
+		"work",
 		"/runtime/bin/zsh",
 	}
 
-	if !reflect.DeepEqual(gotArgs[0], wantSetShell) {
+	if !reflect.DeepEqual(gotArgs[0], want) {
 		t.Fatalf(
-			"first invocation args = %#v, want %#v",
+			"tmux invocation args = %#v, want %#v",
 			gotArgs[0],
-			wantSetShell,
-		)
-	}
-
-	if gotArgs[1][0] != "-S" ||
-		gotArgs[1][1] != "/runtime/work/multiplexer/tmux.sock" ||
-		gotArgs[1][2] != "new-session" {
-		t.Fatalf(
-			"second invocation = %#v, want new-session on same endpoint",
-			gotArgs[1],
+			want,
 		)
 	}
 }
@@ -134,6 +131,12 @@ func TestCreateRejectsEmptyShellPath(t *testing.T) {
 func TestCreateUsesSessionEnvironment(t *testing.T) {
 	var gotArgs []string
 
+	endpoint := filepath.Join(
+		t.TempDir(),
+		"multiplexer",
+		"tmux.sock",
+	)
+
 	backend := &Backend{
 		Binary: "fake-tmux",
 		Run: func(_ string, args ...string) error {
@@ -145,7 +148,7 @@ func TestCreateUsesSessionEnvironment(t *testing.T) {
 	err := backend.Create(api.Session{
 		NativeName: "work",
 		ShellPath:  "/runtime/bin/bash",
-		Endpoint:   "/runtime/work/multiplexer/tmux.sock",
+		Endpoint:   endpoint,
 		Env: []string{
 			"PATH=/runtime/work/bin:/usr/bin",
 			"SHELL=/bin/bash",
@@ -157,7 +160,7 @@ func TestCreateUsesSessionEnvironment(t *testing.T) {
 
 	want := []string{
 		"-S",
-		"/runtime/work/multiplexer/tmux.sock",
+		endpoint,
 		"new-session",
 		"-d",
 		"-e",
@@ -166,6 +169,7 @@ func TestCreateUsesSessionEnvironment(t *testing.T) {
 		"SHELL=/bin/bash",
 		"-s",
 		"work",
+		"/runtime/bin/bash",
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
@@ -355,6 +359,12 @@ func TestDestroyUsesSessionEndpointAndName(t *testing.T) {
 func TestCreateUsesConfiguredOptions(t *testing.T) {
 	var gotArgs [][]string
 
+	endpoint := filepath.Join(
+		t.TempDir(),
+		"multiplexer",
+		"tmux.sock",
+	)
+
 	backend := &Backend{
 		Binary: "fake-tmux",
 		Run: func(_ string, args ...string) error {
@@ -369,7 +379,7 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 	err := backend.Create(api.Session{
 		NativeName: "work",
 		ShellPath:  "/runtime/bin/bash",
-		Endpoint:   "/runtime/work/multiplexer/tmux.sock",
+		Endpoint:   endpoint,
 		Options: api.Options{
 			Tmux: api.TmuxOptions{
 				CreateArgs: []string{
@@ -385,20 +395,13 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 	want := [][]string{
 		{
 			"-S",
-			"/runtime/work/multiplexer/tmux.sock",
-			"set-option",
-			"-g",
-			"default-shell",
-			"/runtime/bin/bash",
-		},
-		{
-			"-S",
-			"/runtime/work/multiplexer/tmux.sock",
+			endpoint,
 			"new-session",
 			"-d",
 			"--test-option",
 			"-s",
 			"work",
+			"/runtime/bin/bash",
 		},
 	}
 
@@ -461,48 +464,27 @@ func TestCreateUsesBundledConfig(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	wantPrefix := []string{
-		"-f",
-		config,
-		"-S",
-		session.Endpoint,
-		"set-option",
-		"-g",
-		"default-shell",
-		"/runtime/bin/bash",
-	}
-
-	if len(gotArgs) == 0 ||
-		!reflect.DeepEqual(
-			gotArgs[0],
-			wantPrefix,
-		) {
-		t.Fatalf(
-			"first invocation args = %#v, want %#v",
-			gotArgs[0],
-			wantPrefix,
-		)
-	}
-
-	wantCreate := []string{
+	want := []string{
 		"-f",
 		config,
 		"-S",
 		session.Endpoint,
 		"new-session",
 		"-d",
+		"-s",
+		"work",
+		"/runtime/bin/bash",
 	}
 
-	if len(gotArgs) < 2 ||
-		len(gotArgs[1]) < len(wantCreate) ||
+	if len(gotArgs) != 1 ||
 		!reflect.DeepEqual(
-			gotArgs[1][:len(wantCreate)],
-			wantCreate,
+			gotArgs[0],
+			want,
 		) {
 		t.Fatalf(
-			"second invocation args = %#v, want prefix %#v",
-			gotArgs[1],
-			wantCreate,
+			"args = %#v, want %#v",
+			gotArgs,
+			[][]string{want},
 		)
 	}
 }
@@ -544,5 +526,80 @@ func TestCreateRejectsLifecycleOptions(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestCreatePreparesSocketDirectory(t *testing.T) {
+	runtime := t.TempDir()
+	endpoint := filepath.Join(
+		runtime,
+		"multiplexer",
+		"tmux.sock",
+	)
+
+	backend := &Backend{
+		Binary: "fake-tmux",
+		Run: func(_ string, _ ...string) error {
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+		ShellPath:  "/bin/bash",
+		Endpoint:   endpoint,
+	})
+
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	info, err := os.Stat(filepath.Dir(endpoint))
+	if err != nil {
+		t.Fatalf("stat socket directory: %v", err)
+	}
+
+	if !info.IsDir() {
+		t.Fatal("socket parent is not a directory")
+	}
+
+	if info.Mode().Perm() != 0700 {
+		t.Fatalf(
+			"socket parent permissions = %o, want %o",
+			info.Mode().Perm(),
+			0700,
+		)
+	}
+}
+
+func TestPrepareSocketPathCreatesPrivateParent(t *testing.T) {
+	socketPath := filepath.Join(
+		t.TempDir(),
+		"multiplexer",
+		"tmux.sock",
+	)
+
+	if err := prepareSocketPath(socketPath); err != nil {
+		t.Fatalf(
+			"prepareSocketPath() returned error: %v",
+			err,
+		)
+	}
+
+	info, err := os.Stat(filepath.Dir(socketPath))
+	if err != nil {
+		t.Fatalf("stat socket directory: %v", err)
+	}
+
+	if !info.IsDir() {
+		t.Fatal("socket parent is not a directory")
+	}
+
+	if info.Mode().Perm() != 0700 {
+		t.Fatalf(
+			"socket parent permissions = %o, want %o",
+			info.Mode().Perm(),
+			0700,
+		)
 	}
 }

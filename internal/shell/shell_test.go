@@ -831,3 +831,79 @@ func TestNewCommandRejectsEmptyShellPath(t *testing.T) {
 		t.Fatal("NewCommand() returned nil error")
 	}
 }
+
+func TestResolveNushellUsesNuExecutableFromPATH(t *testing.T) {
+	runtimeBin := t.TempDir()
+	hostDir := t.TempDir()
+	host := executable(t, hostDir, "nu")
+
+	t.Setenv("PATH", hostDir)
+
+	got, err := Resolve("nushell", runtimeBin)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+
+	if got.Name != "nushell" {
+		t.Fatalf(
+			"shell name = %q, want %q",
+			got.Name,
+			"nushell",
+		)
+	}
+
+	if got.Path != host {
+		t.Fatalf(
+			"shell path = %q, want %q",
+			got.Path,
+			host,
+		)
+	}
+
+	if got.Source != SourceHost {
+		t.Fatalf(
+			"shell source = %q, want %q",
+			got.Source,
+			SourceHost,
+		)
+	}
+}
+
+func TestResolveNushellPrefersBundledNuExecutable(t *testing.T) {
+	runtimeBin := t.TempDir()
+	bundled := executable(t, runtimeBin, "nu")
+
+	hostDir := t.TempDir()
+	executable(t, hostDir, "nu")
+
+	t.Setenv("PATH", hostDir)
+
+	got, err := Resolve("nushell", runtimeBin)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+
+	if got.Name != "nushell" {
+		t.Fatalf(
+			"shell name = %q, want %q",
+			got.Name,
+			"nushell",
+		)
+	}
+
+	if got.Path != bundled {
+		t.Fatalf(
+			"shell path = %q, want bundled %q",
+			got.Path,
+			bundled,
+		)
+	}
+
+	if got.Source != SourceBundled {
+		t.Fatalf(
+			"shell source = %q, want %q",
+			got.Source,
+			SourceBundled,
+		)
+	}
+}

@@ -32,3 +32,9 @@ type Backend interface {
 	IsAlive(Session) bool
 	Destroy(Session) error
 }
+
+// NativeNameCreator is optionally implemented by backends that can
+// determine the native session name when creation does not receive one.
+type NativeNameCreator interface {
+	CreateWithNativeName(Session) (string, error)
+}

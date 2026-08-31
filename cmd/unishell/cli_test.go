@@ -307,3 +307,137 @@ func TestParseCLIArgsRejectsEmptyMultiplexer(t *testing.T) {
 		t.Fatal("parseCLIArgs() returned nil error")
 	}
 }
+
+func TestParseCLIArgsUsesSessionEnvironment(t *testing.T) {
+	t.Setenv(sessionEnvName, "work")
+
+	options, _, err := parseCLIArgs(nil)
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.SessionName != "work" {
+		t.Fatalf(
+			"session name = %q, want %q",
+			options.SessionName,
+			"work",
+		)
+	}
+}
+
+func TestParseCLIArgsUsesMultiplexerSessionEnvironment(t *testing.T) {
+	t.Setenv(
+		multiplexerSessionEnvName,
+		"dev",
+	)
+
+	options, _, err := parseCLIArgs(nil)
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.MultiplexerSessionName != "dev" {
+		t.Fatalf(
+			"multiplexer session name = %q, want %q",
+			options.MultiplexerSessionName,
+			"dev",
+		)
+	}
+}
+
+func TestParseCLIArgsExplicitSessionOverridesEnvironment(t *testing.T) {
+	t.Setenv(sessionEnvName, "environment")
+
+	options, _, err := parseCLIArgs([]string{
+		"--session",
+		"cli",
+	})
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.SessionName != "cli" {
+		t.Fatalf(
+			"session name = %q, want %q",
+			options.SessionName,
+			"cli",
+		)
+	}
+}
+
+func TestParseCLIArgsExplicitMultiplexerSessionOverridesEnvironment(
+	t *testing.T,
+) {
+	t.Setenv(
+		multiplexerSessionEnvName,
+		"environment",
+	)
+
+	options, _, err := parseCLIArgs([]string{
+		"--multiplexer-session",
+		"cli",
+	})
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.MultiplexerSessionName != "cli" {
+		t.Fatalf(
+			"multiplexer session name = %q, want %q",
+			options.MultiplexerSessionName,
+			"cli",
+		)
+	}
+}
+
+func TestParseCLIArgsRejectsMissingSession(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--session",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+}
+
+func TestParseCLIArgsRejectsEmptySession(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--session=",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+}
+
+func TestParseCLIArgsRejectsMissingMultiplexerSession(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--multiplexer-session",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+}
+
+func TestParseCLIArgsRejectsEmptyMultiplexerSession(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--multiplexer-session=",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+}

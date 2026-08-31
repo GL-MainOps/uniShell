@@ -28,11 +28,13 @@ func main() {
 	}
 
 	application, err := app.New(app.Options{
-		Version:         version,
-		Commit:          commit,
-		Root:            options.RuntimeDir,
-		Shell:           options.Shell,
-		MultiplexerName: options.Multiplexer,
+		Version:                version,
+		Commit:                 commit,
+		Root:                   options.RuntimeDir,
+		Shell:                  options.Shell,
+		MultiplexerName:        options.Multiplexer,
+		SessionName:            options.SessionName,
+		MultiplexerSessionName: options.MultiplexerSessionName,
 	})
 	if err != nil {
 		printError(err)
