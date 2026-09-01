@@ -119,6 +119,7 @@ func (b *Backend) create(
 		args,
 		"attach",
 		"--create-background",
+		"--close-on-exit",
 	)
 
 	if err := validateCreateArgs(
@@ -240,7 +241,7 @@ func (b *Backend) IsAlive(session api.Session) bool {
 
 	output, err := runner(
 		b.Binary,
-		[]string{"list-sessions"},
+		[]string{"list-sessions", "--short"},
 		nil,
 	)
 	if err != nil {
@@ -255,7 +256,8 @@ func (b *Backend) IsAlive(session api.Session) bool {
 		string(output),
 		"\n",
 	) {
-		if strings.TrimSpace(line) == session.NativeName {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == session.NativeName {
 			return true
 		}
 	}

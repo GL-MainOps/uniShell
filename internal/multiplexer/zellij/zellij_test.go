@@ -49,6 +49,7 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 		"/tmp/uHome/.config/zellij/config.kdl",
 		"attach",
 		"--create-background",
+		"--close-on-exit",
 		"work",
 		"--",
 		"/runtime/bin/bash",
@@ -67,6 +68,49 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 			"env = %#v, want %#v",
 			gotEnv,
 			wantEnv,
+		)
+	}
+}
+
+func TestCreateUsesCloseOnExit(t *testing.T) {
+	var gotArgs []string
+
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
+			gotArgs = append([]string(nil), args...)
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+		ShellPath:  "/runtime/bin/bash",
+	})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	want := []string{
+		"--config",
+		"/tmp/uHome/.config/zellij/config.kdl",
+		"attach",
+		"--create-background",
+		"--close-on-exit",
+		"work",
+		"--",
+		"/runtime/bin/bash",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			want,
 		)
 	}
 }
@@ -99,6 +143,7 @@ func TestCreateUsesSessionShellPath(t *testing.T) {
 		"/tmp/uHome/.config/zellij/config.kdl",
 		"attach",
 		"--create-background",
+		"--close-on-exit",
 		"work",
 		"--",
 		"/runtime/bin/zsh",
@@ -262,7 +307,7 @@ func TestIsAliveUsesQuietRunner(t *testing.T) {
 		) ([]byte, error) {
 			called = true
 
-			want := []string{"list-sessions"}
+			want := []string{"list-sessions", "--short"}
 
 			if !reflect.DeepEqual(args, want) {
 				t.Fatalf(
@@ -272,7 +317,10 @@ func TestIsAliveUsesQuietRunner(t *testing.T) {
 				)
 			}
 
-			return []byte("other\nwork\n"), nil
+			return []byte(
+				"other [Created 2h 0m ago]\n" +
+					"work [Created 0s ago]\n",
+			), nil
 		},
 	}
 
@@ -284,6 +332,27 @@ func TestIsAliveUsesQuietRunner(t *testing.T) {
 
 	if !called {
 		t.Fatal("RunQuiet() was not called")
+	}
+}
+
+func TestIsAliveDoesNotMatchSessionNamePrefix(t *testing.T) {
+	backend := &Backend{
+		Binary: "fake-zellij",
+		RunQuiet: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) ([]byte, error) {
+			return []byte(
+				"work-other [Created 0s ago]\n",
+			), nil
+		},
+	}
+
+	if backend.IsAlive(api.Session{
+		NativeName: "work",
+	}) {
+		t.Fatal("IsAlive() = true, want false")
 	}
 }
 
@@ -408,6 +477,7 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 		"/tmp/uHome/.config/zellij/config.kdl",
 		"attach",
 		"--create-background",
+		"--close-on-exit",
 		"--test-option",
 		"work",
 		"--",
@@ -477,6 +547,7 @@ func TestCreateUsesBundledConfig(t *testing.T) {
 		config,
 		"attach",
 		"--create-background",
+		"--close-on-exit",
 	}
 
 	if len(got) < len(wantPrefix) ||
@@ -583,6 +654,7 @@ func TestCreateWithNativeNamePreservesExplicitName(t *testing.T) {
 		"/tmp/uHome/.config/zellij/config.kdl",
 		"attach",
 		"--create-background",
+		"--close-on-exit",
 		"work",
 		"--",
 		"/bin/bash",
@@ -636,6 +708,7 @@ func TestCreateWithNativeNameGeneratesNativeName(
 		"/tmp/uHome/.config/zellij/config.kdl",
 		"attach",
 		"--create-background",
+		"--close-on-exit",
 	}
 
 	if len(gotArgs) < len(wantPrefix)+3 {
@@ -656,21 +729,21 @@ func TestCreateWithNativeNameGeneratesNativeName(
 		)
 	}
 
-	if gotArgs[4] != got {
+	if gotArgs[5] != got {
 		t.Fatalf(
 			"session name argument = %q, want %q",
-			gotArgs[4],
+			gotArgs[5],
 			got,
 		)
 	}
 
 	if !reflect.DeepEqual(
-		gotArgs[5:],
+		gotArgs[6:],
 		[]string{"--", "/bin/bash"},
 	) {
 		t.Fatalf(
 			"shell args = %#v, want %#v",
-			gotArgs[5:],
+			gotArgs[6:],
 			[]string{"--", "/bin/bash"},
 		)
 	}
