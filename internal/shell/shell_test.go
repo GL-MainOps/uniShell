@@ -3,6 +3,7 @@ package shell
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -176,6 +177,70 @@ func TestNewCommandBuildsRuntimeEnvironment(t *testing.T) {
 			"session runtime = %q, want %q",
 			runtimePath,
 			"/runtime/session",
+		)
+	}
+}
+
+func TestCommandRunPreservesProcessExitStatus(t *testing.T) {
+	command := Command{
+		Path: "/bin/sh",
+		Args: []string{
+			"/bin/sh",
+			"-c",
+			"exit 42",
+		},
+		Env: os.Environ(),
+	}
+
+	err := command.Run()
+	if err == nil {
+		t.Fatal("Command.Run() returned nil error")
+	}
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf(
+			"Command.Run() error = %T, want wrapped *exec.ExitError",
+			err,
+		)
+	}
+
+	if got := exitErr.ExitCode(); got != 42 {
+		t.Fatalf(
+			"Command.Run() exit code = %d, want 42",
+			got,
+		)
+	}
+}
+
+func TestCommandRunPreservesSIGINTExitStatus(t *testing.T) {
+	command := Command{
+		Path: "/bin/sh",
+		Args: []string{
+			"/bin/sh",
+			"-c",
+			"exit 130",
+		},
+		Env: os.Environ(),
+	}
+
+	err := command.Run()
+	if err == nil {
+		t.Fatal("Command.Run() returned nil error for exit 130")
+	}
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf(
+			"Command.Run() error = %T, want wrapped *exec.ExitError",
+			err,
+		)
+	}
+
+	if got := exitErr.ExitCode(); got != 130 {
+		t.Fatalf(
+			"Command.Run() exit code = %d, want 130",
+			got,
 		)
 	}
 }

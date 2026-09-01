@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"testing"
 
 	"gitlab.com/mainops/uniShell/internal/app"
@@ -75,6 +76,67 @@ func TestPrintErrorGenericError(t *testing.T) {
 			"output = %q, want %q",
 			output.String(),
 			want,
+		)
+	}
+}
+
+func TestExitCodeReturnsZeroForNil(t *testing.T) {
+	if got := exitCode(nil); got != 0 {
+		t.Fatalf("exitCode(nil) = %d, want 0", got)
+	}
+}
+
+func TestExitCodeSuppressesSIGINTStatus(t *testing.T) {
+	err := exec.Command("sh", "-c", "exit 130").Run()
+	if err == nil {
+		t.Fatal("command returned nil error")
+	}
+
+	if got := exitCode(err); got != 0 {
+		t.Fatalf("exitCode(130) = %d, want 0", got)
+	}
+}
+
+func TestExitCodePreservesNonSIGINTStatus(t *testing.T) {
+	err := exec.Command("sh", "-c", "exit 42").Run()
+	if err == nil {
+		t.Fatal("command returned nil error")
+	}
+
+	if got := exitCode(err); got != 42 {
+		t.Fatalf("exitCode(42) = %d, want 42", got)
+	}
+}
+
+func TestPrintErrorSuppressesSIGINTStatus(t *testing.T) {
+	err := exec.Command("sh", "-c", "exit 130").Run()
+	if err == nil {
+		t.Fatal("command returned nil error")
+	}
+
+	originalStderr := os.Stderr
+
+	reader, writer, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatalf("create stderr pipe: %v", pipeErr)
+	}
+
+	os.Stderr = writer
+
+	printError(err)
+
+	_ = writer.Close()
+	os.Stderr = originalStderr
+
+	var output bytes.Buffer
+	if _, err := output.ReadFrom(reader); err != nil {
+		t.Fatalf("read captured stderr: %v", err)
+	}
+
+	if output.Len() != 0 {
+		t.Fatalf(
+			"printError(130) output = %q, want empty output",
+			output.String(),
 		)
 	}
 }

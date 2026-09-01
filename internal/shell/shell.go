@@ -311,12 +311,6 @@ func (c Command) Run() error {
 	cmd.Env = c.Env
 
 	if err := cmd.Run(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) &&
-			exitErr.ExitCode() == 130 {
-			return nil
-		}
-
 		return fmt.Errorf("run shell: %w", err)
 	}
 

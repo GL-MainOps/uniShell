@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"gitlab.com/mainops/uniShell/internal/app"
@@ -24,7 +25,7 @@ func main() {
 	options, args, err := parseCLIArgs(os.Args[1:])
 	if err != nil {
 		printError(err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 
 	application, err := app.New(app.Options{
@@ -36,18 +37,45 @@ func main() {
 		SessionName:            options.SessionName,
 		MultiplexerSessionName: options.MultiplexerSessionName,
 	})
+	
 	if err != nil {
 		printError(err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 
 	if err := run(application, args); err != nil {
 		printError(err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 }
 
+func exitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		code := exitErr.ExitCode()
+		if code >= 0 {
+			if code == 130 {
+				return 0
+			}
+
+			return code
+		}
+	}
+
+	return 1
+}
+
 func printError(err error) {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) &&
+		exitErr.ExitCode() == 130 {
+		return
+	}
+
 	if errors.Is(err, credentials.ErrAuthenticationFailed) {
 		fmt.Fprintln(os.Stderr, "Authentication Failed. Aborting...")
 		return
