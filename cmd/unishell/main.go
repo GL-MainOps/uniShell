@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/credentials"
@@ -550,13 +551,75 @@ func runUpdate(app *app.App, args []string) error {
 	return nil
 }
 
+type cleanOptions struct {
+	Target string
+}
+
+func parseCleanArgs(args []string) (cleanOptions, error) {
+	var options cleanOptions
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		switch {
+		case arg == "--target":
+			if i+1 >= len(args) {
+				return cleanOptions{}, fmt.Errorf(
+					"--target requires a session name",
+				)
+			}
+
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return cleanOptions{}, fmt.Errorf(
+					"--target requires a session name",
+				)
+			}
+
+			options.Target = value
+			i++
+
+		case strings.HasPrefix(arg, "--target="):
+			value := strings.TrimSpace(
+				strings.TrimPrefix(arg, "--target="),
+			)
+
+			if value == "" {
+				return cleanOptions{}, fmt.Errorf(
+					"--target requires a session name",
+				)
+			}
+
+			options.Target = value
+
+		default:
+			return cleanOptions{}, fmt.Errorf(
+				"clean does not accept argument %q",
+				arg,
+			)
+		}
+	}
+
+	return options, nil
+}
+
 type cleanApplication interface {
 	DiscoverMultiplexerSession() (*app.Session, error)
 }
 
-func runClean(application cleanApplication, args []string) error {
-	if len(args) > 0 {
-		return fmt.Errorf("clean does not accept arguments")
+func runClean(
+	application cleanApplication,
+	args []string,
+) error {
+	options, err := parseCleanArgs(args)
+	if err != nil {
+		return err
+	}
+
+	if options.Target != "" {
+		return fmt.Errorf(
+			"clean target selection is not implemented yet",
+		)
 	}
 
 	session, err := application.DiscoverMultiplexerSession()

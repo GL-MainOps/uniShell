@@ -639,6 +639,85 @@ func TestRunCleanRejectsArguments(t *testing.T) {
 	}
 }
 
+func TestParseCleanArgsUsesTarget(t *testing.T) {
+	options, err := parseCleanArgs([]string{
+		"--target",
+		"development",
+	})
+	if err != nil {
+		t.Fatalf(
+			"parseCleanArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.Target != "development" {
+		t.Fatalf(
+			"target = %q, want %q",
+			options.Target,
+			"development",
+		)
+	}
+}
+
+func TestParseCleanArgsUsesTargetEqualsSyntax(t *testing.T) {
+	options, err := parseCleanArgs([]string{
+		"--target=development",
+	})
+	if err != nil {
+		t.Fatalf(
+			"parseCleanArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.Target != "development" {
+		t.Fatalf(
+			"target = %q, want %q",
+			options.Target,
+			"development",
+		)
+	}
+}
+
+func TestParseCleanArgsRejectsMissingTarget(t *testing.T) {
+	_, err := parseCleanArgs([]string{
+		"--target",
+	})
+	if err == nil {
+		t.Fatal("parseCleanArgs() returned nil error")
+	}
+}
+
+func TestParseCleanArgsRejectsEmptyTarget(t *testing.T) {
+	_, err := parseCleanArgs([]string{
+		"--target=",
+	})
+	if err == nil {
+		t.Fatal("parseCleanArgs() returned nil error")
+	}
+}
+
+func TestParseCleanArgsRejectsExtraArguments(t *testing.T) {
+	_, err := parseCleanArgs([]string{
+		"unexpected",
+	})
+	if err == nil {
+		t.Fatal("parseCleanArgs() returned nil error")
+	}
+}
+
+func TestParseCleanArgsRejectsExtraArgumentAfterTarget(t *testing.T) {
+	_, err := parseCleanArgs([]string{
+		"--target",
+		"development",
+		"unexpected",
+	})
+	if err == nil {
+		t.Fatal("parseCleanArgs() returned nil error")
+	}
+}
+
 func TestRunShellAuthenticatesBeforeMultiplexerSelection(
 	t *testing.T,
 ) {
