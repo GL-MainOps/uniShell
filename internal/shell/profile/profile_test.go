@@ -61,6 +61,94 @@ func TestResolveProfile(t *testing.T) {
 	}
 }
 
+func TestResolveProfileUsesShellSpecificExtensions(t *testing.T) {
+	root := t.TempDir()
+
+	tests := []struct {
+		shell     string
+		extension string
+	}{
+		{
+			shell:     "bash",
+			extension: "bash",
+		},
+		{
+			shell:     "zsh",
+			extension: "zsh",
+		},
+		{
+			shell:     "fish",
+			extension: "fish",
+		},
+		{
+			shell:     "nushell",
+			extension: "nu",
+		},
+	}
+
+	resolver := NewResolver(root)
+
+	for _, test := range tests {
+		t.Run(test.shell, func(t *testing.T) {
+			profileDir := filepath.Join(root, test.shell)
+
+			if err := os.MkdirAll(profileDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			profilePath := filepath.Join(
+				profileDir,
+				"server."+test.extension,
+			)
+
+			if err := os.WriteFile(
+				profilePath,
+				[]byte("# shell profile\n"),
+				0o644,
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := resolver.Resolve(test.shell, "server")
+			if err != nil {
+				t.Fatalf(
+					"Resolve() returned error: %v",
+					err,
+				)
+			}
+
+			if got.ProfilePath != profilePath {
+				t.Fatalf(
+					"ProfilePath = %q, want %q",
+					got.ProfilePath,
+					profilePath,
+				)
+			}
+		})
+	}
+}
+
+func TestResolveRejectsUnsupportedShell(t *testing.T) {
+	root := t.TempDir()
+
+	resolver := NewResolver(root)
+
+	_, err := resolver.Resolve("unsupported", "server")
+	if err == nil {
+		t.Fatal("Resolve() returned nil error")
+	}
+
+	want := `unsupported shell: "unsupported"`
+
+	if err.Error() != want {
+		t.Fatalf(
+			"error = %q, want %q",
+			err.Error(),
+			want,
+		)
+	}
+}
+
 func TestResolveWithoutProfile(t *testing.T) {
 	resolver := NewResolver(t.TempDir())
 

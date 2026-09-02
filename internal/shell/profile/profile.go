@@ -22,6 +22,21 @@ func NewResolver(root string) Resolver {
 	}
 }
 
+func profileExtension(shell string) (string, error) {
+	switch shell {
+	case "bash":
+		return "bash", nil
+	case "zsh":
+		return "zsh", nil
+	case "fish":
+		return "fish", nil
+	case "nushell":
+		return "nu", nil
+	default:
+		return "", fmt.Errorf("unsupported shell: %q", shell)
+	}
+}
+
 func (r Resolver) Resolve(shell, name string) (Result, error) {
 	if strings.TrimSpace(shell) == "" {
 		return Result{}, fmt.Errorf("shell cannot be empty")
@@ -31,10 +46,15 @@ func (r Resolver) Resolve(shell, name string) (Result, error) {
 		return Result{}, nil
 	}
 
+	extension, err := profileExtension(shell)
+	if err != nil {
+		return Result{}, err
+	}
+
 	profilePath := filepath.Join(
 		r.Root,
 		shell,
-		fmt.Sprintf("%s.%s", name, shell),
+		fmt.Sprintf("%s.%s", name, extension),
 	)
 
 	info, err := os.Stat(profilePath)
