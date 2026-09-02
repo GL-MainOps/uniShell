@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"gitlab.com/mainops/uniShell/internal/app"
+	"gitlab.com/mainops/uniShell/internal/bundle"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 )
 
@@ -216,16 +217,37 @@ func (b *lifecycleTestBackend) Destroy(
 func lifecycleTestBundleSource(t *testing.T) app.BundleSource {
 	t.Helper()
 
+	sourceDir := t.TempDir()
+
+	if err := os.MkdirAll(
+		filepath.Join(sourceDir, "config", "shell", "shared"),
+		0o755,
+	); err != nil {
+		t.Fatalf("create lifecycle test shell configuration directory: %v", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(sourceDir, "config", "shell", "shared", "config.toml"),
+		[]byte("[environment]\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write lifecycle test shell configuration: %v", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(sourceDir, "test-tool"),
+		[]byte("test runtime payload\n"),
+		0o755,
+	); err != nil {
+		t.Fatalf("write lifecycle test runtime payload: %v", err)
+	}
+
+	data, err := bundle.Create(sourceDir, "test-fixture-token")
+	if err != nil {
+		t.Fatalf("create lifecycle test bundle: %v", err)
+	}
+
 	return func() ([]byte, error) {
-		return os.ReadFile(
-			filepath.Join(
-				"..",
-				"..",
-				"internal",
-				"bundle",
-				"testdata",
-				"runtime.bundle",
-			),
-		)
+		return data, nil
 	}
 }

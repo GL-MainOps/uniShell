@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"gitlab.com/mainops/uniShell/internal/bundle"
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
@@ -283,10 +284,38 @@ func TestStartSessionRequiresAuthentication(t *testing.T) {
 func testBundleSource(t *testing.T) BundleSource {
 	t.Helper()
 
+	sourceDir := t.TempDir()
+
+	if err := os.MkdirAll(
+		filepath.Join(sourceDir, "config", "shell", "shared"),
+		0o755,
+	); err != nil {
+		t.Fatalf("create test bundle shell configuration directory: %v", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(sourceDir, "config", "shell", "shared", "config.toml"),
+		[]byte("[environment]\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write test bundle shell configuration: %v", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(sourceDir, "test-tool"),
+		[]byte("test runtime payload\n"),
+		0o755,
+	); err != nil {
+		t.Fatalf("write test runtime payload: %v", err)
+	}
+
+	data, err := bundle.Create(sourceDir, "test-fixture-token")
+	if err != nil {
+		t.Fatalf("create test bundle: %v", err)
+	}
+
 	return func() ([]byte, error) {
-		return os.ReadFile(
-			filepath.Join("..", "bundle", "testdata", "runtime.bundle"),
-		)
+		return data, nil
 	}
 }
 
