@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gitlab.com/mainops/uniShell/internal/bundle"
 	"gitlab.com/mainops/uniShell/internal/credentials"
@@ -310,6 +311,38 @@ func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
 	return runtimeSession, nil
 }
 
+func setEnvironment(
+	env []string,
+	key string,
+	value string,
+) []string {
+	prefix := key + "="
+	result := make([]string, 0, len(env)+1)
+	found := false
+
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			if !found {
+				result = append(
+					result,
+					prefix+value,
+				)
+				found = true
+			}
+
+			continue
+		}
+
+		result = append(result, entry)
+	}
+
+	if !found {
+		result = append(result, prefix+value)
+	}
+
+	return result
+}
+
 func (a *App) CreateMultiplexerSession(
 	runtimeSession *runtime.Session,
 	multiplexerName string,
@@ -362,6 +395,14 @@ func (a *App) CreateMultiplexerSession(
 		return nil, fmt.Errorf(
 			"prepare shell environment: %w",
 			err,
+		)
+	}
+
+	for key, value := range startup.Env {
+		environment = setEnvironment(
+			environment,
+			key,
+			value,
 		)
 	}
 

@@ -158,6 +158,57 @@ func TestCreateUsesSessionShellPath(t *testing.T) {
 	}
 }
 
+func TestCreateUsesSessionShellArgs(t *testing.T) {
+	var gotArgs []string
+
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
+			gotArgs = append([]string(nil), args...)
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+		ShellPath:  "/runtime/bin/bash",
+		ShellArgs: []string{
+			"--noprofile",
+			"--rcfile",
+			"/runtime/config/shell-generated/work.bash",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	want := []string{
+		"--config",
+		"/tmp/uHome/.config/zellij/config.kdl",
+		"attach",
+		"--create-background",
+		"--close-on-exit",
+		"work",
+		"--",
+		"/runtime/bin/bash",
+		"--noprofile",
+		"--rcfile",
+		"/runtime/config/shell-generated/work.bash",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf(
+			"zellij invocation args = %#v, want %#v",
+			gotArgs,
+			want,
+		)
+	}
+}
+
 func TestCreateRejectsEmptyShellPath(t *testing.T) {
 	backend := &Backend{
 		Binary: "fake-zellij",

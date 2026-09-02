@@ -147,6 +147,11 @@ func (b *Backend) create(
 			session.ShellPath,
 		)
 
+		args = append(
+			args,
+			session.ShellArgs...,
+		)
+
 		if err := b.Run(
 			b.Binary,
 			args,
@@ -171,6 +176,11 @@ func (b *Backend) create(
 		nativeName,
 		"--",
 		session.ShellPath,
+	)
+
+	args = append(
+		args,
+		session.ShellArgs...,
 	)
 
 	if err := b.Run(

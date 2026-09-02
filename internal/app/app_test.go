@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"gitlab.com/mainops/uniShell/internal/bundle"
@@ -653,6 +654,96 @@ func TestCreateMultiplexerSessionUsesProvidedMultiplexer(
 
 	if err := session.Cleanup(); err != nil {
 		t.Fatalf("Cleanup() returned error: %v", err)
+	}
+}
+
+func TestCreateMultiplexerSessionPassesShellStartup(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &appTestBackend{}
+
+	manager := multiplexer.NewManager(
+		multiplexer.NewRegistry(backend),
+	)
+
+	application, err := New(Options{
+		Version:         "1.0.0",
+		Commit:          "test",
+		Root:            filepath.Dir(runtimePath),
+		Multiplexer:     manager,
+		MultiplexerName: "test",
+		SessionName:     "default",
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	runtimeSession := &runtime.Session{
+		Paths: runtime.Paths{
+			Runtime: runtimePath,
+			Bin:     filepath.Join(runtimePath, "bin"),
+		},
+	}
+
+	startup := shell.Startup{
+		Args: []string{
+			"-d",
+		},
+		Env: map[string]string{
+			"ZDOTDIR": filepath.Join(
+				runtimePath,
+				"config",
+				"shell",
+				"zsh",
+			),
+		},
+	}
+
+	session, err := application.CreateMultiplexerSession(
+		runtimeSession,
+		"test",
+		"zsh",
+		startup,
+	)
+	if err != nil {
+		t.Fatalf(
+			"CreateMultiplexerSession() returned error: %v",
+			err,
+		)
+	}
+
+	if !reflect.DeepEqual(
+		session.Multiplexer.Session.ShellArgs,
+		startup.Args,
+	) {
+		t.Fatalf(
+			"shell args = %#v, want %#v",
+			session.Multiplexer.Session.ShellArgs,
+			startup.Args,
+		)
+	}
+
+	wantEnvironment := ""
+	for _, entry := range session.Multiplexer.Session.Env {
+		if strings.HasPrefix(entry, "ZDOTDIR=") {
+			wantEnvironment = entry
+			break
+		}
+	}
+
+	want := "ZDOTDIR=" + startup.Env["ZDOTDIR"]
+
+	if wantEnvironment != want {
+		t.Fatalf(
+			"ZDOTDIR environment = %q, want %q",
+			wantEnvironment,
+			want,
+		)
 	}
 }
 

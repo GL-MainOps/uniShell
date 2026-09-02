@@ -122,6 +122,11 @@ func (b *Backend) Create(session api.Session) error {
 		session.ShellPath,
 	)
 
+	args = append(
+		args,
+		session.ShellArgs...,
+	)
+
 	return b.Run(b.Binary, args...)
 }
 
