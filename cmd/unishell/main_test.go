@@ -14,6 +14,37 @@ import (
 	"gitlab.com/mainops/uniShell/internal/shell"
 )
 
+func TestNewApplicationPropagatesShellConfigurationOptions(
+	t *testing.T,
+) {
+	options := cliOptions{
+		RuntimeDir:             t.TempDir(),
+		Shell:                  "bash",
+		ShellProfile:           "work",
+		NoSharedRC:             true,
+		Multiplexer:            "tmux",
+		SessionName:            "test-session",
+		MultiplexerSessionName: "test-multiplexer-session",
+	}
+
+	application, err := newApplication(options)
+	if err != nil {
+		t.Fatalf("newApplication() returned error: %v", err)
+	}
+
+	if got := application.RequestedShellProfile(); got != "work" {
+		t.Fatalf(
+			"RequestedShellProfile() = %q, want %q",
+			got,
+			"work",
+		)
+	}
+
+	if got := application.RequestedNoSharedRC(); !got {
+		t.Fatal("RequestedNoSharedRC() = false, want true")
+	}
+}
+
 func TestPrintErrorAuthenticationFailed(t *testing.T) {
 	originalStderr := os.Stderr
 

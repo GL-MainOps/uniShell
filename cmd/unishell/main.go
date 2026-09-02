@@ -21,6 +21,20 @@ var (
 	commit  = "unknown"
 )
 
+func newApplication(options cliOptions) (*app.App, error) {
+	return app.New(app.Options{
+		Version:                version,
+		Commit:                 commit,
+		Root:                   options.RuntimeDir,
+		Shell:                  options.Shell,
+		ShellProfile:           options.ShellProfile,
+		NoSharedRC:             options.NoSharedRC,
+		MultiplexerName:        options.Multiplexer,
+		SessionName:            options.SessionName,
+		MultiplexerSessionName: options.MultiplexerSessionName,
+	})
+}
+
 func main() {
 	options, args, err := parseCLIArgs(os.Args[1:])
 	if err != nil {
@@ -28,16 +42,7 @@ func main() {
 		os.Exit(exitCode(err))
 	}
 
-	application, err := app.New(app.Options{
-		Version:                version,
-		Commit:                 commit,
-		Root:                   options.RuntimeDir,
-		Shell:                  options.Shell,
-		MultiplexerName:        options.Multiplexer,
-		SessionName:            options.SessionName,
-		MultiplexerSessionName: options.MultiplexerSessionName,
-	})
-	
+	application, err := newApplication(options)
 	if err != nil {
 		printError(err)
 		os.Exit(exitCode(err))
