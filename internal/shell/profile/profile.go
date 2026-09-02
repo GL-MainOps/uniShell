@@ -43,7 +43,13 @@ func (r Resolver) Resolve(shell, name string) (Result, error) {
 	}
 
 	if strings.TrimSpace(name) == "" {
-		return Result{}, nil
+		return Result{
+			SharedPath: filepath.Join(
+				r.Root,
+				"shared",
+				"config.toml",
+			),
+		}, nil
 	}
 
 	extension, err := profileExtension(shell)

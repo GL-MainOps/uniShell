@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"gitlab.com/mainops/uniShell/internal/app"
@@ -169,6 +170,31 @@ func TestPrintErrorSuppressesSIGINTStatus(t *testing.T) {
 			"printError(130) output = %q, want empty output",
 			output.String(),
 		)
+	}
+}
+
+func shellTestRuntime(t *testing.T) *runtime.Session {
+	t.Helper()
+
+	runtimeDir := t.TempDir()
+	sharedDir := filepath.Join(runtimeDir, "config", "shell", "shared")
+
+	if err := os.MkdirAll(sharedDir, 0o755); err != nil {
+		t.Fatalf("create shared shell config directory: %v", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(sharedDir, "config.toml"),
+		[]byte("[environment]\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write shared shell configuration: %v", err)
+	}
+
+	return &runtime.Session{
+		Paths: runtime.Paths{
+			Runtime: runtimeDir,
+		},
 	}
 }
 
@@ -349,7 +375,7 @@ func TestRunShellCreatesAndAttachesWhenSessionDoesNotExist(
 
 	application := &shellTestApplication{
 		discoverErr:          multiplexer.ErrSessionNotFound,
-		preparedSession:      &runtime.Session{},
+		preparedSession:      shellTestRuntime(t),
 		createdSession:       session,
 		requestedShell:       "bash",
 		requestedMultiplexer: "tmux",
@@ -387,7 +413,7 @@ func TestRunShellCleansNewSessionWhenAttachFails(t *testing.T) {
 
 	application := &shellTestApplication{
 		discoverErr:          multiplexer.ErrSessionNotFound,
-		preparedSession:      &runtime.Session{},
+		preparedSession:      shellTestRuntime(t),
 		createdSession:       session,
 		requestedShell:       "bash",
 		requestedMultiplexer: "tmux",

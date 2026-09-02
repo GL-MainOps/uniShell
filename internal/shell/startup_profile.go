@@ -28,13 +28,8 @@ func PrepareProfileStartup(
 		)
 	}
 
-	if profileName == "" {
-		return Startup{}, fmt.Errorf(
-			"shell profile name cannot be empty",
-		)
-	}
-
 	adapter, err := config.AdapterFor(shellName)
+
 	if err != nil {
 		return Startup{}, fmt.Errorf(
 			"select shell configuration adapter: %w",

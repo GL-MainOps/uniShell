@@ -223,8 +223,11 @@ func prepareShellStartup(
 	selected shell.Shell,
 	runtimeDir string,
 ) (shell.Startup, error) {
+
 	profileName := application.RequestedShellProfile()
-	if profileName == "" {
+	includeShared := !application.RequestedNoSharedRC()
+
+	if profileName == "" && !includeShared {
 		return shell.Startup{}, nil
 	}
 
@@ -235,8 +238,6 @@ func prepareShellStartup(
 	)
 
 	loader := profile.NewLoader(profileRoot)
-
-	includeShared := !application.RequestedNoSharedRC()
 
 	loaded, err := loader.Load(
 		selected.Name,

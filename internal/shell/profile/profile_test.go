@@ -150,17 +150,28 @@ func TestResolveRejectsUnsupportedShell(t *testing.T) {
 }
 
 func TestResolveWithoutProfile(t *testing.T) {
-	resolver := NewResolver(t.TempDir())
+	root := t.TempDir()
+
+	resolver := NewResolver(root)
 
 	got, err := resolver.Resolve("bash", "")
 	if err != nil {
 		t.Fatalf("Resolve() returned error: %v", err)
 	}
 
-	if got != (Result{}) {
+	want := Result{
+		SharedPath: filepath.Join(
+			root,
+			"shared",
+			"config.toml",
+		),
+	}
+
+	if got != want {
 		t.Fatalf(
-			"Resolve() = %#v, want empty result",
+			"Resolve() = %#v, want %#v",
 			got,
+			want,
 		)
 	}
 }
