@@ -56,7 +56,6 @@ func (s *Session) Attach() error {
 	return nil
 }
 
-
 func (s *Session) Detach() error {
 	if s == nil {
 		return fmt.Errorf("session is nil")

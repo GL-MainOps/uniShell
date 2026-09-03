@@ -632,6 +632,7 @@ func runClean(
 	}
 
 	if len(sessions) == 0 {
+		fmt.Println("No managed uniShell sessions found.")
 		return nil
 	}
 

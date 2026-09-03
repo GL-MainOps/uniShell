@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -636,15 +637,23 @@ func TestRunCleanDestroysExistingSession(t *testing.T) {
 	}
 }
 
-func TestRunCleanSucceedsWhenSessionDoesNotExist(t *testing.T) {
-	application := &shellTestApplication{
-		discoverErr: multiplexer.ErrSessionNotFound,
-	}
+func TestRunCleanReportsWhenNoManagedSessionsExist(t *testing.T) {
+	application := &shellTestApplication{}
 
-	if err := runClean(application, nil); err != nil {
+	output := captureStdout(t, func() {
+		if err := runClean(application, nil); err != nil {
+			t.Fatalf(
+				"runClean() returned error: %v",
+				err,
+			)
+		}
+	})
+
+	if output != "No managed uniShell sessions found.\n" {
 		t.Fatalf(
-			"runClean() returned error: %v",
-			err,
+			"runClean() output = %q, want %q",
+			output,
+			"No managed uniShell sessions found.\n",
 		)
 	}
 }
@@ -771,4 +780,38 @@ func TestRunShellAuthenticatesBeforeMultiplexerSelection(
 			application.createdMultiplexer,
 		)
 	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	original := os.Stdout
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+
+	os.Stdout = writer
+
+	defer func() {
+		os.Stdout = original
+	}()
+
+	fn()
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close() returned error: %v", err)
+	}
+
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("io.ReadAll() returned error: %v", err)
+	}
+
+	if err := reader.Close(); err != nil {
+		t.Fatalf("reader.Close() returned error: %v", err)
+	}
+
+	return string(output)
 }
