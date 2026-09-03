@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gitlab.com/mainops/uniShell/internal/app"
@@ -610,6 +611,58 @@ type cleanApplication interface {
 	DiscoverMultiplexerSessions() ([]*multiplexer.ManagedSession, error)
 }
 
+var errCleanSelectionCancelled = errors.New(
+	"clean session selection cancelled",
+)
+
+func selectCleanSession(
+	sessions []*multiplexer.ManagedSession,
+) (*multiplexer.ManagedSession, error) {
+	fmt.Println("Managed uniShell sessions:")
+	fmt.Println()
+
+	for index, session := range sessions {
+		fmt.Printf(
+			"%d) %s\n",
+			index+1,
+			session.Session.Name,
+		)
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Fprint(
+			os.Stdout,
+			"\nEnter session number: ",
+		)
+
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, errCleanSelectionCancelled
+			}
+
+			return nil, err
+		}
+
+		value := strings.TrimSpace(response)
+
+		if strings.EqualFold(value, "q") {
+			return nil, errCleanSelectionCancelled
+		}
+
+		index, err := strconv.Atoi(value)
+		if err != nil ||
+			index < 1 ||
+			index > len(sessions) {
+			continue
+		}
+
+		return sessions[index-1], nil
+	}
+}
+
 func confirmCleanSession(name string) (bool, error) {
 	fmt.Printf(
 		"Are you sure you want to clean session %q? [y/N]: ",
@@ -689,26 +742,52 @@ func runClean(
 		)
 	}
 
-	session, err := application.DiscoverMultiplexerSession()
-	if err != nil {
-		if errors.Is(err, multiplexer.ErrSessionNotFound) {
-			return nil
+	var target *multiplexer.ManagedSession
+
+	if options.Target != "" {
+		for _, candidate := range sessions {
+			if candidate.Session.Name == options.Target {
+				target = candidate
+				break
+			}
 		}
 
+		if target == nil {
+			return fmt.Errorf(
+				"managed session %q not found",
+				options.Target,
+			)
+		}
+	} else {
+		target, err = selectCleanSession(sessions)
+		if err != nil {
+			if errors.Is(err, errCleanSelectionCancelled) {
+				return nil
+			}
+
+			return fmt.Errorf(
+				"select clean session: %w",
+				err,
+			)
+		}
+	}
+
+	confirmed, err := confirmCleanSession(target.Session.Name)
+	if err != nil {
 		return fmt.Errorf(
-			"discover multiplexer session: %w",
+			"read clean confirmation: %w",
 			err,
 		)
 	}
 
-	if err := session.Cleanup(); err != nil {
-		return fmt.Errorf(
-			"clean multiplexer session: %w",
-			err,
-		)
+	if !confirmed {
+		return nil
 	}
 
-	return nil
+	return fmt.Errorf(
+		"clean confirmation accepted for %q, cleanup is not implemented yet",
+		target.Session.Name,
+	)
 }
 
 func runDoctor(app *app.App, args []string) error {
