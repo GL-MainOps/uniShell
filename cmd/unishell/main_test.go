@@ -201,22 +201,23 @@ func shellTestRuntime(t *testing.T) *runtime.Session {
 }
 
 type shellTestApplication struct {
-	discoverSession      *app.Session
-	discoverSessions     []*multiplexer.ManagedSession
-	discoverErr          error
-	startSession         *app.Session
-	startErr             error
-	preparedSession      *runtime.Session
-	preparedErr          error
-	createdSession       *app.Session
-	createdErr           error
-	requestedShell       string
-	requestedMultiplexer string
-	runtimeSession       *runtime.Session
-	runtimeSessionErr    error
-	authErr              error
-	createdMultiplexer   string
-	createdStartup       shell.Startup
+	discoverSession       *app.Session
+	discoverSessions      []*multiplexer.ManagedSession
+	discoverCleanSessions []*app.CleanSession
+	discoverErr           error
+	startSession          *app.Session
+	startErr              error
+	preparedSession       *runtime.Session
+	preparedErr           error
+	createdSession        *app.Session
+	createdErr            error
+	requestedShell        string
+	requestedMultiplexer  string
+	runtimeSession        *runtime.Session
+	runtimeSessionErr     error
+	authErr               error
+	createdMultiplexer    string
+	createdStartup        shell.Startup
 }
 
 func (a *shellTestApplication) StartMultiplexerSession() (*app.Session, error) {
@@ -295,6 +296,17 @@ func (a *shellTestApplication) CreateMultiplexerSession(
 	a.createdMultiplexer = multiplexerName
 	a.createdStartup = startup
 	return a.createdSession, a.createdErr
+}
+
+func (a *shellTestApplication) DiscoverCleanSessions() (
+	[]*app.CleanSession,
+	error,
+) {
+	if a.discoverErr != nil {
+		return nil, a.discoverErr
+	}
+
+	return a.discoverCleanSessions, nil
 }
 
 type shellTestBackend struct {
@@ -616,19 +628,19 @@ func TestRunDetachRejectsArguments(t *testing.T) {
 }
 
 func TestSelectCleanSessionUsesNumericIndex(t *testing.T) {
-	sessions := []*multiplexer.ManagedSession{
+	sessions := []*app.CleanSession{
 		{
-			Session: multiplexer.Session{
+			Metadata: sessionmeta.Metadata{
 				Name: "development",
 			},
 		},
 		{
-			Session: multiplexer.Session{
+			Metadata: sessionmeta.Metadata{
 				Name: "production",
 			},
 		},
 		{
-			Session: multiplexer.Session{
+			Metadata: sessionmeta.Metadata{
 				Name: "testing",
 			},
 		},
@@ -680,14 +692,14 @@ func TestSelectCleanSessionUsesNumericIndex(t *testing.T) {
 }
 
 func TestSelectCleanSessionRepromptsAfterInvalidSelection(t *testing.T) {
-	sessions := []*multiplexer.ManagedSession{
+	sessions := []*app.CleanSession{
 		{
-			Session: multiplexer.Session{
+			Metadata: sessionmeta.Metadata{
 				Name: "development",
 			},
 		},
 		{
-			Session: multiplexer.Session{
+			Metadata: sessionmeta.Metadata{
 				Name: "production",
 			},
 		},
@@ -739,9 +751,9 @@ func TestSelectCleanSessionRepromptsAfterInvalidSelection(t *testing.T) {
 }
 
 func TestSelectCleanSessionCanCancel(t *testing.T) {
-	sessions := []*multiplexer.ManagedSession{
+	sessions := []*app.CleanSession{
 		{
-			Session: multiplexer.Session{
+			Metadata: sessionmeta.Metadata{
 				Name: "development",
 			},
 		},
@@ -788,9 +800,9 @@ func TestSelectCleanSessionCanCancel(t *testing.T) {
 
 func TestRunCleanSelectsSingleSession(t *testing.T) {
 	application := &shellTestApplication{
-		discoverSession: &app.Session{
-			Multiplexer: &multiplexer.ManagedSession{
-				Session: multiplexer.Session{
+		discoverCleanSessions: []*app.CleanSession{
+			{
+				Metadata: sessionmeta.Metadata{
 					Name: "default",
 				},
 			},
@@ -851,19 +863,19 @@ Enter session number: Are you sure you want to clean session "default"? [y/N]: `
 
 func TestRunCleanSelectsMultipleSessions(t *testing.T) {
 	application := &shellTestApplication{
-		discoverSessions: []*multiplexer.ManagedSession{
+		discoverCleanSessions: []*app.CleanSession{
 			{
-				Session: multiplexer.Session{
+				Metadata: sessionmeta.Metadata{
 					Name: "development",
 				},
 			},
 			{
-				Session: multiplexer.Session{
+				Metadata: sessionmeta.Metadata{
 					Name: "production",
 				},
 			},
 			{
-				Session: multiplexer.Session{
+				Metadata: sessionmeta.Metadata{
 					Name: "testing",
 				},
 			},
@@ -926,14 +938,14 @@ Enter session number: Are you sure you want to clean session "production"? [y/N]
 
 func TestRunCleanCanCancelSessionSelection(t *testing.T) {
 	application := &shellTestApplication{
-		discoverSessions: []*multiplexer.ManagedSession{
+		discoverCleanSessions: []*app.CleanSession{
 			{
-				Session: multiplexer.Session{
+				Metadata: sessionmeta.Metadata{
 					Name: "development",
 				},
 			},
 			{
-				Session: multiplexer.Session{
+				Metadata: sessionmeta.Metadata{
 					Name: "production",
 				},
 			},
@@ -995,9 +1007,9 @@ Enter session number: `
 
 func TestRunCleanRejectsNonexistentTarget(t *testing.T) {
 	application := &shellTestApplication{
-		discoverSession: &app.Session{
-			Multiplexer: &multiplexer.ManagedSession{
-				Session: multiplexer.Session{
+		discoverCleanSessions: []*app.CleanSession{
+			{
+				Metadata: sessionmeta.Metadata{
 					Name: "development",
 				},
 			},
@@ -1026,9 +1038,9 @@ func TestRunCleanRejectsNonexistentTarget(t *testing.T) {
 
 func TestRunCleanConfirmsExplicitTarget(t *testing.T) {
 	application := &shellTestApplication{
-		discoverSession: &app.Session{
-			Multiplexer: &multiplexer.ManagedSession{
-				Session: multiplexer.Session{
+		discoverCleanSessions: []*app.CleanSession{
+			{
+				Metadata: sessionmeta.Metadata{
 					Name: "development",
 				},
 			},
@@ -1090,13 +1102,10 @@ func TestRunCleanConfirmsExplicitTarget(t *testing.T) {
 }
 
 func TestRunCleanDoesNotCleanWhenConfirmationIsRejected(t *testing.T) {
-	backend := &shellTestBackend{}
-
 	application := &shellTestApplication{
-		discoverSession: &app.Session{
-			Multiplexer: &multiplexer.ManagedSession{
-				Backend: backend,
-				Session: multiplexer.Session{
+		discoverCleanSessions: []*app.CleanSession{
+			{
+				Metadata: sessionmeta.Metadata{
 					Name: "development",
 				},
 			},
@@ -1143,17 +1152,13 @@ func TestRunCleanDoesNotCleanWhenConfirmationIsRejected(t *testing.T) {
 			wantOutput,
 		)
 	}
-
-	if backend.destroyed {
-		t.Fatal("runClean() destroyed session after rejected confirmation")
-	}
 }
 
 func TestRunCleanAcceptsCaseInsensitiveConfirmation(t *testing.T) {
 	application := &shellTestApplication{
-		discoverSession: &app.Session{
-			Multiplexer: &multiplexer.ManagedSession{
-				Session: multiplexer.Session{
+		discoverCleanSessions: []*app.CleanSession{
+			{
+				Metadata: sessionmeta.Metadata{
 					Name: "development",
 				},
 			},

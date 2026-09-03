@@ -607,8 +607,7 @@ func parseCleanArgs(args []string) (cleanOptions, error) {
 }
 
 type cleanApplication interface {
-	DiscoverMultiplexerSession() (*app.Session, error)
-	DiscoverMultiplexerSessions() ([]*multiplexer.ManagedSession, error)
+	DiscoverCleanSessions() ([]*app.CleanSession, error)
 }
 
 var errCleanSelectionCancelled = errors.New(
@@ -616,8 +615,8 @@ var errCleanSelectionCancelled = errors.New(
 )
 
 func selectCleanSession(
-	sessions []*multiplexer.ManagedSession,
-) (*multiplexer.ManagedSession, error) {
+	sessions []*app.CleanSession,
+) (*app.CleanSession, error) {
 	fmt.Println("Managed uniShell sessions:")
 	fmt.Println()
 
@@ -625,7 +624,7 @@ func selectCleanSession(
 		fmt.Printf(
 			"%d) %s\n",
 			index+1,
-			session.Session.Name,
+			session.Metadata.Name,
 		)
 	}
 
@@ -694,10 +693,10 @@ func runClean(
 		return err
 	}
 
-	sessions, err := application.DiscoverMultiplexerSessions()
+	sessions, err := application.DiscoverCleanSessions()
 	if err != nil {
 		return fmt.Errorf(
-			"discover multiplexer sessions: %w",
+			"discover clean sessions: %w",
 			err,
 		)
 	}
@@ -707,46 +706,11 @@ func runClean(
 		return nil
 	}
 
-	if options.Target != "" {
-		var target *multiplexer.ManagedSession
-
-		for _, candidate := range sessions {
-			if candidate.Session.Name == options.Target {
-				target = candidate
-				break
-			}
-		}
-
-		if target == nil {
-			return fmt.Errorf(
-				"managed session %q not found",
-				options.Target,
-			)
-		}
-
-		confirmed, err := confirmCleanSession(target.Session.Name)
-		if err != nil {
-			return fmt.Errorf(
-				"read clean confirmation: %w",
-				err,
-			)
-		}
-
-		if !confirmed {
-			return nil
-		}
-
-		return fmt.Errorf(
-			"clean confirmation accepted for %q, cleanup is not implemented yet",
-			target.Session.Name,
-		)
-	}
-
-	var target *multiplexer.ManagedSession
+	var target *app.CleanSession
 
 	if options.Target != "" {
 		for _, candidate := range sessions {
-			if candidate.Session.Name == options.Target {
+			if candidate.Metadata.Name == options.Target {
 				target = candidate
 				break
 			}
@@ -772,7 +736,7 @@ func runClean(
 		}
 	}
 
-	confirmed, err := confirmCleanSession(target.Session.Name)
+	confirmed, err := confirmCleanSession(target.Metadata.Name)
 	if err != nil {
 		return fmt.Errorf(
 			"read clean confirmation: %w",
@@ -786,7 +750,7 @@ func runClean(
 
 	return fmt.Errorf(
 		"clean confirmation accepted for %q, cleanup is not implemented yet",
-		target.Session.Name,
+		target.Metadata.Name,
 	)
 }
 
