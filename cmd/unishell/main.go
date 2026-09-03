@@ -617,12 +617,6 @@ func runClean(
 		return err
 	}
 
-	if options.Target != "" {
-		return fmt.Errorf(
-			"clean target selection is not implemented yet",
-		)
-	}
-
 	sessions, err := application.DiscoverMultiplexerSessions()
 	if err != nil {
 		return fmt.Errorf(
@@ -634,6 +628,29 @@ func runClean(
 	if len(sessions) == 0 {
 		fmt.Println("No managed uniShell sessions found.")
 		return nil
+	}
+
+	if options.Target != "" {
+		var target *multiplexer.ManagedSession
+
+		for _, candidate := range sessions {
+			if candidate.Session.Name == options.Target {
+				target = candidate
+				break
+			}
+		}
+
+		if target == nil {
+			return fmt.Errorf(
+				"managed session %q not found",
+				options.Target,
+			)
+		}
+
+		return fmt.Errorf(
+			"clean target resolution for %q is not implemented yet",
+			target.Session.Name,
+		)
 	}
 
 	session, err := application.DiscoverMultiplexerSession()

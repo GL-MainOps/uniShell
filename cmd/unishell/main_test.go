@@ -637,6 +637,68 @@ func TestRunCleanDestroysExistingSession(t *testing.T) {
 	}
 }
 
+func TestRunCleanRejectsNonexistentTarget(t *testing.T) {
+	application := &shellTestApplication{
+		discoverSession: &app.Session{
+			Multiplexer: &multiplexer.ManagedSession{
+				Session: multiplexer.Session{
+					Name: "development",
+				},
+			},
+		},
+	}
+
+	err := runClean(
+		application,
+		[]string{"--target", "production"},
+	)
+
+	if err == nil {
+		t.Fatal("runClean() returned nil error")
+	}
+
+	want := `managed session "production" not found`
+
+	if err.Error() != want {
+		t.Fatalf(
+			"runClean() error = %q, want %q",
+			err.Error(),
+			want,
+		)
+	}
+}
+
+func TestRunCleanResolvesExplicitTarget(t *testing.T) {
+	application := &shellTestApplication{
+		discoverSession: &app.Session{
+			Multiplexer: &multiplexer.ManagedSession{
+				Session: multiplexer.Session{
+					Name: "development",
+				},
+			},
+		},
+	}
+
+	err := runClean(
+		application,
+		[]string{"--target", "development"},
+	)
+
+	if err == nil {
+		t.Fatal("runClean() returned nil error")
+	}
+
+	want := `clean target resolution for "development" is not implemented yet`
+
+	if err.Error() != want {
+		t.Fatalf(
+			"runClean() error = %q, want %q",
+			err.Error(),
+			want,
+		)
+	}
+}
+
 func TestRunCleanReportsWhenNoManagedSessionsExist(t *testing.T) {
 	application := &shellTestApplication{}
 
