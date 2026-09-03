@@ -1,9 +1,14 @@
 package multiplexer
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	runtimepkg "gitlab.com/mainops/uniShell/internal/runtime"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 func TestMetadataRoundTrip(t *testing.T) {
@@ -11,6 +16,10 @@ func TestMetadataRoundTrip(t *testing.T) {
 		t.TempDir(),
 		"runtime",
 	)
+
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
 
 	created := time.Date(
 		2026,
@@ -24,19 +33,35 @@ func TestMetadataRoundTrip(t *testing.T) {
 	)
 
 	want := Metadata{
-		ID:          "abc123",
-		Name:        "default",
-		Multiplexer: "tmux",
+		ID:                "abc123",
+		PID:               os.Getpid(),
+		ProcessStartTicks: runtimepkg.CurrentProcessStartTicks(),
+		Name:              "default",
+		Multiplexer:       "tmux",
 		Endpoint: filepath.Join(
 			runtimePath,
 			"multiplexer",
 			"tmux.sock",
 		),
 		CreatedAt: created,
+		Version:   "development",
+		Mode:      sessionmeta.ModeMultiplexer,
 	}
 
 	if err := WriteMetadata(runtimePath, want); err != nil {
 		t.Fatalf("WriteMetadata() returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(MetadataPath(runtimePath))
+	if err != nil {
+		t.Fatalf("ReadMetadata file: %v", err)
+	}
+
+	if !strings.Contains(string(data), "\n  \"id\"") {
+		t.Fatalf(
+			"metadata JSON is not indented:\n%s",
+			data,
+		)
 	}
 
 	got, err := ReadMetadata(runtimePath)

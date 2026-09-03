@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
+	runtimepkg "gitlab.com/mainops/uniShell/internal/runtime"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 type Manager struct {
@@ -101,14 +103,18 @@ func (m *Manager) Create(
 	session.NativeName = createdNativeName
 
 	metadata := Metadata{
-		ID:          id,
-		Name:        sessionName,
-		NativeName:  createdNativeName,
-		Multiplexer: backendName,
-		Endpoint:    endpoint,
-		ShellName:   shellName,
-		ShellPath:   shellPath,
-		CreatedAt:   time.Now().UTC(),
+		ID:                id,
+		PID:               os.Getpid(),
+		ProcessStartTicks: runtimepkg.CurrentProcessStartTicks(),
+		CreatedAt:         time.Now().UTC(),
+		Version:           filepath.Base(filepath.Dir(runtimePath)),
+		Mode:              sessionmeta.ModeMultiplexer,
+		Name:              sessionName,
+		NativeName:        createdNativeName,
+		Multiplexer:       backendName,
+		Endpoint:          endpoint,
+		ShellName:         shellName,
+		ShellPath:         shellPath,
 	}
 
 	if err := WriteMetadata(

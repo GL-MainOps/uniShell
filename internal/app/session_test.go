@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	runtimepkg "gitlab.com/mainops/uniShell/internal/runtime"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 type sessionTestBackend struct {
@@ -70,18 +72,26 @@ func newManagedTestSession(
 		"runtime",
 	)
 
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
+
 	if err := multiplexer.WriteMetadata(
 		runtimePath,
 		multiplexer.Metadata{
-			ID:          "test-session",
-			Name:        "default",
-			Multiplexer: "test",
+			ID:                "test-session",
+			PID:               os.Getpid(),
+			ProcessStartTicks: runtimepkg.CurrentProcessStartTicks(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeMultiplexer,
+			Name:              "default",
+			Multiplexer:       "test",
 			Endpoint: filepath.Join(
 				runtimePath,
 				"multiplexer",
 				"test.sock",
 			),
-			CreatedAt: time.Now().UTC(),
 		},
 	); err != nil {
 		t.Fatalf(

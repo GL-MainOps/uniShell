@@ -361,6 +361,10 @@ func currentProcessStartTicks() uint64 {
 	return ticks
 }
 
+func CurrentProcessStartTicks() uint64 {
+	return currentProcessStartTicks()
+}
+
 func processStartTicks(pid int) (uint64, error) {
 	data, err := os.ReadFile(
 		filepath.Join("/proc", strconv.Itoa(pid), "stat"),

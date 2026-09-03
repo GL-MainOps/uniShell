@@ -6,8 +6,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
+	runtimepkg "gitlab.com/mainops/uniShell/internal/runtime"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 const endpoint = "/tmp/test.endpoint"
@@ -64,12 +67,30 @@ func (b *managerTestBackend) Destroy(Session) error {
 	return nil
 }
 
+func prepareManagerTestRuntime(
+	t *testing.T,
+	runtimePath string,
+) {
+	t.Helper()
+
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf(
+			"create manager test runtime %q: %v",
+			runtimePath,
+			err,
+		)
+	}
+}
+
 func TestManagerCreateWritesMetadata(t *testing.T) {
 	runtimePath := filepath.Join(
 		t.TempDir(),
 		"runtime",
 	)
 
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -130,6 +151,57 @@ func TestManagerCreateWritesMetadata(t *testing.T) {
 			session.Metadata.ID,
 		)
 	}
+
+	if metadata.PID != os.Getpid() {
+		t.Fatalf(
+			"metadata PID = %d, want %d",
+			metadata.PID,
+			os.Getpid(),
+		)
+	}
+
+	if metadata.ProcessStartTicks == 0 {
+		t.Fatal("metadata process start ticks is zero")
+	}
+
+	if metadata.Version == "" {
+		t.Fatal("metadata version is empty")
+	}
+
+	if metadata.Mode != sessionmeta.ModeMultiplexer {
+		t.Fatalf(
+			"metadata mode = %q, want %q",
+			metadata.Mode,
+			sessionmeta.ModeMultiplexer,
+		)
+	}
+
+	if metadata.CreatedAt.IsZero() {
+		t.Fatal("metadata creation time is zero")
+	}
+
+	if MetadataPath(runtimePath) != filepath.Join(
+		runtimePath,
+		".session.json",
+	) {
+		t.Fatalf(
+			"metadata path = %q, want session-local .session.json",
+			MetadataPath(runtimePath),
+		)
+	}
+
+	if _, err := os.Stat(
+		filepath.Join(
+			runtimePath,
+			"multiplexer",
+			"session.json",
+		),
+	); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf(
+			"legacy multiplexer metadata still exists, stat error = %v",
+			err,
+		)
+	}
 }
 
 func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
@@ -137,6 +209,9 @@ func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
 		t.TempDir(),
 		"runtime",
 	)
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
 
 	backend := &managerTestBackend{
 		name:      "test",
@@ -212,6 +287,8 @@ func TestManagerCreatePassesMultiplexerOptionsToBackend(
 		"runtime",
 	)
 
+	prepareManagerTestRuntime(t, runtimePath)
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -267,6 +344,9 @@ func TestManagerAttachRequiresLiveSession(t *testing.T) {
 		t.TempDir(),
 		"runtime",
 	)
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
 
 	backend := &managerTestBackend{
 		name:      "test",
@@ -325,6 +405,10 @@ func TestManagerDestroyRemovesMetadata(t *testing.T) {
 		"runtime",
 	)
 
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -368,6 +452,10 @@ func TestManagerDiscoverFindsLiveSession(t *testing.T) {
 		t.TempDir(),
 		"runtime",
 	)
+
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
 
 	backend := &managerTestBackend{
 		name:      "test",
@@ -449,6 +537,9 @@ func TestManagerDiscoverRejectsDifferentSessionName(t *testing.T) {
 		t.TempDir(),
 		"runtime",
 	)
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
 
 	backend := &managerTestBackend{
 		name:      "test",
@@ -495,6 +586,8 @@ func TestManagerDiscoverRejectsStaleMetadata(t *testing.T) {
 		"runtime",
 	)
 
+	prepareManagerTestRuntime(t, runtimePath)
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -506,11 +599,16 @@ func TestManagerDiscoverRejectsStaleMetadata(t *testing.T) {
 	)
 
 	metadata := Metadata{
-		ID:          "stale-session",
-		Name:        "default",
-		NativeName:  "native-default",
-		Multiplexer: "test",
-		Endpoint:    "/tmp/test.endpoint",
+		PID:               os.Getpid(),
+		ProcessStartTicks: runtimepkg.CurrentProcessStartTicks(),
+		CreatedAt:         time.Now().UTC(),
+		Version:           "development",
+		Mode:              sessionmeta.ModeMultiplexer,
+		ID:                "stale-session",
+		Name:              "default",
+		NativeName:        "native-default",
+		Multiplexer:       "test",
+		Endpoint:          "/tmp/test.endpoint",
 	}
 
 	if err := WriteMetadata(runtimePath, metadata); err != nil {
@@ -537,6 +635,8 @@ func TestManagerDiscoverRejectsUnavailableBackend(t *testing.T) {
 		"runtime",
 	)
 
+	prepareManagerTestRuntime(t, runtimePath)
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: false,
@@ -548,11 +648,16 @@ func TestManagerDiscoverRejectsUnavailableBackend(t *testing.T) {
 	)
 
 	metadata := Metadata{
-		ID:          "session",
-		Name:        "default",
-		NativeName:  "native-default",
-		Multiplexer: "test",
-		Endpoint:    "/tmp/test.endpoint",
+		PID:               os.Getpid(),
+		ProcessStartTicks: runtimepkg.CurrentProcessStartTicks(),
+		CreatedAt:         time.Now().UTC(),
+		Version:           "development",
+		Mode:              sessionmeta.ModeMultiplexer,
+		ID:                "session",
+		Name:              "default",
+		NativeName:        "native-default",
+		Multiplexer:       "test",
+		Endpoint:          "/tmp/test.endpoint",
 	}
 
 	if err := WriteMetadata(runtimePath, metadata); err != nil {
@@ -581,6 +686,9 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 
 	firstRuntime := filepath.Join(versionRuntime, "first")
 	secondRuntime := filepath.Join(versionRuntime, "second")
+
+	prepareManagerTestRuntime(t, firstRuntime)
+	prepareManagerTestRuntime(t, secondRuntime)
 
 	backend := &managerTestBackend{
 		name:      "test",
@@ -642,6 +750,265 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 	}
 }
 
+func TestManagerDiscoverAllFindsManagedSessions(
+	t *testing.T,
+) {
+	versionRuntime := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	firstRuntime := filepath.Join(
+		versionRuntime,
+		"session-one",
+	)
+
+	secondRuntime := filepath.Join(
+		versionRuntime,
+		"session-two",
+	)
+
+	if err := os.MkdirAll(firstRuntime, 0700); err != nil {
+		t.Fatalf(
+			"create first runtime path: %v",
+			err,
+		)
+	}
+
+	if err := os.MkdirAll(secondRuntime, 0700); err != nil {
+		t.Fatalf(
+			"create second runtime path: %v",
+			err,
+		)
+	}
+
+	if _, err := manager.Create(
+		"test",
+		"development",
+		"native-development",
+		firstRuntime,
+		filepath.Join(firstRuntime, "endpoint"),
+		"",
+		"",
+		nil,
+		nil,
+		api.Options{},
+	); err != nil {
+		t.Fatalf(
+			"Create() first session returned error: %v",
+			err,
+		)
+	}
+
+	if _, err := manager.Create(
+		"test",
+		"production",
+		"native-production",
+		secondRuntime,
+		filepath.Join(secondRuntime, "endpoint"),
+		"",
+		"",
+		nil,
+		nil,
+		api.Options{},
+	); err != nil {
+		t.Fatalf(
+			"Create() second session returned error: %v",
+			err,
+		)
+	}
+
+	sessions, err := manager.DiscoverAll(versionRuntime)
+	if err != nil {
+		t.Fatalf(
+			"DiscoverAll() returned error: %v",
+			err,
+		)
+	}
+
+	if len(sessions) != 2 {
+		t.Fatalf(
+			"session count = %d, want %d",
+			len(sessions),
+			2,
+		)
+	}
+
+	if sessions[0].Metadata.Name != "development" {
+		t.Fatalf(
+			"first session name = %q, want %q",
+			sessions[0].Metadata.Name,
+			"development",
+		)
+	}
+
+	if sessions[1].Metadata.Name != "production" {
+		t.Fatalf(
+			"second session name = %q, want %q",
+			sessions[1].Metadata.Name,
+			"production",
+		)
+	}
+}
+
+func TestManagerDiscoverAllReturnsEmptyForMissingRuntime(
+	t *testing.T,
+) {
+	versionRuntime := filepath.Join(
+		t.TempDir(),
+		"missing",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	sessions, err := manager.DiscoverAll(versionRuntime)
+	if err != nil {
+		t.Fatalf(
+			"DiscoverAll() returned error: %v",
+			err,
+		)
+	}
+
+	if len(sessions) != 0 {
+		t.Fatalf(
+			"session count = %d, want %d",
+			len(sessions),
+			0,
+		)
+	}
+}
+
+func TestManagerDiscoverAllIgnoresDirectoriesWithoutMetadata(
+	t *testing.T,
+) {
+	versionRuntime := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	if err := os.MkdirAll(
+		filepath.Join(versionRuntime, "unrelated"),
+		0700,
+	); err != nil {
+		t.Fatalf(
+			"create unrelated directory: %v",
+			err,
+		)
+	}
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	sessions, err := manager.DiscoverAll(versionRuntime)
+	if err != nil {
+		t.Fatalf(
+			"DiscoverAll() returned error: %v",
+			err,
+		)
+	}
+
+	if len(sessions) != 0 {
+		t.Fatalf(
+			"session count = %d, want %d",
+			len(sessions),
+			0,
+		)
+	}
+}
+
+func TestManagerDiscoverAllIncludesExitedManagedSessions(
+	t *testing.T,
+) {
+	versionRuntime := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     false,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	runtimePath := filepath.Join(
+		versionRuntime,
+		"session-one",
+	)
+
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
+
+	if _, err := manager.Create(
+		"test",
+		"development",
+		"native-development",
+		runtimePath,
+		filepath.Join(runtimePath, "endpoint"),
+		"",
+		"",
+		nil,
+		nil,
+		api.Options{},
+	); err != nil {
+		t.Fatalf(
+			"Create() returned error: %v",
+			err,
+		)
+	}
+
+	sessions, err := manager.DiscoverAll(versionRuntime)
+	if err != nil {
+		t.Fatalf(
+			"DiscoverAll() returned error: %v",
+			err,
+		)
+	}
+
+	if len(sessions) != 1 {
+		t.Fatalf(
+			"session count = %d, want %d",
+			len(sessions),
+			1,
+		)
+	}
+
+	if sessions[0].Metadata.Name != "development" {
+		t.Fatalf(
+			"session name = %q, want %q",
+			sessions[0].Metadata.Name,
+			"development",
+		)
+	}
+}
+
 func TestManagerReconcilePreservesLiveSession(t *testing.T) {
 	versionRuntime := filepath.Join(
 		t.TempDir(),
@@ -652,6 +1019,8 @@ func TestManagerReconcilePreservesLiveSession(t *testing.T) {
 		versionRuntime,
 		"session",
 	)
+
+	prepareManagerTestRuntime(t, sessionRuntime)
 
 	backend := &managerTestBackend{
 		name:      "test",
@@ -709,6 +1078,8 @@ func TestManagerReconcileRemovesDeadSession(t *testing.T) {
 		"session",
 	)
 
+	prepareManagerTestRuntime(t, sessionRuntime)
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -759,6 +1130,8 @@ func TestManagerReconcileIgnoresUnavailableBackend(t *testing.T) {
 		"session",
 	)
 
+	prepareManagerTestRuntime(t, sessionRuntime)
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -804,6 +1177,8 @@ func TestManagerCreatePreservesNativeSessionName(t *testing.T) {
 		t.TempDir(),
 		"runtime",
 	)
+
+	prepareManagerTestRuntime(t, runtimePath)
 
 	backend := &managerTestBackend{
 		name:      "test",
@@ -869,6 +1244,8 @@ func TestManagerCreatePreservesEmptyNativeSessionName(t *testing.T) {
 		"runtime",
 	)
 
+	prepareManagerTestRuntime(t, runtimePath)
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -933,6 +1310,8 @@ func TestManagerCleanupDestroysLiveSessionAndRemovesRuntime(
 		"runtime",
 	)
 
+	prepareManagerTestRuntime(t, runtimePath)
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -985,6 +1364,8 @@ func TestManagerCleanupRemovesStaleSessionRuntime(
 		"runtime",
 	)
 
+	prepareManagerTestRuntime(t, runtimePath)
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -1034,6 +1415,8 @@ func TestManagerCleanupPreservesRuntimeWhenBackendUnavailable(
 		t.TempDir(),
 		"runtime",
 	)
+
+	prepareManagerTestRuntime(t, runtimePath)
 
 	backend := &managerTestBackend{
 		name:      "test",
@@ -1085,6 +1468,8 @@ func TestManagerCreatePersistsShell(t *testing.T) {
 		t.TempDir(),
 		"runtime",
 	)
+
+	prepareManagerTestRuntime(t, runtimePath)
 
 	backend := &managerTestBackend{
 		name:      "test",
@@ -1176,6 +1561,10 @@ func TestManagerAttachPreservesShell(t *testing.T) {
 		"runtime",
 	)
 
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -1229,6 +1618,10 @@ func TestManagerReconcileSessionPreservesLiveSession(t *testing.T) {
 		t.TempDir(),
 		"runtime",
 	)
+
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
 
 	backend := &managerTestBackend{
 		name:      "test",
@@ -1292,6 +1685,10 @@ func TestManagerReconcileSessionRemovesExitedSession(
 		"runtime",
 	)
 
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -1352,6 +1749,10 @@ func TestManagerReconcileSessionPreservesRuntimeWhenBackendUnavailable(
 		"runtime",
 	)
 
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -1408,6 +1809,9 @@ func TestManagerReconcileSessionIsIdempotent(t *testing.T) {
 		t.TempDir(),
 		"runtime",
 	)
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
 
 	backend := &managerTestBackend{
 		name:      "test",
@@ -1456,6 +1860,67 @@ func TestManagerReconcileSessionIsIdempotent(t *testing.T) {
 	) {
 		t.Fatalf(
 			"runtime still exists after repeated reconciliation, stat error = %v",
+			err,
+		)
+	}
+}
+
+func TestManagerCreateDoesNotCreateLegacyMultiplexerMetadata(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+		"bash",
+		"/bin/bash",
+		nil,
+		nil,
+		api.Options{},
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	legacyPath := filepath.Join(
+		runtimePath,
+		"multiplexer",
+		"session.json",
+	)
+
+	if _, err := os.Stat(legacyPath); !errors.Is(
+		err,
+		os.ErrNotExist,
+	) {
+		t.Fatalf(
+			"legacy multiplexer metadata exists, stat error = %v",
+			err,
+		)
+	}
+
+	if _, err := os.Stat(
+		filepath.Join(runtimePath, ".session.json"),
+	); err != nil {
+		t.Fatalf(
+			"unified session metadata does not exist: %v",
 			err,
 		)
 	}
