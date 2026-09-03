@@ -3,20 +3,16 @@ package runtime
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
+
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
-const (
-	sessionMarkerName = ".unishell-session"
-	sessionIDBytes    = 16
-)
+const sessionIDBytes = 16
 
 type SessionMode string
 
@@ -24,15 +20,6 @@ const (
 	SessionModeNormal      SessionMode = "normal"
 	SessionModeMultiplexer SessionMode = "multiplexer"
 )
-
-type sessionMarker struct {
-	SessionID         string      `json:"session_id"`
-	PID               int         `json:"pid"`
-	ProcessStartTicks uint64      `json:"process_start_ticks"`
-	StartedAt         int64       `json:"started_at"`
-	Version           string      `json:"version"`
-	Mode              SessionMode `json:"mode"`
-}
 
 // Session represents one isolated temporary uniShell runtime session.
 type Session struct {
@@ -62,7 +49,7 @@ func NewSession(paths Paths) (*Session, error) {
 	}, nil
 }
 
-// Prepare creates the private directories and session marker required by
+// Prepare creates the private directories and session metadata required by
 // the session.
 func (s *Session) Prepare() error {
 	if s.ID == "" {
@@ -112,23 +99,23 @@ func (s *Session) Prepare() error {
 		)
 	}
 
-	marker := sessionMarker{
-		SessionID:         s.ID,
+	metadata := sessionmeta.Metadata{
+		ID:                s.ID,
 		PID:               os.Getpid(),
-		ProcessStartTicks: currentProcessStartTicks(),
-		StartedAt:         time.Now().UnixNano(),
+		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+		CreatedAt:         time.Now().UTC(),
 		Version:           filepath.Base(filepath.Dir(s.Paths.Runtime)),
-		Mode:              s.Mode,
+		Mode:              sessionmeta.Mode(s.Mode),
 	}
 
-	if marker.ProcessStartTicks == 0 {
+	if metadata.ProcessStartTicks == 0 {
 		_ = os.RemoveAll(s.Paths.Runtime)
 		return errors.New("unable to determine current process start time")
 	}
 
-	if err := writeSessionMarker(
-		filepath.Join(s.Paths.Runtime, sessionMarkerName),
-		marker,
+	if err := sessionmeta.WriteMetadata(
+		s.Paths.Runtime,
+		metadata,
 	); err != nil {
 		_ = os.RemoveAll(s.Paths.Runtime)
 		return err
@@ -155,7 +142,7 @@ func (s *Session) Cleanup() error {
 // CleanupStale removes stale sessions beneath the supplied version
 // directory.
 //
-// Only directories containing a valid uniShell session marker are
+// Only directories containing valid uniShell session metadata are
 // considered. Unknown directories are left untouched.
 func CleanupStale(paths Paths) error {
 	entries, err := os.ReadDir(paths.Runtime)
@@ -177,12 +164,10 @@ func CleanupStale(paths Paths) error {
 		}
 
 		sessionRuntime := filepath.Join(paths.Runtime, entry.Name())
-		markerPath := filepath.Join(
-			sessionRuntime,
-			sessionMarkerName,
-		)
 
-		marker, err := readSessionMarker(markerPath)
+		metadata, err := sessionmeta.ReadMetadata(
+			sessionRuntime,
+		)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
@@ -195,13 +180,12 @@ func CleanupStale(paths Paths) error {
 			)
 		}
 
-		// Multiplexer-backed sessions are owned by the multiplexer.
-		// Their liveness is reconciled by multiplexer.Manager.
-		if marker.Mode == SessionModeMultiplexer {
+		if metadata.Mode == sessionmeta.ModeMultiplexer {
 			continue
 		}
 
-		alive, err := sessionIsAlive(marker)
+		alive, err := sessionIsAlive(metadata)
+
 		if err != nil {
 			return fmt.Errorf(
 				"check runtime session %q: %w",
@@ -259,133 +243,29 @@ func newSessionID() (string, error) {
 	return hex.EncodeToString(buffer), nil
 }
 
-func writeSessionMarker(path string, marker sessionMarker) error {
-	data, err := json.Marshal(marker)
-	if err != nil {
-		return fmt.Errorf("encode runtime session marker: %w", err)
-	}
+func sessionIsAlive(metadata sessionmeta.Metadata) (bool, error) {
+	switch metadata.Mode {
+	case sessionmeta.ModeNormal:
+		startTicks, err := sessionmeta.ProcessStartTicks(metadata.PID)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return false, nil
+			}
 
-	file, err := os.OpenFile(
-		path,
-		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
-		0600,
-	)
-	if err != nil {
-		return runtimeFilesystemError(
-			path,
-			"create runtime session marker",
-			err,
-		)
-	}
-
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("write runtime session marker: %w", err)
-	}
-
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close runtime session marker: %w", err)
-	}
-
-	return nil
-}
-
-func readSessionMarker(path string) (sessionMarker, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return sessionMarker{}, err
-	}
-
-	var marker sessionMarker
-
-	if err := json.Unmarshal(data, &marker); err != nil {
-		return sessionMarker{}, fmt.Errorf(
-			"decode runtime session marker: %w",
-			err,
-		)
-	}
-
-	if marker.SessionID == "" ||
-		marker.PID <= 0 ||
-		marker.ProcessStartTicks == 0 ||
-		marker.StartedAt == 0 ||
-		marker.Version == "" {
-		return sessionMarker{}, errors.New(
-			"invalid runtime session marker",
-		)
-	}
-
-	if marker.Mode == "" {
-		marker.Mode = SessionModeNormal
-	}
-
-	switch marker.Mode {
-	case SessionModeNormal, SessionModeMultiplexer:
-		// valid
-	default:
-		return sessionMarker{}, fmt.Errorf(
-			"invalid runtime session mode %q",
-			marker.Mode,
-		)
-	}
-
-	return marker, nil
-}
-
-func sessionIsAlive(marker sessionMarker) (bool, error) {
-	if marker.Mode != SessionModeNormal {
-		return false, fmt.Errorf(
-			"unsupported cleanup session mode %q",
-			marker.Mode,
-		)
-	}
-
-	startTicks, err := processStartTicks(marker.PID)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
+			return false, err
 		}
 
-		return false, err
+		return startTicks == metadata.ProcessStartTicks, nil
+
+	case sessionmeta.ModeMultiplexer:
+		return true, nil
+
+	default:
+		return false, fmt.Errorf(
+			"unsupported runtime session mode %q",
+			metadata.Mode,
+		)
 	}
-
-	return startTicks == marker.ProcessStartTicks, nil
-}
-
-func currentProcessStartTicks() uint64 {
-	ticks, err := processStartTicks(os.Getpid())
-	if err != nil {
-		return 0
-	}
-
-	return ticks
-}
-
-func CurrentProcessStartTicks() uint64 {
-	return currentProcessStartTicks()
-}
-
-func processStartTicks(pid int) (uint64, error) {
-	data, err := os.ReadFile(
-		filepath.Join("/proc", strconv.Itoa(pid), "stat"),
-	)
-	if err != nil {
-		return 0, err
-	}
-
-	line := string(data)
-
-	endComm := strings.LastIndex(line, ") ")
-	if endComm == -1 || endComm+2 >= len(line) {
-		return 0, errors.New("invalid process stat")
-	}
-
-	fields := strings.Fields(line[endComm+2:])
-	if len(fields) <= 19 {
-		return 0, errors.New("invalid process stat fields")
-	}
-
-	return strconv.ParseUint(fields[19], 10, 64)
 }
 
 func runtimeFilesystemError(

@@ -464,3 +464,22 @@ func (a *App) DiscoverMultiplexerSession() (*Session, error) {
 		Multiplexer: managed,
 	}, nil
 }
+
+// DiscoverMultiplexerSessions returns all managed multiplexer sessions
+// beneath the application's version runtime directory.
+func (a *App) DiscoverMultiplexerSessions() (
+	[]*multiplexer.ManagedSession,
+	error,
+) {
+	sessions, err := a.Multiplexer.DiscoverAll(
+		a.Paths.Runtime,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"discover multiplexer sessions: %w",
+			err,
+		)
+	}
+
+	return sessions, nil
+}

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
-	runtimepkg "gitlab.com/mainops/uniShell/internal/runtime"
 	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
@@ -25,7 +24,7 @@ func NewManager(registry *Registry) *Manager {
 }
 
 type ManagedSession struct {
-	Metadata Metadata
+	Metadata sessionmeta.Metadata
 	Backend  Backend
 	Session  Session
 }
@@ -102,10 +101,10 @@ func (m *Manager) Create(
 
 	session.NativeName = createdNativeName
 
-	metadata := Metadata{
+	metadata := sessionmeta.Metadata{
 		ID:                id,
 		PID:               os.Getpid(),
-		ProcessStartTicks: runtimepkg.CurrentProcessStartTicks(),
+		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
 		CreatedAt:         time.Now().UTC(),
 		Version:           filepath.Base(filepath.Dir(runtimePath)),
 		Mode:              sessionmeta.ModeMultiplexer,
@@ -117,7 +116,7 @@ func (m *Manager) Create(
 		ShellPath:         shellPath,
 	}
 
-	if err := WriteMetadata(
+	if err := sessionmeta.WriteMetadata(
 		runtimePath,
 		metadata,
 	); err != nil {
@@ -136,7 +135,7 @@ func (m *Manager) Create(
 func (m *Manager) Attach(
 	runtimePath string,
 ) (*ManagedSession, error) {
-	metadata, err := ReadMetadata(runtimePath)
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +174,7 @@ func (m *Manager) Attach(
 func (m *Manager) Destroy(
 	runtimePath string,
 ) error {
-	metadata, err := ReadMetadata(runtimePath)
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
 	if err != nil {
 		return err
 	}
@@ -210,7 +209,7 @@ func (m *Manager) Destroy(
 		}
 	}
 
-	return RemoveMetadata(runtimePath)
+	return sessionmeta.RemoveMetadata(runtimePath)
 }
 
 func generateSessionID() (string, error) {
@@ -227,7 +226,7 @@ func (m *Manager) Discover(
 	runtimePath string,
 	sessionName string,
 ) (*ManagedSession, error) {
-	metadata, err := ReadMetadata(runtimePath)
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrSessionNotFound
@@ -348,7 +347,7 @@ func (m *Manager) Reconcile(
 			entry.Name(),
 		)
 
-		metadata, err := ReadMetadata(runtimePath)
+		metadata, err := sessionmeta.ReadMetadata(runtimePath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
@@ -406,7 +405,7 @@ func (m *Manager) ReconcileSession(
 		)
 	}
 
-	metadata, err := ReadMetadata(runtimePath)
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return os.RemoveAll(runtimePath)
@@ -467,7 +466,7 @@ func (m *Manager) Cleanup(
 		)
 	}
 
-	metadata, err := ReadMetadata(runtimePath)
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return os.RemoveAll(runtimePath)

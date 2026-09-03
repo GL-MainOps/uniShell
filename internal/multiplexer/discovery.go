@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 type DiscoveryState string
@@ -74,7 +76,7 @@ func (m *Manager) DiscoverAll(
 			entry.Name(),
 		)
 
-		metadata, err := ReadMetadata(runtimePath)
+		metadata, err := sessionmeta.ReadMetadata(runtimePath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue

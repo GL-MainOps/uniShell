@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
-	runtimepkg "gitlab.com/mainops/uniShell/internal/runtime"
 	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
@@ -139,9 +138,9 @@ func TestManagerCreateWritesMetadata(t *testing.T) {
 		)
 	}
 
-	metadata, err := ReadMetadata(runtimePath)
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
 	if err != nil {
-		t.Fatalf("ReadMetadata() returned error: %v", err)
+		t.Fatalf("sessionmeta.ReadMetadata() returned error: %v", err)
 	}
 
 	if metadata.ID != session.Metadata.ID {
@@ -180,13 +179,13 @@ func TestManagerCreateWritesMetadata(t *testing.T) {
 		t.Fatal("metadata creation time is zero")
 	}
 
-	if MetadataPath(runtimePath) != filepath.Join(
+	if sessionmeta.MetadataPath(runtimePath) != filepath.Join(
 		runtimePath,
 		".session.json",
 	) {
 		t.Fatalf(
 			"metadata path = %q, want session-local .session.json",
-			MetadataPath(runtimePath),
+			sessionmeta.MetadataPath(runtimePath),
 		)
 	}
 
@@ -442,8 +441,8 @@ func TestManagerDestroyRemovesMetadata(t *testing.T) {
 		t.Fatal("backend Destroy() was not called")
 	}
 
-	if _, err := ReadMetadata(runtimePath); err == nil {
-		t.Fatal("ReadMetadata() succeeded after Destroy()")
+	if _, err := sessionmeta.ReadMetadata(runtimePath); err == nil {
+		t.Fatal("sessionmeta.ReadMetadata() succeeded after Destroy()")
 	}
 }
 
@@ -598,9 +597,9 @@ func TestManagerDiscoverRejectsStaleMetadata(t *testing.T) {
 		NewRegistry(backend),
 	)
 
-	metadata := Metadata{
+	metadata := sessionmeta.Metadata{
 		PID:               os.Getpid(),
-		ProcessStartTicks: runtimepkg.CurrentProcessStartTicks(),
+		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
 		CreatedAt:         time.Now().UTC(),
 		Version:           "development",
 		Mode:              sessionmeta.ModeMultiplexer,
@@ -611,8 +610,8 @@ func TestManagerDiscoverRejectsStaleMetadata(t *testing.T) {
 		Endpoint:          "/tmp/test.endpoint",
 	}
 
-	if err := WriteMetadata(runtimePath, metadata); err != nil {
-		t.Fatalf("WriteMetadata() returned error: %v", err)
+	if err := sessionmeta.WriteMetadata(runtimePath, metadata); err != nil {
+		t.Fatalf("sessionmeta.WriteMetadata() returned error: %v", err)
 	}
 
 	_, err := manager.Discover(
@@ -647,9 +646,9 @@ func TestManagerDiscoverRejectsUnavailableBackend(t *testing.T) {
 		NewRegistry(backend),
 	)
 
-	metadata := Metadata{
+	metadata := sessionmeta.Metadata{
 		PID:               os.Getpid(),
-		ProcessStartTicks: runtimepkg.CurrentProcessStartTicks(),
+		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
 		CreatedAt:         time.Now().UTC(),
 		Version:           "development",
 		Mode:              sessionmeta.ModeMultiplexer,
@@ -660,8 +659,8 @@ func TestManagerDiscoverRejectsUnavailableBackend(t *testing.T) {
 		Endpoint:          "/tmp/test.endpoint",
 	}
 
-	if err := WriteMetadata(runtimePath, metadata); err != nil {
-		t.Fatalf("WriteMetadata() returned error: %v", err)
+	if err := sessionmeta.WriteMetadata(runtimePath, metadata); err != nil {
+		t.Fatalf("sessionmeta.WriteMetadata() returned error: %v", err)
 	}
 
 	_, err := manager.Discover(
@@ -1533,9 +1532,9 @@ func TestManagerCreatePersistsShell(t *testing.T) {
 		)
 	}
 
-	metadata, err := ReadMetadata(runtimePath)
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
 	if err != nil {
-		t.Fatalf("ReadMetadata() returned error: %v", err)
+		t.Fatalf("sessionmeta.ReadMetadata() returned error: %v", err)
 	}
 
 	if metadata.ShellName != shellName {

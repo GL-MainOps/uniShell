@@ -605,6 +605,7 @@ func parseCleanArgs(args []string) (cleanOptions, error) {
 
 type cleanApplication interface {
 	DiscoverMultiplexerSession() (*app.Session, error)
+	DiscoverMultiplexerSessions() ([]*multiplexer.ManagedSession, error)
 }
 
 func runClean(
@@ -620,6 +621,18 @@ func runClean(
 		return fmt.Errorf(
 			"clean target selection is not implemented yet",
 		)
+	}
+
+	sessions, err := application.DiscoverMultiplexerSessions()
+	if err != nil {
+		return fmt.Errorf(
+			"discover multiplexer sessions: %w",
+			err,
+		)
+	}
+
+	if len(sessions) == 0 {
+		return nil
 	}
 
 	session, err := application.DiscoverMultiplexerSession()

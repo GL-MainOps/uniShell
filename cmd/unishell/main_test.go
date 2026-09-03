@@ -12,6 +12,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/runtime"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 	"gitlab.com/mainops/uniShell/internal/shell"
 )
 
@@ -239,6 +240,28 @@ func (a *shellTestApplication) DiscoverMultiplexerSession() (*app.Session, error
 	return a.discoverSession, a.discoverErr
 }
 
+func (a *shellTestApplication) DiscoverMultiplexerSessions() (
+	[]*multiplexer.ManagedSession,
+	error,
+) {
+	if errors.Is(a.discoverErr, multiplexer.ErrSessionNotFound) {
+		return nil, nil
+	}
+
+	if a.discoverErr != nil {
+		return nil, a.discoverErr
+	}
+
+	if a.discoverSession == nil ||
+		a.discoverSession.Multiplexer == nil {
+		return nil, nil
+	}
+
+	return []*multiplexer.ManagedSession{
+		a.discoverSession.Multiplexer,
+	}, nil
+}
+
 func (a *shellTestApplication) RequestedShell() string {
 	return a.requestedShell
 }
@@ -325,7 +348,7 @@ func TestRunShellAttachesExistingSession(t *testing.T) {
 
 	session := &app.Session{
 		Multiplexer: &multiplexer.ManagedSession{
-			Metadata: multiplexer.Metadata{
+			Metadata: sessionmeta.Metadata{
 				ShellName: "bash",
 			},
 			Backend: backend,

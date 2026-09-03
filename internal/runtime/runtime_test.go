@@ -1,11 +1,69 @@
 package runtime
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
+
+func assertSessionMetadata(
+	t *testing.T,
+	runtimePath string,
+	sessionID string,
+	mode sessionmeta.Mode,
+) sessionmeta.Metadata {
+	t.Helper()
+
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
+	if err != nil {
+		t.Fatalf("ReadMetadata() returned error: %v", err)
+	}
+
+	if metadata.ID != sessionID {
+		t.Fatalf(
+			"metadata session ID = %q, want %q",
+			metadata.ID,
+			sessionID,
+		)
+	}
+
+	if metadata.PID != os.Getpid() {
+		t.Fatalf(
+			"metadata PID = %d, want %d",
+			metadata.PID,
+			os.Getpid(),
+		)
+	}
+
+	if metadata.ProcessStartTicks == 0 {
+		t.Fatal("metadata process start time is zero")
+	}
+
+	if metadata.CreatedAt.IsZero() {
+		t.Fatal("metadata creation time is zero")
+	}
+
+	if metadata.Version != "1.0.0" {
+		t.Fatalf(
+			"metadata version = %q, want %q",
+			metadata.Version,
+			"1.0.0",
+		)
+	}
+
+	if metadata.Mode != mode {
+		t.Fatalf(
+			"metadata mode = %q, want %q",
+			metadata.Mode,
+			mode,
+		)
+	}
+
+	return metadata
+}
 
 func TestPrepareCreatesIsolatedRuntimeDirectories(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "unishell")
@@ -23,6 +81,13 @@ func TestPrepareCreatesIsolatedRuntimeDirectories(t *testing.T) {
 	if err := session.Prepare(); err != nil {
 		t.Fatalf("Prepare() returned error: %v", err)
 	}
+
+	assertSessionMetadata(
+		t,
+		session.Paths.Runtime,
+		session.ID,
+		sessionmeta.ModeNormal,
+	)
 
 	if session.Paths.Runtime == paths.Runtime {
 		t.Fatal("session runtime must differ from version runtime")
@@ -57,25 +122,24 @@ func TestPrepareCreatesIsolatedRuntimeDirectories(t *testing.T) {
 		}
 	}
 
-	markerPath := filepath.Join(
+	metadataPath := sessionmeta.MetadataPath(
 		session.Paths.Runtime,
-		sessionMarkerName,
 	)
 
-	info, err := os.Stat(markerPath)
+	info, err := os.Stat(metadataPath)
 	if err != nil {
-		t.Fatalf("stat session marker: %v", err)
+		t.Fatalf("stat session metadata: %v", err)
 	}
 
 	if info.Mode().Perm() != 0600 {
 		t.Fatalf(
-			"session marker permissions = %o, want 600",
+			"session metadata permissions = %o, want 600",
 			info.Mode().Perm(),
 		)
 	}
 }
 
-func TestSessionMarkerContainsIdentity(t *testing.T) {
+func TestSessionMetadataContainsIdentity(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "unishell")
 
 	paths, err := NewPaths(root, "1.0.0")
@@ -91,46 +155,50 @@ func TestSessionMarkerContainsIdentity(t *testing.T) {
 	if err := session.Prepare(); err != nil {
 		t.Fatalf("Prepare() returned error: %v", err)
 	}
-
-	markerPath := filepath.Join(
+	metadata, err := sessionmeta.ReadMetadata(
 		session.Paths.Runtime,
-		sessionMarkerName,
 	)
-
-	marker, err := readSessionMarker(markerPath)
 	if err != nil {
-		t.Fatalf("readSessionMarker() returned error: %v", err)
+		t.Fatalf("ReadMetadata() returned error: %v", err)
 	}
 
-	if marker.SessionID != session.ID {
+	if metadata.ID != session.ID {
 		t.Fatalf(
-			"marker session ID = %q, want %q",
-			marker.SessionID,
+			"metadata session ID = %q, want %q",
+			metadata.ID,
 			session.ID,
 		)
 	}
 
-	if marker.PID != os.Getpid() {
+	if metadata.PID != os.Getpid() {
 		t.Fatalf(
-			"marker PID = %d, want %d",
-			marker.PID,
+			"metadata PID = %d, want %d",
+			metadata.PID,
 			os.Getpid(),
 		)
 	}
 
-	if marker.ProcessStartTicks == 0 {
-		t.Fatal("marker process start time is zero")
+	if metadata.ProcessStartTicks == 0 {
+		t.Fatal("metadata process start time is zero")
 	}
 
-	if marker.StartedAt == 0 {
-		t.Fatal("marker start time is zero")
+	if metadata.CreatedAt.IsZero() {
+		t.Fatal("metadata creation time is zero")
 	}
 
-	if marker.Version != "1.0.0" {
+	if metadata.Version != "1.0.0" {
 		t.Fatalf(
-			"marker version = %q, want %q",
-			marker.Version,
+			"metadata version = %q, want %q",
+			metadata.Version,
 			"1.0.0",
+		)
+	}
+
+	if metadata.Mode != sessionmeta.ModeNormal {
+		t.Fatalf(
+			"metadata mode = %q, want %q",
+			metadata.Mode,
+			sessionmeta.ModeNormal,
 		)
 	}
 }
@@ -214,6 +282,13 @@ func TestCleanupRemovesOnlySessionRuntime(t *testing.T) {
 		t.Fatalf("Prepare() returned error: %v", err)
 	}
 
+	assertSessionMetadata(
+		t,
+		session.Paths.Runtime,
+		session.ID,
+		sessionmeta.ModeNormal,
+	)
+
 	if err := session.Cleanup(); err != nil {
 		t.Fatalf("Cleanup() returned error: %v", err)
 	}
@@ -250,6 +325,13 @@ func TestCleanupIsIdempotent(t *testing.T) {
 		t.Fatalf("Prepare() returned error: %v", err)
 	}
 
+	assertSessionMetadata(
+		t,
+		session.Paths.Runtime,
+		session.ID,
+		sessionmeta.ModeNormal,
+	)
+
 	if err := session.Cleanup(); err != nil {
 		t.Fatalf("first Cleanup() returned error: %v", err)
 	}
@@ -280,25 +362,22 @@ func TestCleanupStaleRemovesDeadSession(t *testing.T) {
 		t.Fatalf("create stale runtime: %v", err)
 	}
 
-	marker := sessionMarker{
-		SessionID:         "stale-session",
+	metadata := sessionmeta.Metadata{
+		ID:                "stale-session",
 		PID:               999999999,
 		ProcessStartTicks: 1,
-		StartedAt:         1,
+		CreatedAt:         time.Unix(1, 0).UTC(),
 		Version:           "1.0.0",
+		Mode:              sessionmeta.ModeNormal,
 	}
-
-	data, err := json.Marshal(marker)
-	if err != nil {
-		t.Fatalf("marshal marker: %v", err)
-	}
-
-	if err := os.WriteFile(
-		filepath.Join(sessionRuntime, sessionMarkerName),
-		data,
-		0600,
+	if err := sessionmeta.WriteMetadata(
+		sessionRuntime,
+		metadata,
 	); err != nil {
-		t.Fatalf("write stale marker: %v", err)
+		t.Fatalf(
+			"WriteMetadata() returned error: %v",
+			err,
+		)
 	}
 
 	if err := CleanupStale(paths); err != nil {
@@ -330,6 +409,13 @@ func TestCleanupStalePreservesLiveSession(t *testing.T) {
 	if err := session.Prepare(); err != nil {
 		t.Fatalf("Prepare() returned error: %v", err)
 	}
+
+	assertSessionMetadata(
+		t,
+		session.Paths.Runtime,
+		session.ID,
+		sessionmeta.ModeNormal,
+	)
 
 	if err := CleanupStale(paths); err != nil {
 		t.Fatalf("CleanupStale() returned error: %v", err)
@@ -524,6 +610,13 @@ func TestCleanupStalePreservesMultiplexerSession(t *testing.T) {
 		t.Fatalf("Prepare() returned error: %v", err)
 	}
 
+	assertSessionMetadata(
+		t,
+		session.Paths.Runtime,
+		session.ID,
+		sessionmeta.ModeMultiplexer,
+	)
+
 	if err := CleanupStale(paths); err != nil {
 		t.Fatalf("CleanupStale() returned error: %v", err)
 	}
@@ -618,6 +711,13 @@ func TestCleanupStaleIgnoresMultiplexerSessions(t *testing.T) {
 	if err := session.Prepare(); err != nil {
 		t.Fatalf("Prepare() returned error: %v", err)
 	}
+
+	assertSessionMetadata(
+		t,
+		session.Paths.Runtime,
+		session.ID,
+		sessionmeta.ModeMultiplexer,
+	)
 
 	if err := CleanupStale(paths); err != nil {
 		t.Fatalf("CleanupStale() returned error: %v", err)
