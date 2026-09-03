@@ -668,7 +668,7 @@ func TestRunCleanRejectsNonexistentTarget(t *testing.T) {
 	}
 }
 
-func TestRunCleanResolvesExplicitTarget(t *testing.T) {
+func TestRunCleanConfirmsExplicitTarget(t *testing.T) {
 	application := &shellTestApplication{
 		discoverSession: &app.Session{
 			Multiplexer: &multiplexer.ManagedSession{
@@ -679,7 +679,154 @@ func TestRunCleanResolvesExplicitTarget(t *testing.T) {
 		},
 	}
 
-	err := runClean(
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("y\n"); err != nil {
+		t.Fatalf("writer.WriteString() returned error: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close() returned error: %v", err)
+	}
+
+	os.Stdin = reader
+
+	output := captureStdout(t, func() {
+		err = runClean(
+			application,
+			[]string{"--target", "development"},
+		)
+	})
+
+	if err == nil {
+		t.Fatal("runClean() returned nil error")
+	}
+
+	wantErr := `clean confirmation accepted for "development", cleanup is not implemented yet`
+
+	if err.Error() != wantErr {
+		t.Fatalf(
+			"runClean() error = %q, want %q",
+			err.Error(),
+			wantErr,
+		)
+	}
+
+	wantOutput := `Are you sure you want to clean session "development"? [y/N]: `
+
+	if output != wantOutput {
+		t.Fatalf(
+			"runClean() output = %q, want %q",
+			output,
+			wantOutput,
+		)
+	}
+}
+
+func TestRunCleanDoesNotCleanWhenConfirmationIsRejected(t *testing.T) {
+	backend := &shellTestBackend{}
+
+	application := &shellTestApplication{
+		discoverSession: &app.Session{
+			Multiplexer: &multiplexer.ManagedSession{
+				Backend: backend,
+				Session: multiplexer.Session{
+					Name: "development",
+				},
+			},
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("n\n"); err != nil {
+		t.Fatalf("writer.WriteString() returned error: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close() returned error: %v", err)
+	}
+
+	os.Stdin = reader
+
+	output := captureStdout(t, func() {
+		if err := runClean(
+			application,
+			[]string{"--target", "development"},
+		); err != nil {
+			t.Fatalf("runClean() returned error: %v", err)
+		}
+	})
+
+	wantOutput := `Are you sure you want to clean session "development"? [y/N]: `
+
+	if output != wantOutput {
+		t.Fatalf(
+			"runClean() output = %q, want %q",
+			output,
+			wantOutput,
+		)
+	}
+
+	if backend.destroyed {
+		t.Fatal("runClean() destroyed session after rejected confirmation")
+	}
+}
+
+func TestRunCleanAcceptsCaseInsensitiveConfirmation(t *testing.T) {
+	application := &shellTestApplication{
+		discoverSession: &app.Session{
+			Multiplexer: &multiplexer.ManagedSession{
+				Session: multiplexer.Session{
+					Name: "development",
+				},
+			},
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("YeS\n"); err != nil {
+		t.Fatalf("writer.WriteString() returned error: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close() returned error: %v", err)
+	}
+
+	os.Stdin = reader
+
+	err = runClean(
 		application,
 		[]string{"--target", "development"},
 	)
@@ -688,7 +835,7 @@ func TestRunCleanResolvesExplicitTarget(t *testing.T) {
 		t.Fatal("runClean() returned nil error")
 	}
 
-	want := `clean target resolution for "development" is not implemented yet`
+	want := `clean confirmation accepted for "development", cleanup is not implemented yet`
 
 	if err.Error() != want {
 		t.Fatalf(

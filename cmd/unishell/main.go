@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -608,6 +610,28 @@ type cleanApplication interface {
 	DiscoverMultiplexerSessions() ([]*multiplexer.ManagedSession, error)
 }
 
+func confirmCleanSession(name string) (bool, error) {
+	fmt.Printf(
+		"Are you sure you want to clean session %q? [y/N]: ",
+		name,
+	)
+
+	reader := bufio.NewReader(os.Stdin)
+
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	response = strings.ToLower(strings.TrimSpace(response))
+
+	return response == "y" || response == "yes", nil
+}
+
 func runClean(
 	application cleanApplication,
 	args []string,
@@ -647,8 +671,20 @@ func runClean(
 			)
 		}
 
+		confirmed, err := confirmCleanSession(target.Session.Name)
+		if err != nil {
+			return fmt.Errorf(
+				"read clean confirmation: %w",
+				err,
+			)
+		}
+
+		if !confirmed {
+			return nil
+		}
+
 		return fmt.Errorf(
-			"clean target resolution for %q is not implemented yet",
+			"clean confirmation accepted for %q, cleanup is not implemented yet",
 			target.Session.Name,
 		)
 	}
