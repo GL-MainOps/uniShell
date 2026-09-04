@@ -24,6 +24,18 @@ func CurrentProcessStartTicks() uint64 {
 	return ticks
 }
 
+// CurrentProcessGroupID returns the process group ID of the current process.
+//
+// A zero value indicates that the process group ID could not be determined.
+func CurrentProcessGroupID() int {
+	pgid, err := ProcessGroupID(os.Getpid())
+	if err != nil {
+		return 0
+	}
+
+	return pgid
+}
+
 // ProcessStartTicks returns the kernel start-time tick count for pid.
 func ProcessStartTicks(pid int) (uint64, error) {
 	data, err := os.ReadFile(
@@ -46,6 +58,46 @@ func ProcessStartTicks(pid int) (uint64, error) {
 	}
 
 	return strconv.ParseUint(fields[19], 10, 64)
+}
+
+// ProcessGroupID returns the process group ID for pid.
+func ProcessGroupID(pid int) (int, error) {
+	if pid <= 0 {
+		return 0, fmt.Errorf("invalid process ID")
+	}
+
+	data, err := os.ReadFile(
+		filepath.Join("/proc", strconv.Itoa(pid), "stat"),
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	line := string(data)
+
+	endComm := strings.LastIndex(line, ") ")
+	if endComm == -1 || endComm+2 >= len(line) {
+		return 0, errors.New("invalid process stat")
+	}
+
+	fields := strings.Fields(line[endComm+2:])
+	if len(fields) <= 3 {
+		return 0, errors.New("invalid process stat fields")
+	}
+
+	pgid, err := strconv.Atoi(fields[2])
+	if err != nil {
+		return 0, fmt.Errorf(
+			"parse process group ID: %w",
+			err,
+		)
+	}
+
+	if pgid <= 0 {
+		return 0, errors.New("invalid process group ID")
+	}
+
+	return pgid, nil
 }
 
 func TerminateProcess(

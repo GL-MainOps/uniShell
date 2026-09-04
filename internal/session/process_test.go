@@ -31,6 +31,55 @@ func TestProcessStartTicksReturnsCurrentProcessStartTicks(
 	}
 }
 
+func TestProcessGroupIDReturnsCurrentProcessGroupID(
+	t *testing.T,
+) {
+	got, err := ProcessGroupID(os.Getpid())
+	if err != nil {
+		t.Fatalf(
+			"ProcessGroupID() returned error: %v",
+			err,
+		)
+	}
+
+	want := CurrentProcessGroupID()
+
+	if got != want {
+		t.Fatalf(
+			"ProcessGroupID() = %d, want %d",
+			got,
+			want,
+		)
+	}
+
+	if got <= 0 {
+		t.Fatalf(
+			"ProcessGroupID() = %d, want positive process group ID",
+			got,
+		)
+	}
+}
+
+func TestProcessGroupIDRejectsInvalidPID(t *testing.T) {
+	if _, err := ProcessGroupID(0); err == nil {
+		t.Fatal(
+			"ProcessGroupID() returned nil error for invalid PID",
+		)
+	}
+}
+
+func TestProcessGroupIDReturnsErrorForMissingProcess(
+	t *testing.T,
+) {
+	_, err := ProcessGroupID(999999)
+
+	if err == nil {
+		t.Fatal(
+			"ProcessGroupID() returned nil error for missing process",
+		)
+	}
+}
+
 func TestTerminateProcessKillsMatchingProcess(
 	t *testing.T,
 ) {
