@@ -2,10 +2,13 @@ package session
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"golang.org/x/sys/unix"
 )
 
 // CurrentProcessStartTicks returns the kernel start-time tick count of the
@@ -43,4 +46,69 @@ func ProcessStartTicks(pid int) (uint64, error) {
 	}
 
 	return strconv.ParseUint(fields[19], 10, 64)
+}
+
+func TerminateProcess(
+	pid int,
+	processStartTicks uint64,
+) error {
+	if pid <= 0 {
+		return fmt.Errorf("invalid process ID")
+	}
+
+	if processStartTicks == 0 {
+		return fmt.Errorf("invalid process start time")
+	}
+
+	pidfd, err := unix.PidfdOpen(pid, 0)
+	if err != nil {
+		if errors.Is(err, unix.ESRCH) {
+			return os.ErrProcessDone
+		}
+
+		return fmt.Errorf(
+			"open process descriptor: %w",
+			err,
+		)
+	}
+
+	defer unix.Close(pidfd)
+
+	currentStartTicks, err := ProcessStartTicks(pid)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return os.ErrProcessDone
+		}
+
+		return fmt.Errorf(
+			"read process identity: %w",
+			err,
+		)
+	}
+
+	if currentStartTicks != processStartTicks {
+		return fmt.Errorf(
+			"process identity mismatch for pid %d",
+			pid,
+		)
+	}
+
+	if err := unix.PidfdSendSignal(
+		pidfd,
+		unix.SIGKILL,
+		nil,
+		0,
+	); err != nil {
+		if errors.Is(err, unix.ESRCH) {
+			return os.ErrProcessDone
+		}
+
+		return fmt.Errorf(
+			"terminate process %d: %w",
+			pid,
+			err,
+		)
+	}
+
+	return nil
 }

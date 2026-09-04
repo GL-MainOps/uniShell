@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -79,4 +80,40 @@ func (a *App) DiscoverCleanSessions() ([]*CleanSession, error) {
 	}
 
 	return sessions, nil
+}
+
+// TerminateNormalSession verifies and terminates the process associated
+// with a normal uniShell session.
+func (a *App) TerminateNormalSession(
+	cleanSession *CleanSession,
+) error {
+	if cleanSession == nil {
+		return fmt.Errorf("clean session cannot be nil")
+	}
+
+	if cleanSession.Metadata.Mode != sessionmeta.ModeNormal {
+		return fmt.Errorf(
+			"session %q is not a normal session",
+			cleanSession.Metadata.Name,
+		)
+	}
+
+	err := sessionmeta.TerminateProcess(
+		cleanSession.Metadata.PID,
+		cleanSession.Metadata.ProcessStartTicks,
+	)
+
+	if errors.Is(err, os.ErrProcessDone) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf(
+			"terminate normal session %q: %w",
+			cleanSession.Metadata.Name,
+			err,
+		)
+	}
+
+	return nil
 }

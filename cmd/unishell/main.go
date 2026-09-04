@@ -16,6 +16,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/runtime"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 	"gitlab.com/mainops/uniShell/internal/shell"
 	"gitlab.com/mainops/uniShell/internal/shell/profile"
 )
@@ -608,6 +609,7 @@ func parseCleanArgs(args []string) (cleanOptions, error) {
 
 type cleanApplication interface {
 	DiscoverCleanSessions() ([]*app.CleanSession, error)
+	TerminateNormalSession(*app.CleanSession) error
 }
 
 var errCleanSelectionCancelled = errors.New(
@@ -748,10 +750,50 @@ func runClean(
 		return nil
 	}
 
-	return fmt.Errorf(
-		"clean confirmation accepted for %q, cleanup is not implemented yet",
-		target.Metadata.Name,
-	)
+	revalidatedSessions, err := application.DiscoverCleanSessions()
+	if err != nil {
+		return fmt.Errorf(
+			"revalidate clean session: %w",
+			err,
+		)
+	}
+
+	var revalidatedTarget *app.CleanSession
+
+	for _, candidate := range revalidatedSessions {
+		if candidate.Metadata.ID == target.Metadata.ID &&
+			candidate.RuntimeDir == target.RuntimeDir {
+			revalidatedTarget = candidate
+			break
+		}
+	}
+
+	if revalidatedTarget == nil {
+		return fmt.Errorf(
+			"managed session %q no longer exists",
+			target.Metadata.Name,
+		)
+	}
+
+	if revalidatedTarget.Metadata.Mode != sessionmeta.ModeNormal {
+		return fmt.Errorf(
+			"clean session %q uses unsupported termination mode %q",
+			revalidatedTarget.Metadata.Name,
+			revalidatedTarget.Metadata.Mode,
+		)
+	}
+
+	if err := application.TerminateNormalSession(
+		revalidatedTarget,
+	); err != nil {
+		return fmt.Errorf(
+			"terminate clean session %q: %w",
+			revalidatedTarget.Metadata.Name,
+			err,
+		)
+	}
+
+	return nil
 }
 
 func runDoctor(app *app.App, args []string) error {

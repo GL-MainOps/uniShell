@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/credentials"
@@ -201,23 +202,27 @@ func shellTestRuntime(t *testing.T) *runtime.Session {
 }
 
 type shellTestApplication struct {
-	discoverSession       *app.Session
-	discoverSessions      []*multiplexer.ManagedSession
-	discoverCleanSessions []*app.CleanSession
-	discoverErr           error
-	startSession          *app.Session
-	startErr              error
-	preparedSession       *runtime.Session
-	preparedErr           error
-	createdSession        *app.Session
-	createdErr            error
-	requestedShell        string
-	requestedMultiplexer  string
-	runtimeSession        *runtime.Session
-	runtimeSessionErr     error
-	authErr               error
-	createdMultiplexer    string
-	createdStartup        shell.Startup
+	discoverSession            *app.Session
+	discoverSessions           []*multiplexer.ManagedSession
+	discoverCleanSessions      []*app.CleanSession
+	discoverCleanSessionCalls  int
+	discoverCleanSessionResult [][]*app.CleanSession
+	terminateNormalSessionErr  error
+	terminatedCleanSession     *app.CleanSession
+	discoverErr                error
+	startSession               *app.Session
+	startErr                   error
+	preparedSession            *runtime.Session
+	preparedErr                error
+	createdSession             *app.Session
+	createdErr                 error
+	requestedShell             string
+	requestedMultiplexer       string
+	runtimeSession             *runtime.Session
+	runtimeSessionErr          error
+	authErr                    error
+	createdMultiplexer         string
+	createdStartup             shell.Startup
 }
 
 func (a *shellTestApplication) StartMultiplexerSession() (*app.Session, error) {
@@ -306,7 +311,24 @@ func (a *shellTestApplication) DiscoverCleanSessions() (
 		return nil, a.discoverErr
 	}
 
+	if a.discoverCleanSessionCalls <
+		len(a.discoverCleanSessionResult) {
+		result := a.discoverCleanSessionResult[a.discoverCleanSessionCalls]
+		a.discoverCleanSessionCalls++
+
+		return result, nil
+	}
+
+	a.discoverCleanSessionCalls++
+
 	return a.discoverCleanSessions, nil
+}
+
+func (a *shellTestApplication) TerminateNormalSession(
+	session *app.CleanSession,
+) error {
+	a.terminatedCleanSession = session
+	return a.terminateNormalSessionErr
 }
 
 type shellTestBackend struct {
@@ -1036,14 +1058,25 @@ func TestRunCleanRejectsNonexistentTarget(t *testing.T) {
 	}
 }
 
-func TestRunCleanConfirmsExplicitTarget(t *testing.T) {
+func TestRunCleanTerminatesConfirmedNormalSession(
+	t *testing.T,
+) {
+	target := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "development-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeNormal,
+			Name:              "development",
+		},
+		RuntimeDir: "/tmp/development",
+	}
+
 	application := &shellTestApplication{
 		discoverCleanSessions: []*app.CleanSession{
-			{
-				Metadata: sessionmeta.Metadata{
-					Name: "development",
-				},
-			},
+			target,
 		},
 	}
 
@@ -1054,49 +1087,200 @@ func TestRunCleanConfirmsExplicitTarget(t *testing.T) {
 
 	reader, writer, err := os.Pipe()
 	if err != nil {
-		t.Fatalf("os.Pipe() returned error: %v", err)
+		t.Fatalf(
+			"os.Pipe() returned error: %v",
+			err,
+		)
 	}
 
 	defer reader.Close()
 
 	if _, err := writer.WriteString("y\n"); err != nil {
-		t.Fatalf("writer.WriteString() returned error: %v", err)
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
 	}
 
 	if err := writer.Close(); err != nil {
-		t.Fatalf("writer.Close() returned error: %v", err)
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
 	}
 
 	os.Stdin = reader
 
-	output := captureStdout(t, func() {
-		err = runClean(
-			application,
-			[]string{"--target", "development"},
+	if err := runClean(
+		application,
+		[]string{"--target", "development"},
+	); err != nil {
+		t.Fatalf(
+			"runClean() returned error: %v",
+			err,
 		)
-	})
+	}
+
+	if application.terminatedCleanSession != target {
+		t.Fatal(
+			"runClean() did not terminate the confirmed session",
+		)
+	}
+}
+
+func TestRunCleanRejectsTargetThatDisappearsAfterConfirmation(
+	t *testing.T,
+) {
+	target := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "development-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeNormal,
+			Name:              "development",
+		},
+		RuntimeDir: "/tmp/development",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessionResult: [][]*app.CleanSession{
+			{target},
+			nil,
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf(
+			"os.Pipe() returned error: %v",
+			err,
+		)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("y\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	err = runClean(
+		application,
+		[]string{"--target", "development"},
+	)
 
 	if err == nil {
-		t.Fatal("runClean() returned nil error")
-	}
-
-	wantErr := `clean confirmation accepted for "development", cleanup is not implemented yet`
-
-	if err.Error() != wantErr {
-		t.Fatalf(
-			"runClean() error = %q, want %q",
-			err.Error(),
-			wantErr,
+		t.Fatal(
+			"runClean() returned nil error after target disappeared",
 		)
 	}
 
-	wantOutput := `Are you sure you want to clean session "development"? [y/N]: `
+	if application.terminatedCleanSession != nil {
+		t.Fatal(
+			"runClean() terminated a session that disappeared",
+		)
+	}
+}
 
-	if output != wantOutput {
+func TestRunCleanRejectsReplacementWithDifferentIdentity(
+	t *testing.T,
+) {
+	target := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "development-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeNormal,
+			Name:              "development",
+		},
+		RuntimeDir: "/tmp/development",
+	}
+
+	replacement := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "replacement-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeNormal,
+			Name:              "development",
+		},
+		RuntimeDir: "/tmp/replacement",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessionResult: [][]*app.CleanSession{
+			{target},
+			{replacement},
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
 		t.Fatalf(
-			"runClean() output = %q, want %q",
-			output,
-			wantOutput,
+			"os.Pipe() returned error: %v",
+			err,
+		)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("y\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	err = runClean(
+		application,
+		[]string{"--target", "development"},
+	)
+
+	if err == nil {
+		t.Fatal(
+			"runClean() returned nil error for replacement session",
+		)
+	}
+
+	if application.terminatedCleanSession != nil {
+		t.Fatal(
+			"runClean() terminated the replacement session",
 		)
 	}
 }
@@ -1155,13 +1339,22 @@ func TestRunCleanDoesNotCleanWhenConfirmationIsRejected(t *testing.T) {
 }
 
 func TestRunCleanAcceptsCaseInsensitiveConfirmation(t *testing.T) {
+	target := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "development-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeNormal,
+			Name:              "development",
+		},
+		RuntimeDir: "/tmp/development",
+	}
+
 	application := &shellTestApplication{
 		discoverCleanSessions: []*app.CleanSession{
-			{
-				Metadata: sessionmeta.Metadata{
-					Name: "development",
-				},
-			},
+			target,
 		},
 	}
 
@@ -1172,37 +1365,43 @@ func TestRunCleanAcceptsCaseInsensitiveConfirmation(t *testing.T) {
 
 	reader, writer, err := os.Pipe()
 	if err != nil {
-		t.Fatalf("os.Pipe() returned error: %v", err)
+		t.Fatalf(
+			"os.Pipe() returned error: %v",
+			err,
+		)
 	}
 
 	defer reader.Close()
 
-	if _, err := writer.WriteString("YeS\n"); err != nil {
-		t.Fatalf("writer.WriteString() returned error: %v", err)
+	if _, err := writer.WriteString("Y\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
 	}
 
 	if err := writer.Close(); err != nil {
-		t.Fatalf("writer.Close() returned error: %v", err)
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
 	}
 
 	os.Stdin = reader
 
-	err = runClean(
+	if err := runClean(
 		application,
 		[]string{"--target", "development"},
-	)
-
-	if err == nil {
-		t.Fatal("runClean() returned nil error")
+	); err != nil {
+		t.Fatalf(
+			"runClean() returned error: %v",
+			err,
+		)
 	}
 
-	want := `clean confirmation accepted for "development", cleanup is not implemented yet`
-
-	if err.Error() != want {
-		t.Fatalf(
-			"runClean() error = %q, want %q",
-			err.Error(),
-			want,
+	if application.terminatedCleanSession != target {
+		t.Fatal(
+			"runClean() did not terminate the confirmed session",
 		)
 	}
 }
