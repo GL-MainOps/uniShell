@@ -11,6 +11,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// ProcessIdentity identifies one live process instance and its process group.
+type ProcessIdentity struct {
+	PID               int
+	ProcessStartTicks uint64
+	ProcessGroupID    int
+}
+
 // CurrentProcessStartTicks returns the kernel start-time tick count of the
 // current process.
 //
@@ -81,7 +88,7 @@ func ProcessGroupID(pid int) (int, error) {
 	}
 
 	fields := strings.Fields(line[endComm+2:])
-	if len(fields) <= 3 {
+	if len(fields) <= 2 {
 		return 0, errors.New("invalid process stat fields")
 	}
 

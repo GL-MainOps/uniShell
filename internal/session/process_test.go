@@ -80,6 +80,51 @@ func TestProcessGroupIDReturnsErrorForMissingProcess(
 	}
 }
 
+func TestProcessIdentityForCurrentProcess(t *testing.T) {
+	pid := os.Getpid()
+
+	startTicks, err := ProcessStartTicks(pid)
+	if err != nil {
+		t.Fatalf(
+			"ProcessStartTicks() returned error: %v",
+			err,
+		)
+	}
+
+	pgid, err := ProcessGroupID(pid)
+	if err != nil {
+		t.Fatalf(
+			"ProcessGroupID() returned error: %v",
+			err,
+		)
+	}
+
+	identity := ProcessIdentity{
+		PID:               pid,
+		ProcessStartTicks: startTicks,
+		ProcessGroupID:    pgid,
+	}
+
+	if identity.PID != pid {
+		t.Fatalf(
+			"identity PID = %d, want %d",
+			identity.PID,
+			pid,
+		)
+	}
+
+	if identity.ProcessStartTicks == 0 {
+		t.Fatal("identity process start ticks = 0")
+	}
+
+	if identity.ProcessGroupID <= 0 {
+		t.Fatalf(
+			"identity process group ID = %d, want positive value",
+			identity.ProcessGroupID,
+		)
+	}
+}
+
 func TestTerminateProcessKillsMatchingProcess(
 	t *testing.T,
 ) {
