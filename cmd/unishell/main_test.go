@@ -3,14 +3,54 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 	"gitlab.com/mainops/uniShell/internal/runtime"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
+	"gitlab.com/mainops/uniShell/internal/shell"
 )
+
+func TestNewApplicationPropagatesShellConfigurationOptions(
+	t *testing.T,
+) {
+	options := cliOptions{
+		RuntimeDir:             t.TempDir(),
+		Shell:                  "bash",
+		ShellProfile:           "work",
+		NoSharedRC:             true,
+		Multiplexer:            "tmux",
+		SessionName:            "test-session",
+		MultiplexerSessionName: "test-multiplexer-session",
+	}
+
+	application, err := newApplication(options)
+	if err != nil {
+		t.Fatalf("newApplication() returned error: %v", err)
+	}
+
+	if got := application.RequestedShellProfile(); got != "work" {
+		t.Fatalf(
+			"RequestedShellProfile() = %q, want %q",
+			got,
+			"work",
+		)
+	}
+
+	if got := application.RequestedNoSharedRC(); !got {
+		t.Fatal("RequestedNoSharedRC() = false, want true")
+	}
+}
 
 func TestPrintErrorAuthenticationFailed(t *testing.T) {
 	originalStderr := os.Stderr
@@ -78,21 +118,116 @@ func TestPrintErrorGenericError(t *testing.T) {
 	}
 }
 
+func TestExitCodeReturnsZeroForNil(t *testing.T) {
+	if got := exitCode(nil); got != 0 {
+		t.Fatalf("exitCode(nil) = %d, want 0", got)
+	}
+}
+
+func TestExitCodeSuppressesSIGINTStatus(t *testing.T) {
+	err := exec.Command("sh", "-c", "exit 130").Run()
+	if err == nil {
+		t.Fatal("command returned nil error")
+	}
+
+	if got := exitCode(err); got != 0 {
+		t.Fatalf("exitCode(130) = %d, want 0", got)
+	}
+}
+
+func TestExitCodePreservesNonSIGINTStatus(t *testing.T) {
+	err := exec.Command("sh", "-c", "exit 42").Run()
+	if err == nil {
+		t.Fatal("command returned nil error")
+	}
+
+	if got := exitCode(err); got != 42 {
+		t.Fatalf("exitCode(42) = %d, want 42", got)
+	}
+}
+
+func TestPrintErrorSuppressesSIGINTStatus(t *testing.T) {
+	err := exec.Command("sh", "-c", "exit 130").Run()
+	if err == nil {
+		t.Fatal("command returned nil error")
+	}
+
+	originalStderr := os.Stderr
+
+	reader, writer, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatalf("create stderr pipe: %v", pipeErr)
+	}
+
+	os.Stderr = writer
+
+	printError(err)
+
+	_ = writer.Close()
+	os.Stderr = originalStderr
+
+	var output bytes.Buffer
+	if _, err := output.ReadFrom(reader); err != nil {
+		t.Fatalf("read captured stderr: %v", err)
+	}
+
+	if output.Len() != 0 {
+		t.Fatalf(
+			"printError(130) output = %q, want empty output",
+			output.String(),
+		)
+	}
+}
+
+func shellTestRuntime(t *testing.T) *runtime.Session {
+	t.Helper()
+
+	runtimeDir := t.TempDir()
+	sharedDir := filepath.Join(runtimeDir, "config", "shell", "shared")
+
+	if err := os.MkdirAll(sharedDir, 0o755); err != nil {
+		t.Fatalf("create shared shell config directory: %v", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(sharedDir, "config.toml"),
+		[]byte("[environment]\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write shared shell configuration: %v", err)
+	}
+
+	return &runtime.Session{
+		Paths: runtime.Paths{
+			Runtime: runtimeDir,
+		},
+	}
+}
+
 type shellTestApplication struct {
-	discoverSession      *app.Session
-	discoverErr          error
-	startSession         *app.Session
-	startErr             error
-	preparedSession      *runtime.Session
-	preparedErr          error
-	createdSession       *app.Session
-	createdErr           error
-	requestedShell       string
-	requestedMultiplexer string
-	runtimeSession       *runtime.Session
-	runtimeSessionErr    error
-	authErr              error
-	createdMultiplexer   string
+	discoverSession              *app.Session
+	discoverSessions             []*multiplexer.ManagedSession
+	discoverCleanSessions        []*app.CleanSession
+	discoverCleanSessionCalls    int
+	discoverCleanSessionResult   [][]*app.CleanSession
+	terminateNormalSessionErr    error
+	terminatedCleanSession       *app.CleanSession
+	cleanedMultiplexerSession    *app.CleanSession
+	cleanupMultiplexerSessionErr error
+	discoverErr                  error
+	startSession                 *app.Session
+	startErr                     error
+	preparedSession              *runtime.Session
+	preparedErr                  error
+	createdSession               *app.Session
+	createdErr                   error
+	requestedShell               string
+	requestedMultiplexer         string
+	runtimeSession               *runtime.Session
+	runtimeSessionErr            error
+	authErr                      error
+	createdMultiplexer           string
+	createdStartup               shell.Startup
 }
 
 func (a *shellTestApplication) StartMultiplexerSession() (*app.Session, error) {
@@ -118,8 +253,41 @@ func (a *shellTestApplication) DiscoverMultiplexerSession() (*app.Session, error
 	return a.discoverSession, a.discoverErr
 }
 
+func (a *shellTestApplication) DiscoverMultiplexerSessions() (
+	[]*multiplexer.ManagedSession,
+	error,
+) {
+	if errors.Is(a.discoverErr, multiplexer.ErrSessionNotFound) {
+		return nil, nil
+	}
+	if a.discoverErr != nil {
+		return nil, a.discoverErr
+	}
+
+	if a.discoverSessions != nil {
+		return a.discoverSessions, nil
+	}
+
+	if a.discoverSession == nil ||
+		a.discoverSession.Multiplexer == nil {
+		return nil, nil
+	}
+
+	return []*multiplexer.ManagedSession{
+		a.discoverSession.Multiplexer,
+	}, nil
+}
+
 func (a *shellTestApplication) RequestedShell() string {
 	return a.requestedShell
+}
+
+func (a *shellTestApplication) RequestedShellProfile() string {
+	return ""
+}
+
+func (a *shellTestApplication) RequestedNoSharedRC() bool {
+	return false
 }
 
 func (a *shellTestApplication) PrepareMultiplexerSession() (
@@ -133,15 +301,53 @@ func (a *shellTestApplication) CreateMultiplexerSession(
 	runtimeSession *runtime.Session,
 	multiplexerName string,
 	shellName string,
+	startup shell.Startup,
 ) (*app.Session, error) {
 	a.createdMultiplexer = multiplexerName
+	a.createdStartup = startup
 	return a.createdSession, a.createdErr
+}
+
+func (a *shellTestApplication) DiscoverCleanSessions() (
+	[]*app.CleanSession,
+	error,
+) {
+	if a.discoverErr != nil {
+		return nil, a.discoverErr
+	}
+
+	if a.discoverCleanSessionCalls <
+		len(a.discoverCleanSessionResult) {
+		result := a.discoverCleanSessionResult[a.discoverCleanSessionCalls]
+		a.discoverCleanSessionCalls++
+
+		return result, nil
+	}
+
+	a.discoverCleanSessionCalls++
+
+	return a.discoverCleanSessions, nil
+}
+
+func (a *shellTestApplication) TerminateNormalSession(
+	session *app.CleanSession,
+) error {
+	a.terminatedCleanSession = session
+	return a.terminateNormalSessionErr
+}
+
+func (a *shellTestApplication) CleanupMultiplexerSession(
+	session *app.CleanSession,
+) error {
+	a.cleanedMultiplexerSession = session
+	return a.cleanupMultiplexerSessionErr
 }
 
 type shellTestBackend struct {
 	attached  bool
 	detached  bool
 	destroyed bool
+	alive     bool
 	attachErr error
 	detachErr error
 }
@@ -167,6 +373,16 @@ func (b *shellTestBackend) Create(multiplexer.Session) error {
 	return nil
 }
 
+func (b *shellTestBackend) ProcessIdentity(
+	multiplexer.Session,
+) (sessionmeta.ProcessIdentity, error) {
+	return sessionmeta.ProcessIdentity{
+		PID:               os.Getpid(),
+		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+	}, nil
+}
+
 func (b *shellTestBackend) Attach(multiplexer.Session) error {
 	b.attached = true
 	return b.attachErr
@@ -178,7 +394,7 @@ func (b *shellTestBackend) Detach(multiplexer.Session) error {
 }
 
 func (b *shellTestBackend) IsAlive(multiplexer.Session) bool {
-	return true
+	return b.alive
 }
 
 func (b *shellTestBackend) Destroy(multiplexer.Session) error {
@@ -186,12 +402,449 @@ func (b *shellTestBackend) Destroy(multiplexer.Session) error {
 	return nil
 }
 
+type cleanLifecycleBackend struct {
+	alive     bool
+	destroyed bool
+	identity  sessionmeta.ProcessIdentity
+}
+
+func (b *cleanLifecycleBackend) Name() string {
+	return "test"
+}
+
+func (b *cleanLifecycleBackend) Capabilities() map[multiplexer.Capability]bool {
+	return map[multiplexer.Capability]bool{
+		multiplexer.CapabilitySessions: true,
+		multiplexer.CapabilityDestroy:  true,
+	}
+}
+
+func (b *cleanLifecycleBackend) Available() bool {
+	return true
+}
+
+func (b *cleanLifecycleBackend) Create(
+	multiplexer.Session,
+) error {
+	b.alive = true
+	return nil
+}
+
+func (b *cleanLifecycleBackend) ProcessIdentity(
+	multiplexer.Session,
+) (sessionmeta.ProcessIdentity, error) {
+	return b.identity, nil
+}
+
+func (b *cleanLifecycleBackend) Attach(
+	multiplexer.Session,
+) error {
+	return nil
+}
+
+func (b *cleanLifecycleBackend) Detach(
+	multiplexer.Session,
+) error {
+	return nil
+}
+
+func (b *cleanLifecycleBackend) IsAlive(
+	multiplexer.Session,
+) bool {
+	return b.alive
+}
+
+func (b *cleanLifecycleBackend) Destroy(
+	multiplexer.Session,
+) error {
+	b.destroyed = true
+	b.alive = false
+	return nil
+}
+
+func startCleanLifecycleProcessGroupHelper(
+	t *testing.T,
+) *exec.Cmd {
+	t.Helper()
+
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestCleanLifecycleProcessGroupHelper$",
+	)
+
+	cmd.Env = append(
+		os.Environ(),
+		"UNISHELL_CLEAN_LIFECYCLE_HELPER=1",
+	)
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf(
+			"start clean lifecycle process-group helper: %v",
+			err,
+		)
+	}
+
+	return cmd
+}
+
+func TestCleanLifecycleProcessGroupHelper(
+	t *testing.T,
+) {
+	if os.Getenv("UNISHELL_CLEAN_LIFECYCLE_HELPER") != "1" {
+		return
+	}
+
+	for {
+		time.Sleep(time.Second)
+	}
+}
+
+func cleanLifecycleProcessIdentity(
+	t *testing.T,
+	cmd *exec.Cmd,
+) sessionmeta.ProcessIdentity {
+	t.Helper()
+
+	startTicks, err := sessionmeta.ProcessStartTicks(
+		cmd.Process.Pid,
+	)
+	if err != nil {
+		t.Fatalf(
+			"ProcessStartTicks(%d) returned error: %v",
+			cmd.Process.Pid,
+			err,
+		)
+	}
+
+	processGroupID, err := sessionmeta.ProcessGroupID(
+		cmd.Process.Pid,
+	)
+	if err != nil {
+		t.Fatalf(
+			"ProcessGroupID(%d) returned error: %v",
+			cmd.Process.Pid,
+			err,
+		)
+	}
+
+	return sessionmeta.ProcessIdentity{
+		PID:               cmd.Process.Pid,
+		ProcessStartTicks: startTicks,
+		ProcessGroupID:    processGroupID,
+	}
+}
+
+func TestRunCleanTerminatesConfirmedMultiplexerSessionEndToEnd(
+	t *testing.T,
+) {
+	root := t.TempDir()
+	runtimeRoot := filepath.Join(
+		root,
+		"runtime",
+		"1.0.0",
+	)
+
+	runtimePath := filepath.Join(
+		runtimeRoot,
+		"session",
+	)
+
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf(
+			"create runtime path %q: %v",
+			runtimePath,
+			err,
+		)
+	}
+
+	cmd := startCleanLifecycleProcessGroupHelper(t)
+	defer func() {
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+		}
+
+		_ = cmd.Wait()
+	}()
+
+	identity := cleanLifecycleProcessIdentity(t, cmd)
+
+	backend := &cleanLifecycleBackend{
+		identity: identity,
+		alive:    true,
+	}
+
+	manager := multiplexer.NewManager(
+		multiplexer.NewRegistry(backend),
+	)
+
+	t.Setenv(
+		"UNISHELL_AUTH_TOKEN",
+		"test-fixture-token",
+	)
+
+	application, err := app.New(app.Options{
+		Version:     "1.0.0",
+		Commit:      "test",
+		Root:        root,
+		Multiplexer: manager,
+	})
+	if err != nil {
+		t.Fatalf(
+			"app.New() returned error: %v",
+			err,
+		)
+	}
+
+	_, err = manager.Create(
+		"test",
+		"development",
+		"",
+		runtimePath,
+		"/tmp/test.endpoint",
+		"",
+		"",
+		nil,
+		nil,
+		api.Options{},
+	)
+	if err != nil {
+		t.Fatalf(
+			"manager.Create() returned error: %v",
+			err,
+		)
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf(
+			"os.Pipe() returned error: %v",
+			err,
+		)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("y\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	if err := runClean(
+		application,
+		[]string{"--target", "development"},
+	); err != nil {
+		t.Fatalf(
+			"runClean() returned error: %v",
+			err,
+		)
+	}
+
+	if !backend.destroyed {
+		t.Fatal(
+			"runClean() did not destroy the multiplexer backend",
+		)
+	}
+
+	if _, err := os.Stat(runtimePath); !os.IsNotExist(err) {
+		t.Fatalf(
+			"runtime path still exists after clean: %v",
+			err,
+		)
+	}
+
+	if err := cmd.Wait(); err == nil {
+		t.Fatal(
+			"managed process-group helper remained alive after clean",
+		)
+	}
+}
+
+func TestRunCleanTerminatesConfirmedMultiplexerSession(
+	t *testing.T,
+) {
+	target := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "development-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeMultiplexer,
+			Name:              "development",
+			Multiplexer:       "test",
+		},
+		RuntimeDir: "/tmp/development",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			target,
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf(
+			"os.Pipe() returned error: %v",
+			err,
+		)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("y\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	if err := runClean(
+		application,
+		[]string{"--target", "development"},
+	); err != nil {
+		t.Fatalf(
+			"runClean() returned error: %v",
+			err,
+		)
+	}
+
+	if application.cleanedMultiplexerSession != target {
+		t.Fatal(
+			"runClean() did not clean the confirmed multiplexer session",
+		)
+	}
+
+	if application.terminatedCleanSession != nil {
+		t.Fatal(
+			"runClean() incorrectly used normal-session termination",
+		)
+	}
+}
+
+func TestRunCleanReportsMultiplexerCleanupError(
+	t *testing.T,
+) {
+	target := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "development-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeMultiplexer,
+			Name:              "development",
+			Multiplexer:       "test",
+		},
+		RuntimeDir: "/tmp/development",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			target,
+		},
+		cleanupMultiplexerSessionErr: errors.New(
+			"multiplexer cleanup failed",
+		),
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf(
+			"os.Pipe() returned error: %v",
+			err,
+		)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("y\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	err = runClean(
+		application,
+		[]string{"--target", "development"},
+	)
+
+	if err == nil {
+		t.Fatal(
+			"runClean() returned nil after multiplexer cleanup failure",
+		)
+	}
+
+	if !strings.Contains(
+		err.Error(),
+		"multiplexer cleanup failed",
+	) {
+		t.Fatalf(
+			"runClean() error = %q, want multiplexer cleanup failure",
+			err,
+		)
+	}
+}
+
 func TestRunShellAttachesExistingSession(t *testing.T) {
-	backend := &shellTestBackend{}
+	backend := &shellTestBackend{
+		alive: true,
+	}
 
 	session := &app.Session{
 		Multiplexer: &multiplexer.ManagedSession{
-			Metadata: multiplexer.Metadata{
+			Metadata: sessionmeta.Metadata{
 				ShellName: "bash",
 			},
 			Backend: backend,
@@ -225,7 +878,9 @@ func TestRunShellAttachesExistingSession(t *testing.T) {
 func TestRunShellCreatesAndAttachesWhenSessionDoesNotExist(
 	t *testing.T,
 ) {
-	backend := &shellTestBackend{}
+	backend := &shellTestBackend{
+		alive: true,
+	}
 
 	session := &app.Session{
 		Multiplexer: &multiplexer.ManagedSession{
@@ -239,7 +894,7 @@ func TestRunShellCreatesAndAttachesWhenSessionDoesNotExist(
 
 	application := &shellTestApplication{
 		discoverErr:          multiplexer.ErrSessionNotFound,
-		preparedSession:      &runtime.Session{},
+		preparedSession:      shellTestRuntime(t),
 		createdSession:       session,
 		requestedShell:       "bash",
 		requestedMultiplexer: "tmux",
@@ -277,7 +932,7 @@ func TestRunShellCleansNewSessionWhenAttachFails(t *testing.T) {
 
 	application := &shellTestApplication{
 		discoverErr:          multiplexer.ErrSessionNotFound,
-		preparedSession:      &runtime.Session{},
+		preparedSession:      shellTestRuntime(t),
 		createdSession:       session,
 		requestedShell:       "bash",
 		requestedMultiplexer: "tmux",
@@ -451,41 +1106,780 @@ func TestRunDetachRejectsArguments(t *testing.T) {
 	}
 }
 
-func TestRunCleanDestroysExistingSession(t *testing.T) {
-	backend := &shellTestBackend{}
-
-	session := &app.Session{
-		Multiplexer: &multiplexer.ManagedSession{
-			Backend: backend,
-			Session: multiplexer.Session{
-				Name:     "default",
-				Endpoint: "/tmp/test.sock",
+func TestSelectCleanSessionUsesNumericIndex(t *testing.T) {
+	sessions := []*app.CleanSession{
+		{
+			Metadata: sessionmeta.Metadata{
+				Name: "development",
+			},
+		},
+		{
+			Metadata: sessionmeta.Metadata{
+				Name: "production",
+			},
+		},
+		{
+			Metadata: sessionmeta.Metadata{
+				Name: "testing",
 			},
 		},
 	}
 
-	application := &shellTestApplication{
-		discoverSession: session,
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
 	}
 
-	if err := runClean(application, nil); err != nil {
-		t.Fatalf("runClean() returned error: %v", err)
+	defer reader.Close()
+
+	if _, err := writer.WriteString("2\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
 	}
 
-	if !backend.destroyed {
-		t.Fatal("runClean() did not destroy session")
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	session, err := selectCleanSession(sessions)
+	if err != nil {
+		t.Fatalf(
+			"selectCleanSession() returned error: %v",
+			err,
+		)
+	}
+
+	if session != sessions[1] {
+		t.Fatalf(
+			"selected session = %p, want %p",
+			session,
+			sessions[1],
+		)
 	}
 }
 
-func TestRunCleanSucceedsWhenSessionDoesNotExist(t *testing.T) {
-	application := &shellTestApplication{
-		discoverErr: multiplexer.ErrSessionNotFound,
+func TestSelectCleanSessionRepromptsAfterInvalidSelection(t *testing.T) {
+	sessions := []*app.CleanSession{
+		{
+			Metadata: sessionmeta.Metadata{
+				Name: "development",
+			},
+		},
+		{
+			Metadata: sessionmeta.Metadata{
+				Name: "production",
+			},
+		},
 	}
 
-	if err := runClean(application, nil); err != nil {
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("production\n2\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	session, err := selectCleanSession(sessions)
+	if err != nil {
+		t.Fatalf(
+			"selectCleanSession() returned error: %v",
+			err,
+		)
+	}
+
+	if session != sessions[1] {
+		t.Fatalf(
+			"selected session = %p, want %p",
+			session,
+			sessions[1],
+		)
+	}
+}
+
+func TestSelectCleanSessionCanCancel(t *testing.T) {
+	sessions := []*app.CleanSession{
+		{
+			Metadata: sessionmeta.Metadata{
+				Name: "development",
+			},
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("q\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	_, err = selectCleanSession(sessions)
+
+	if !errors.Is(err, errCleanSelectionCancelled) {
+		t.Fatalf(
+			"selectCleanSession() error = %v, want %v",
+			err,
+			errCleanSelectionCancelled,
+		)
+	}
+}
+
+func TestRunCleanSelectsSingleSession(t *testing.T) {
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			{
+				Metadata: sessionmeta.Metadata{
+					Name: "default",
+				},
+			},
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("1\nn\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	output := captureStdout(t, func() {
+		if err := runClean(application, nil); err != nil {
+			t.Fatalf(
+				"runClean() returned error: %v",
+				err,
+			)
+		}
+	})
+
+	wantOutput := `Managed uniShell sessions:
+
+1) default
+
+Enter session number: Are you sure you want to clean session "default"? [y/N]: `
+
+	if output != wantOutput {
+		t.Fatalf(
+			"runClean() output = %q, want %q",
+			output,
+			wantOutput,
+		)
+	}
+}
+
+func TestRunCleanSelectsMultipleSessions(t *testing.T) {
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			{
+				Metadata: sessionmeta.Metadata{
+					Name: "development",
+				},
+			},
+			{
+				Metadata: sessionmeta.Metadata{
+					Name: "production",
+				},
+			},
+			{
+				Metadata: sessionmeta.Metadata{
+					Name: "testing",
+				},
+			},
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("2\nn\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	output := captureStdout(t, func() {
+		if err := runClean(application, nil); err != nil {
+			t.Fatalf(
+				"runClean() returned error: %v",
+				err,
+			)
+		}
+	})
+
+	wantOutput := `Managed uniShell sessions:
+
+1) development
+2) production
+3) testing
+
+Enter session number: Are you sure you want to clean session "production"? [y/N]: `
+
+	if output != wantOutput {
+		t.Fatalf(
+			"runClean() output = %q, want %q",
+			output,
+			wantOutput,
+		)
+	}
+}
+
+func TestRunCleanCanCancelSessionSelection(t *testing.T) {
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			{
+				Metadata: sessionmeta.Metadata{
+					Name: "development",
+				},
+			},
+			{
+				Metadata: sessionmeta.Metadata{
+					Name: "production",
+				},
+			},
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("q\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	output := captureStdout(t, func() {
+		if err := runClean(application, nil); err != nil {
+			t.Fatalf(
+				"runClean() returned error: %v",
+				err,
+			)
+		}
+	})
+
+	wantOutput := `Managed uniShell sessions:
+
+1) development
+2) production
+
+Enter session number: `
+
+	if output != wantOutput {
+		t.Fatalf(
+			"runClean() output = %q, want %q",
+			output,
+			wantOutput,
+		)
+	}
+}
+
+func TestRunCleanRejectsNonexistentTarget(t *testing.T) {
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			{
+				Metadata: sessionmeta.Metadata{
+					Name: "development",
+				},
+			},
+		},
+	}
+
+	err := runClean(
+		application,
+		[]string{"--target", "production"},
+	)
+
+	if err == nil {
+		t.Fatal("runClean() returned nil error")
+	}
+
+	want := `managed session "production" not found`
+
+	if err.Error() != want {
+		t.Fatalf(
+			"runClean() error = %q, want %q",
+			err.Error(),
+			want,
+		)
+	}
+}
+
+func TestRunCleanTerminatesConfirmedNormalSession(
+	t *testing.T,
+) {
+	target := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "development-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeNormal,
+			Name:              "development",
+		},
+		RuntimeDir: "/tmp/development",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			target,
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf(
+			"os.Pipe() returned error: %v",
+			err,
+		)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("y\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	if err := runClean(
+		application,
+		[]string{"--target", "development"},
+	); err != nil {
 		t.Fatalf(
 			"runClean() returned error: %v",
 			err,
+		)
+	}
+
+	if application.terminatedCleanSession != target {
+		t.Fatal(
+			"runClean() did not terminate the confirmed session",
+		)
+	}
+}
+
+func TestRunCleanRejectsTargetThatDisappearsAfterConfirmation(
+	t *testing.T,
+) {
+	target := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "development-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeNormal,
+			Name:              "development",
+		},
+		RuntimeDir: "/tmp/development",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessionResult: [][]*app.CleanSession{
+			{target},
+			nil,
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf(
+			"os.Pipe() returned error: %v",
+			err,
+		)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("y\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	err = runClean(
+		application,
+		[]string{"--target", "development"},
+	)
+
+	if err == nil {
+		t.Fatal(
+			"runClean() returned nil error after target disappeared",
+		)
+	}
+
+	if application.terminatedCleanSession != nil {
+		t.Fatal(
+			"runClean() terminated a session that disappeared",
+		)
+	}
+}
+
+func TestRunCleanRejectsReplacementWithDifferentIdentity(
+	t *testing.T,
+) {
+	target := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "development-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeNormal,
+			Name:              "development",
+		},
+		RuntimeDir: "/tmp/development",
+	}
+
+	replacement := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "replacement-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeNormal,
+			Name:              "development",
+		},
+		RuntimeDir: "/tmp/replacement",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessionResult: [][]*app.CleanSession{
+			{target},
+			{replacement},
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf(
+			"os.Pipe() returned error: %v",
+			err,
+		)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("y\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	err = runClean(
+		application,
+		[]string{"--target", "development"},
+	)
+
+	if err == nil {
+		t.Fatal(
+			"runClean() returned nil error for replacement session",
+		)
+	}
+
+	if application.terminatedCleanSession != nil {
+		t.Fatal(
+			"runClean() terminated the replacement session",
+		)
+	}
+}
+
+func TestRunCleanDoesNotCleanWhenConfirmationIsRejected(t *testing.T) {
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			{
+				Metadata: sessionmeta.Metadata{
+					Name: "development",
+				},
+			},
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("n\n"); err != nil {
+		t.Fatalf("writer.WriteString() returned error: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close() returned error: %v", err)
+	}
+
+	os.Stdin = reader
+
+	output := captureStdout(t, func() {
+		if err := runClean(
+			application,
+			[]string{"--target", "development"},
+		); err != nil {
+			t.Fatalf("runClean() returned error: %v", err)
+		}
+	})
+
+	wantOutput := `Are you sure you want to clean session "development"? [y/N]: `
+
+	if output != wantOutput {
+		t.Fatalf(
+			"runClean() output = %q, want %q",
+			output,
+			wantOutput,
+		)
+	}
+}
+
+func TestRunCleanAcceptsCaseInsensitiveConfirmation(t *testing.T) {
+	target := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "development-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeNormal,
+			Name:              "development",
+		},
+		RuntimeDir: "/tmp/development",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			target,
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf(
+			"os.Pipe() returned error: %v",
+			err,
+		)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("Y\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	if err := runClean(
+		application,
+		[]string{"--target", "development"},
+	); err != nil {
+		t.Fatalf(
+			"runClean() returned error: %v",
+			err,
+		)
+	}
+
+	if application.terminatedCleanSession != target {
+		t.Fatal(
+			"runClean() did not terminate the confirmed session",
+		)
+	}
+}
+
+func TestRunCleanReportsWhenNoManagedSessionsExist(t *testing.T) {
+	application := &shellTestApplication{}
+
+	output := captureStdout(t, func() {
+		if err := runClean(application, nil); err != nil {
+			t.Fatalf(
+				"runClean() returned error: %v",
+				err,
+			)
+		}
+	})
+
+	if output != "No managed uniShell sessions found.\n" {
+		t.Fatalf(
+			"runClean() output = %q, want %q",
+			output,
+			"No managed uniShell sessions found.\n",
 		)
 	}
 }
@@ -500,6 +1894,85 @@ func TestRunCleanRejectsArguments(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("runClean() returned nil error")
+	}
+}
+
+func TestParseCleanArgsUsesTarget(t *testing.T) {
+	options, err := parseCleanArgs([]string{
+		"--target",
+		"development",
+	})
+	if err != nil {
+		t.Fatalf(
+			"parseCleanArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.Target != "development" {
+		t.Fatalf(
+			"target = %q, want %q",
+			options.Target,
+			"development",
+		)
+	}
+}
+
+func TestParseCleanArgsUsesTargetEqualsSyntax(t *testing.T) {
+	options, err := parseCleanArgs([]string{
+		"--target=development",
+	})
+	if err != nil {
+		t.Fatalf(
+			"parseCleanArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.Target != "development" {
+		t.Fatalf(
+			"target = %q, want %q",
+			options.Target,
+			"development",
+		)
+	}
+}
+
+func TestParseCleanArgsRejectsMissingTarget(t *testing.T) {
+	_, err := parseCleanArgs([]string{
+		"--target",
+	})
+	if err == nil {
+		t.Fatal("parseCleanArgs() returned nil error")
+	}
+}
+
+func TestParseCleanArgsRejectsEmptyTarget(t *testing.T) {
+	_, err := parseCleanArgs([]string{
+		"--target=",
+	})
+	if err == nil {
+		t.Fatal("parseCleanArgs() returned nil error")
+	}
+}
+
+func TestParseCleanArgsRejectsExtraArguments(t *testing.T) {
+	_, err := parseCleanArgs([]string{
+		"unexpected",
+	})
+	if err == nil {
+		t.Fatal("parseCleanArgs() returned nil error")
+	}
+}
+
+func TestParseCleanArgsRejectsExtraArgumentAfterTarget(t *testing.T) {
+	_, err := parseCleanArgs([]string{
+		"--target",
+		"development",
+		"unexpected",
+	})
+	if err == nil {
+		t.Fatal("parseCleanArgs() returned nil error")
 	}
 }
 
@@ -533,4 +2006,38 @@ func TestRunShellAuthenticatesBeforeMultiplexerSelection(
 			application.createdMultiplexer,
 		)
 	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	original := os.Stdout
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+
+	os.Stdout = writer
+
+	defer func() {
+		os.Stdout = original
+	}()
+
+	fn()
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close() returned error: %v", err)
+	}
+
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("io.ReadAll() returned error: %v", err)
+	}
+
+	if err := reader.Close(); err != nil {
+		t.Fatalf("reader.Close() returned error: %v", err)
+	}
+
+	return string(output)
 }

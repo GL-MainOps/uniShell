@@ -4,17 +4,27 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 	"gitlab.com/mainops/uniShell/internal/multiplexer/config"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 type CommandRunner func(name string, args ...string) error
+
+type OutputCommandRunner func(
+	name string,
+	args ...string,
+) ([]byte, error)
 
 type Backend struct {
 	Binary         string
 	Run            CommandRunner
 	RunQuiet       CommandRunner
+	RunOutput      OutputCommandRunner
 	ConfigResolver *config.Resolver
 }
 
@@ -33,6 +43,10 @@ func New() *Backend {
 		RunQuiet: func(name string, args ...string) error {
 			cmd := exec.Command(name, args...)
 			return cmd.Run()
+		},
+		RunOutput: func(name string, args ...string) ([]byte, error) {
+			cmd := exec.Command(name, args...)
+			return cmd.Output()
 		},
 	}
 }
@@ -55,7 +69,35 @@ func (b *Backend) Available() bool {
 	return err == nil
 }
 
+func prepareSocketPath(socketPath string) error {
+	parent := filepath.Dir(socketPath)
+
+	if err := os.MkdirAll(parent, 0700); err != nil {
+		return fmt.Errorf(
+			"create tmux socket directory: %w",
+			err,
+		)
+	}
+
+	if err := os.Chmod(parent, 0700); err != nil {
+		return fmt.Errorf(
+			"secure tmux socket directory: %w",
+			err,
+		)
+	}
+
+	return nil
+}
+
 func (b *Backend) Create(session api.Session) error {
+	if session.ShellPath == "" {
+		return fmt.Errorf("tmux shell path cannot be empty")
+	}
+
+	if err := prepareSocketPath(session.Endpoint); err != nil {
+		return err
+	}
+
 	args, err := b.commandArgs(
 		session,
 		"new-session",
@@ -87,6 +129,16 @@ func (b *Backend) Create(session api.Session) error {
 			session.NativeName,
 		)
 	}
+
+	args = append(
+		args,
+		session.ShellPath,
+	)
+
+	args = append(
+		args,
+		session.ShellArgs...,
+	)
 
 	return b.Run(b.Binary, args...)
 }
@@ -129,6 +181,78 @@ func (b *Backend) Detach(session api.Session) error {
 	}
 
 	return b.Run(b.Binary, args...)
+}
+
+func (b *Backend) ProcessIdentity(
+	session api.Session,
+) (sessionmeta.ProcessIdentity, error) {
+	args, err := b.commandArgs(
+		session,
+		"display-message",
+		"-p",
+		"#{pid}",
+	)
+	if err != nil {
+		return sessionmeta.ProcessIdentity{}, err
+	}
+
+	runner := b.RunOutput
+	if runner == nil {
+		runner = func(
+			name string,
+			args ...string,
+		) ([]byte, error) {
+			cmd := exec.Command(name, args...)
+			return cmd.Output()
+		}
+	}
+
+	output, err := runner(b.Binary, args...)
+	if err != nil {
+		return sessionmeta.ProcessIdentity{}, fmt.Errorf(
+			"query tmux server process: %w",
+			err,
+		)
+	}
+
+	pidText := strings.TrimSpace(string(output))
+	pid, err := strconv.Atoi(pidText)
+	if err != nil {
+		return sessionmeta.ProcessIdentity{}, fmt.Errorf(
+			"parse tmux server PID %q: %w",
+			pidText,
+			err,
+		)
+	}
+
+	if pid <= 0 {
+		return sessionmeta.ProcessIdentity{}, fmt.Errorf(
+			"invalid tmux server PID %d",
+			pid,
+		)
+	}
+
+	processStartTicks, err := sessionmeta.ProcessStartTicks(pid)
+	if err != nil {
+		return sessionmeta.ProcessIdentity{}, fmt.Errorf(
+			"read tmux server process start time: %w",
+			err,
+		)
+	}
+
+	processGroupID, err := sessionmeta.ProcessGroupID(pid)
+	if err != nil {
+		return sessionmeta.ProcessIdentity{}, fmt.Errorf(
+			"read tmux server process group ID: %w",
+			err,
+		)
+	}
+
+	return sessionmeta.ProcessIdentity{
+		PID:               pid,
+		ProcessStartTicks: processStartTicks,
+		ProcessGroupID:    processGroupID,
+	}, nil
 }
 
 func (b *Backend) IsAlive(session api.Session) bool {

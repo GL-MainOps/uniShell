@@ -1,16 +1,24 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 
 	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/runtime"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 	"gitlab.com/mainops/uniShell/internal/shell"
+	"gitlab.com/mainops/uniShell/internal/shell/profile"
 )
 
 var (
@@ -18,32 +26,66 @@ var (
 	commit  = "unknown"
 )
 
+func newApplication(options cliOptions) (*app.App, error) {
+	return app.New(app.Options{
+		Version:                version,
+		Commit:                 commit,
+		Root:                   options.RuntimeDir,
+		Shell:                  options.Shell,
+		ShellProfile:           options.ShellProfile,
+		NoSharedRC:             options.NoSharedRC,
+		MultiplexerName:        options.Multiplexer,
+		SessionName:            options.SessionName,
+		MultiplexerSessionName: options.MultiplexerSessionName,
+	})
+}
+
 func main() {
 	options, args, err := parseCLIArgs(os.Args[1:])
 	if err != nil {
 		printError(err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 
-	application, err := app.New(app.Options{
-		Version:         version,
-		Commit:          commit,
-		Root:            options.RuntimeDir,
-		Shell:           options.Shell,
-		MultiplexerName: options.Multiplexer,
-	})
+	application, err := newApplication(options)
 	if err != nil {
 		printError(err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 
 	if err := run(application, args); err != nil {
 		printError(err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 }
 
+func exitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		code := exitErr.ExitCode()
+		if code >= 0 {
+			if code == 130 {
+				return 0
+			}
+
+			return code
+		}
+	}
+
+	return 1
+}
+
 func printError(err error) {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) &&
+		exitErr.ExitCode() == 130 {
+		return
+	}
+
 	if errors.Is(err, credentials.ErrAuthenticationFailed) {
 		fmt.Fprintln(os.Stderr, "Authentication Failed. Aborting...")
 		return
@@ -116,12 +158,15 @@ type shellApplication interface {
 	StartMultiplexerSession() (*app.Session, error)
 	DiscoverMultiplexerSession() (*app.Session, error)
 	RequestedShell() string
+	RequestedShellProfile() string
+	RequestedNoSharedRC() bool
 	RequestedMultiplexer() string
 	PrepareMultiplexerSession() (*runtime.Session, error)
 	CreateMultiplexerSession(
 		*runtime.Session,
 		string,
 		string,
+		shell.Startup,
 	) (*app.Session, error)
 }
 
@@ -178,6 +223,57 @@ func runShell(application shellApplication, args []string) error {
 	)
 }
 
+func prepareShellStartup(
+	application shellApplication,
+	selected shell.Shell,
+	runtimeDir string,
+) (shell.Startup, error) {
+
+	profileName := application.RequestedShellProfile()
+	includeShared := !application.RequestedNoSharedRC()
+
+	if profileName == "" && !includeShared {
+		return shell.Startup{}, nil
+	}
+
+	profileRoot := filepath.Join(
+		runtimeDir,
+		"config",
+		"shell",
+	)
+
+	loader := profile.NewLoader(profileRoot)
+
+	loaded, err := loader.Load(
+		selected.Name,
+		profileName,
+		includeShared,
+	)
+	if err != nil {
+		return shell.Startup{}, fmt.Errorf(
+			"load shell profile %q: %w",
+			profileName,
+			err,
+		)
+	}
+
+	startup, err := shell.PrepareProfileStartup(
+		runtimeDir,
+		selected.Name,
+		profileName,
+		loaded,
+		includeShared,
+	)
+	if err != nil {
+		return shell.Startup{}, fmt.Errorf(
+			"prepare shell profile startup: %w",
+			err,
+		)
+	}
+
+	return startup, nil
+}
+
 func runDirectShell(
 	application shellApplication,
 	ctx context.Context,
@@ -231,10 +327,21 @@ func runDirectShell(
 		)
 	}
 
+	startup, err := prepareShellStartup(
+		application,
+		resolved,
+		runtimeSession.Paths.Runtime,
+	)
+	if err != nil {
+		return cleanupRuntime(err)
+	}
+
 	command, err := shell.NewCommand(
 		resolved,
 		runtimeSession.Paths.Bin,
 		runtimeSession.Paths.Runtime,
+		startup,
+		nil,
 	)
 	if err != nil {
 		return cleanupRuntime(
@@ -315,10 +422,33 @@ func runMultiplexerShell(
 		)
 	}
 
+	resolved, err := shell.Resolve(
+		selected,
+		runtimeSession.Paths.Bin,
+	)
+	if err != nil {
+		return cleanupRuntime(
+			fmt.Errorf(
+				"resolve shell: %w",
+				err,
+			),
+		)
+	}
+
+	startup, err := prepareShellStartup(
+		application,
+		resolved,
+		runtimeSession.Paths.Runtime,
+	)
+	if err != nil {
+		return cleanupRuntime(err)
+	}
+
 	session, err = application.CreateMultiplexerSession(
 		runtimeSession,
 		multiplexerName,
 		selected,
+		startup,
 	)
 	if err != nil {
 		return cleanupRuntime(
@@ -425,31 +555,255 @@ func runUpdate(app *app.App, args []string) error {
 	return nil
 }
 
-type cleanApplication interface {
-	DiscoverMultiplexerSession() (*app.Session, error)
+type cleanOptions struct {
+	Target string
 }
 
-func runClean(application cleanApplication, args []string) error {
-	if len(args) > 0 {
-		return fmt.Errorf("clean does not accept arguments")
+func parseCleanArgs(args []string) (cleanOptions, error) {
+	var options cleanOptions
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		switch {
+		case arg == "--target":
+			if i+1 >= len(args) {
+				return cleanOptions{}, fmt.Errorf(
+					"--target requires a session name",
+				)
+			}
+
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return cleanOptions{}, fmt.Errorf(
+					"--target requires a session name",
+				)
+			}
+
+			options.Target = value
+			i++
+
+		case strings.HasPrefix(arg, "--target="):
+			value := strings.TrimSpace(
+				strings.TrimPrefix(arg, "--target="),
+			)
+
+			if value == "" {
+				return cleanOptions{}, fmt.Errorf(
+					"--target requires a session name",
+				)
+			}
+
+			options.Target = value
+
+		default:
+			return cleanOptions{}, fmt.Errorf(
+				"clean does not accept argument %q",
+				arg,
+			)
+		}
 	}
 
-	session, err := application.DiscoverMultiplexerSession()
-	if err != nil {
-		if errors.Is(err, multiplexer.ErrSessionNotFound) {
-			return nil
+	return options, nil
+}
+
+type cleanApplication interface {
+	DiscoverCleanSessions() ([]*app.CleanSession, error)
+	TerminateNormalSession(*app.CleanSession) error
+	CleanupMultiplexerSession(*app.CleanSession) error
+}
+
+var errCleanSelectionCancelled = errors.New(
+	"clean session selection cancelled",
+)
+
+func selectCleanSession(
+	sessions []*app.CleanSession,
+) (*app.CleanSession, error) {
+	fmt.Println("Managed uniShell sessions:")
+	fmt.Println()
+
+	for index, session := range sessions {
+		fmt.Printf(
+			"%d) %s\n",
+			index+1,
+			session.Metadata.Name,
+		)
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Fprint(
+			os.Stdout,
+			"\nEnter session number: ",
+		)
+
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, errCleanSelectionCancelled
+			}
+
+			return nil, err
 		}
 
+		value := strings.TrimSpace(response)
+
+		if strings.EqualFold(value, "q") {
+			return nil, errCleanSelectionCancelled
+		}
+
+		index, err := strconv.Atoi(value)
+		if err != nil ||
+			index < 1 ||
+			index > len(sessions) {
+			continue
+		}
+
+		return sessions[index-1], nil
+	}
+}
+
+func confirmCleanSession(name string) (bool, error) {
+	fmt.Printf(
+		"Are you sure you want to clean session %q? [y/N]: ",
+		name,
+	)
+
+	reader := bufio.NewReader(os.Stdin)
+
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	response = strings.ToLower(strings.TrimSpace(response))
+
+	return response == "y" || response == "yes", nil
+}
+
+func runClean(
+	application cleanApplication,
+	args []string,
+) error {
+	options, err := parseCleanArgs(args)
+	if err != nil {
+		return err
+	}
+
+	sessions, err := application.DiscoverCleanSessions()
+	if err != nil {
 		return fmt.Errorf(
-			"discover multiplexer session: %w",
+			"discover clean sessions: %w",
 			err,
 		)
 	}
 
-	if err := session.Cleanup(); err != nil {
+	if len(sessions) == 0 {
+		fmt.Println("No managed uniShell sessions found.")
+		return nil
+	}
+
+	var target *app.CleanSession
+
+	if options.Target != "" {
+		for _, candidate := range sessions {
+			if candidate.Metadata.Name == options.Target {
+				target = candidate
+				break
+			}
+		}
+
+		if target == nil {
+			return fmt.Errorf(
+				"managed session %q not found",
+				options.Target,
+			)
+		}
+	} else {
+		target, err = selectCleanSession(sessions)
+		if err != nil {
+			if errors.Is(err, errCleanSelectionCancelled) {
+				return nil
+			}
+
+			return fmt.Errorf(
+				"select clean session: %w",
+				err,
+			)
+		}
+	}
+
+	confirmed, err := confirmCleanSession(target.Metadata.Name)
+	if err != nil {
 		return fmt.Errorf(
-			"clean multiplexer session: %w",
+			"read clean confirmation: %w",
 			err,
+		)
+	}
+
+	if !confirmed {
+		return nil
+	}
+
+	revalidatedSessions, err := application.DiscoverCleanSessions()
+	if err != nil {
+		return fmt.Errorf(
+			"revalidate clean session: %w",
+			err,
+		)
+	}
+
+	var revalidatedTarget *app.CleanSession
+
+	for _, candidate := range revalidatedSessions {
+		if candidate.Metadata.ID == target.Metadata.ID &&
+			candidate.RuntimeDir == target.RuntimeDir {
+			revalidatedTarget = candidate
+			break
+		}
+	}
+
+	if revalidatedTarget == nil {
+		return fmt.Errorf(
+			"managed session %q no longer exists",
+			target.Metadata.Name,
+		)
+	}
+
+	switch revalidatedTarget.Metadata.Mode {
+	case sessionmeta.ModeNormal:
+		if err := application.TerminateNormalSession(
+			revalidatedTarget,
+		); err != nil {
+			return fmt.Errorf(
+				"terminate clean session %q: %w",
+				revalidatedTarget.Metadata.Name,
+				err,
+			)
+		}
+
+	case sessionmeta.ModeMultiplexer:
+		if err := application.CleanupMultiplexerSession(
+			revalidatedTarget,
+		); err != nil {
+			return fmt.Errorf(
+				"cleanup multiplexer session %q: %w",
+				revalidatedTarget.Metadata.Name,
+				err,
+			)
+		}
+
+	default:
+		return fmt.Errorf(
+			"clean session %q uses unsupported termination mode %q",
+			revalidatedTarget.Metadata.Name,
+			revalidatedTarget.Metadata.Mode,
 		)
 	}
 

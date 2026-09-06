@@ -137,6 +137,50 @@ func TestLoadWithoutSharedConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadSharedConfigurationWithoutProfile(t *testing.T) {
+	root := t.TempDir()
+
+	if err := os.MkdirAll(
+		filepath.Join(root, "shared"),
+		0o755,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(root, "shared", "config.toml"),
+		[]byte(`
+[environment]
+EDITOR = "vim"
+`),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := NewLoader(root)
+
+	got, err := loader.Load("bash", "", true)
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+
+	if got.Shared.Environment["EDITOR"] != "vim" {
+		t.Fatalf(
+			"EDITOR = %q, want %q",
+			got.Shared.Environment["EDITOR"],
+			"vim",
+		)
+	}
+
+	if got.Profile != nil {
+		t.Fatalf(
+			"profile = %q, want nil",
+			string(got.Profile),
+		)
+	}
+}
+
 func TestLoadMissingSharedConfigurationReturnsDescriptiveError(
 	t *testing.T,
 ) {

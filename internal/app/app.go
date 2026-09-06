@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gitlab.com/mainops/uniShell/internal/bundle"
 	"gitlab.com/mainops/uniShell/internal/credentials"
@@ -26,6 +27,8 @@ type Options struct {
 	MultiplexerSessionName string
 	MultiplexerOptions     api.Options
 	Shell                  string
+	ShellProfile           string
+	NoSharedRC             bool
 }
 
 type App struct {
@@ -40,6 +43,8 @@ type App struct {
 	MultiplexerSessionName string
 	MultiplexerOptions     api.Options
 	Shell                  string
+	ShellProfile           string
+	NoSharedRC             bool
 }
 
 func New(options Options) (*App, error) {
@@ -114,11 +119,21 @@ func New(options Options) (*App, error) {
 		MultiplexerSessionName: options.MultiplexerSessionName,
 		MultiplexerOptions:     multiplexerOptions,
 		Shell:                  options.Shell,
+		ShellProfile:           options.ShellProfile,
+		NoSharedRC:             options.NoSharedRC,
 	}, nil
 }
 
 func (a *App) RequestedShell() string {
 	return a.Shell
+}
+
+func (a *App) RequestedShellProfile() string {
+	return a.ShellProfile
+}
+
+func (a *App) RequestedNoSharedRC() bool {
+	return a.NoSharedRC
 }
 
 func (a *App) RequestedMultiplexer() string {
@@ -296,10 +311,43 @@ func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
 	return runtimeSession, nil
 }
 
+func setEnvironment(
+	env []string,
+	key string,
+	value string,
+) []string {
+	prefix := key + "="
+	result := make([]string, 0, len(env)+1)
+	found := false
+
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			if !found {
+				result = append(
+					result,
+					prefix+value,
+				)
+				found = true
+			}
+
+			continue
+		}
+
+		result = append(result, entry)
+	}
+
+	if !found {
+		result = append(result, prefix+value)
+	}
+
+	return result
+}
+
 func (a *App) CreateMultiplexerSession(
 	runtimeSession *runtime.Session,
 	multiplexerName string,
 	shellName string,
+	startup shell.Startup,
 ) (*Session, error) {
 	if runtimeSession == nil {
 		return nil, fmt.Errorf(
@@ -350,6 +398,14 @@ func (a *App) CreateMultiplexerSession(
 		)
 	}
 
+	for key, value := range startup.Env {
+		environment = setEnvironment(
+			environment,
+			key,
+			value,
+		)
+	}
+
 	managedSession, err := a.Multiplexer.Create(
 		multiplexerName,
 		a.SessionName,
@@ -358,6 +414,7 @@ func (a *App) CreateMultiplexerSession(
 		endpoint,
 		selectedShell.Name,
 		selectedShell.Path,
+		startup.Args,
 		environment,
 		a.MultiplexerOptions,
 	)
@@ -384,6 +441,7 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 		runtimeSession,
 		a.MultiplexerName,
 		a.Shell,
+		shell.Startup{},
 	)
 	if err != nil {
 		_ = runtimeSession.Cleanup()
@@ -405,4 +463,23 @@ func (a *App) DiscoverMultiplexerSession() (*Session, error) {
 	return &Session{
 		Multiplexer: managed,
 	}, nil
+}
+
+// DiscoverMultiplexerSessions returns all managed multiplexer sessions
+// beneath the application's version runtime directory.
+func (a *App) DiscoverMultiplexerSessions() (
+	[]*multiplexer.ManagedSession,
+	error,
+) {
+	sessions, err := a.Multiplexer.DiscoverAll(
+		a.Paths.Runtime,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"discover multiplexer sessions: %w",
+			err,
+		)
+	}
+
+	return sessions, nil
 }

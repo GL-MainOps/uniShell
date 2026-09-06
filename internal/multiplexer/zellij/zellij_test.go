@@ -1,13 +1,63 @@
 package zellij
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 )
+
+func TestIsManagedServerCommandMatchesExactNativeName(t *testing.T) {
+	args := []string{
+		"/tmp/uHome/bin/zellij",
+		"--server",
+		"/tmp/zellij-1000/contract_version_1/work",
+	}
+
+	if !isManagedServerCommand(args, "work") {
+		t.Fatal("isManagedServerCommand() = false, want true")
+	}
+}
+
+func TestIsManagedServerCommandRejectsNativeNamePrefix(t *testing.T) {
+	args := []string{
+		"/tmp/uHome/bin/zellij",
+		"--server",
+		"/tmp/zellij-1000/contract_version_1/work-other",
+	}
+
+	if isManagedServerCommand(args, "work") {
+		t.Fatal("isManagedServerCommand() = true, want false")
+	}
+}
+
+func TestIsManagedServerCommandRejectsNonServerProcess(t *testing.T) {
+	args := []string{
+		"/tmp/uHome/bin/zellij",
+		"attach",
+		"work",
+	}
+
+	if isManagedServerCommand(args, "work") {
+		t.Fatal("isManagedServerCommand() = true, want false")
+	}
+}
+
+func TestIsManagedServerCommandRejectsDifferentBinary(t *testing.T) {
+	args := []string{
+		"/tmp/uHome/bin/other",
+		"--server",
+		"/tmp/zellij-1000/contract_version_1/work",
+	}
+
+	if isManagedServerCommand(args, "work") {
+		t.Fatal("isManagedServerCommand() = true, want false")
+	}
+}
 
 func TestCreateUsesBackgroundSession(t *testing.T) {
 	var (
@@ -35,6 +85,7 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 
 	err := backend.Create(api.Session{
 		NativeName: "work",
+		ShellPath:  "/runtime/bin/bash",
 		Env:        wantEnv,
 	})
 	if err != nil {
@@ -42,9 +93,14 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 	}
 
 	wantArgs := []string{
+		"--config",
+		"/tmp/uHome/.config/zellij/config.kdl",
 		"attach",
 		"--create-background",
+		"--close-on-exit",
 		"work",
+		"--",
+		"/runtime/bin/bash",
 	}
 
 	if !reflect.DeepEqual(gotArgs, wantArgs) {
@@ -64,54 +120,168 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 	}
 }
 
-func TestCreateWithoutSessionNameUsesNativeDefault(t *testing.T) {
-	var (
-		gotArgs []string
-		gotEnv  []string
-	)
+func TestCreateUsesCloseOnExit(t *testing.T) {
+	var gotArgs []string
 
 	backend := &Backend{
 		Binary: "fake-zellij",
 		Run: func(
 			_ string,
 			args []string,
-			env []string,
+			_ []string,
 		) error {
 			gotArgs = append([]string(nil), args...)
-			gotEnv = append([]string(nil), env...)
 			return nil
 		},
 	}
 
-	wantEnv := []string{
-		"PATH=/runtime/bin:/usr/bin",
-	}
-
 	err := backend.Create(api.Session{
-		Env: wantEnv,
+		NativeName: "work",
+		ShellPath:  "/runtime/bin/bash",
 	})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	wantArgs := []string{
+	want := []string{
+		"--config",
+		"/tmp/uHome/.config/zellij/config.kdl",
 		"attach",
 		"--create-background",
+		"--close-on-exit",
+		"work",
+		"--",
+		"/runtime/bin/bash",
 	}
 
-	if !reflect.DeepEqual(gotArgs, wantArgs) {
+	if !reflect.DeepEqual(gotArgs, want) {
 		t.Fatalf(
 			"args = %#v, want %#v",
 			gotArgs,
-			wantArgs,
+			want,
 		)
 	}
+}
 
-	if !reflect.DeepEqual(gotEnv, wantEnv) {
+func TestCreateUsesSessionShellPath(t *testing.T) {
+	var gotArgs []string
+
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
+			gotArgs = append([]string(nil), args...)
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+		ShellPath:  "/runtime/bin/zsh",
+	})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	want := []string{
+		"--config",
+		"/tmp/uHome/.config/zellij/config.kdl",
+		"attach",
+		"--create-background",
+		"--close-on-exit",
+		"work",
+		"--",
+		"/runtime/bin/zsh",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
 		t.Fatalf(
-			"env = %#v, want %#v",
-			gotEnv,
-			wantEnv,
+			"args = %#v, want %#v",
+			gotArgs,
+			want,
+		)
+	}
+}
+
+func TestCreateUsesSessionShellArgs(t *testing.T) {
+	var gotArgs []string
+
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
+			gotArgs = append([]string(nil), args...)
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+		ShellPath:  "/runtime/bin/bash",
+		ShellArgs: []string{
+			"--noprofile",
+			"--rcfile",
+			"/runtime/config/shell-generated/work.bash",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	want := []string{
+		"--config",
+		"/tmp/uHome/.config/zellij/config.kdl",
+		"attach",
+		"--create-background",
+		"--close-on-exit",
+		"work",
+		"--",
+		"/runtime/bin/bash",
+		"--noprofile",
+		"--rcfile",
+		"/runtime/config/shell-generated/work.bash",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf(
+			"zellij invocation args = %#v, want %#v",
+			gotArgs,
+			want,
+		)
+	}
+}
+
+func TestCreateRejectsEmptyShellPath(t *testing.T) {
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) error {
+			t.Fatal("Run() must not be called")
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+	})
+	if err == nil {
+		t.Fatal("Create() returned nil error, want empty shell path error")
+	}
+
+	if err.Error() != "zellij shell path cannot be empty" {
+		t.Fatalf(
+			"Create() error = %q, want %q",
+			err.Error(),
+			"zellij shell path cannot be empty",
 		)
 	}
 }
@@ -236,7 +406,7 @@ func TestIsAliveUsesQuietRunner(t *testing.T) {
 		) ([]byte, error) {
 			called = true
 
-			want := []string{"list-sessions"}
+			want := []string{"list-sessions", "--short"}
 
 			if !reflect.DeepEqual(args, want) {
 				t.Fatalf(
@@ -246,7 +416,10 @@ func TestIsAliveUsesQuietRunner(t *testing.T) {
 				)
 			}
 
-			return []byte("other\nwork\n"), nil
+			return []byte(
+				"other [Created 2h 0m ago]\n" +
+					"work [Created 0s ago]\n",
+			), nil
 		},
 	}
 
@@ -258,6 +431,27 @@ func TestIsAliveUsesQuietRunner(t *testing.T) {
 
 	if !called {
 		t.Fatal("RunQuiet() was not called")
+	}
+}
+
+func TestIsAliveDoesNotMatchSessionNamePrefix(t *testing.T) {
+	backend := &Backend{
+		Binary: "fake-zellij",
+		RunQuiet: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) ([]byte, error) {
+			return []byte(
+				"work-other [Created 0s ago]\n",
+			), nil
+		},
+	}
+
+	if backend.IsAlive(api.Session{
+		NativeName: "work",
+	}) {
+		t.Fatal("IsAlive() = true, want false")
 	}
 }
 
@@ -364,6 +558,7 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 
 	err := backend.Create(api.Session{
 		NativeName: "work",
+		ShellPath:  "/runtime/bin/bash",
 		Options: api.Options{
 			Zellij: api.ZellijOptions{
 				CreateArgs: []string{
@@ -377,10 +572,15 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 	}
 
 	want := []string{
+		"--config",
+		"/tmp/uHome/.config/zellij/config.kdl",
 		"attach",
 		"--create-background",
+		"--close-on-exit",
 		"--test-option",
 		"work",
+		"--",
+		"/runtime/bin/bash",
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
@@ -433,6 +633,7 @@ func TestCreateUsesBundledConfig(t *testing.T) {
 
 	session := api.Session{
 		NativeName: "work",
+		ShellPath:  "/runtime/bin/bash",
 		Runtime:    runtime,
 	}
 
@@ -445,6 +646,7 @@ func TestCreateUsesBundledConfig(t *testing.T) {
 		config,
 		"attach",
 		"--create-background",
+		"--close-on-exit",
 	}
 
 	if len(got) < len(wantPrefix) ||
@@ -499,5 +701,191 @@ func TestCreateRejectsLifecycleOptions(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestCreateWithNativeNamePreservesExplicitName(t *testing.T) {
+	var gotArgs []string
+
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
+			gotArgs = append([]string(nil), args...)
+			return nil
+		},
+		RunQuiet: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) ([]byte, error) {
+			t.Fatal(
+				"RunQuiet() must not be called for explicit native name",
+			)
+			return nil, nil
+		},
+	}
+
+	got, err := backend.CreateWithNativeName(api.Session{
+		NativeName: "work",
+		ShellPath:  "/bin/bash",
+	})
+	if err != nil {
+		t.Fatalf(
+			"CreateWithNativeName() returned error: %v",
+			err,
+		)
+	}
+
+	if got != "work" {
+		t.Fatalf(
+			"native name = %q, want %q",
+			got,
+			"work",
+		)
+	}
+
+	want := []string{
+		"--config",
+		"/tmp/uHome/.config/zellij/config.kdl",
+		"attach",
+		"--create-background",
+		"--close-on-exit",
+		"work",
+		"--",
+		"/bin/bash",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			want,
+		)
+	}
+}
+
+func TestCreateWithNativeNameGeneratesNativeName(
+	t *testing.T,
+) {
+	var gotArgs []string
+
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
+			gotArgs = append([]string(nil), args...)
+			return nil
+		},
+	}
+
+	got, err := backend.CreateWithNativeName(api.Session{
+		ShellPath: "/bin/bash",
+	})
+	if err != nil {
+		t.Fatalf(
+			"CreateWithNativeName() returned error: %v",
+			err,
+		)
+	}
+
+	if !strings.HasPrefix(got, "unishell-") {
+		t.Fatalf(
+			"native name = %q, want unishell- prefix",
+			got,
+		)
+	}
+
+	wantPrefix := []string{
+		"--config",
+		"/tmp/uHome/.config/zellij/config.kdl",
+		"attach",
+		"--create-background",
+		"--close-on-exit",
+	}
+
+	if len(gotArgs) < len(wantPrefix)+3 {
+		t.Fatalf(
+			"args = %#v, want generated session name and shell",
+			gotArgs,
+		)
+	}
+
+	if !reflect.DeepEqual(
+		gotArgs[:len(wantPrefix)],
+		wantPrefix,
+	) {
+		t.Fatalf(
+			"args prefix = %#v, want %#v",
+			gotArgs[:len(wantPrefix)],
+			wantPrefix,
+		)
+	}
+
+	if gotArgs[5] != got {
+		t.Fatalf(
+			"session name argument = %q, want %q",
+			gotArgs[5],
+			got,
+		)
+	}
+
+	if !reflect.DeepEqual(
+		gotArgs[6:],
+		[]string{"--", "/bin/bash"},
+	) {
+		t.Fatalf(
+			"shell args = %#v, want %#v",
+			gotArgs[6:],
+			[]string{"--", "/bin/bash"},
+		)
+	}
+}
+
+func TestCreateWithNativeNameFailsWhenCreationFails(
+	t *testing.T,
+) {
+	var runQuietCalled bool
+
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) error {
+			return errors.New("create failed")
+		},
+		RunQuiet: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) ([]byte, error) {
+			runQuietCalled = true
+			return nil, nil
+		},
+	}
+
+	_, err := backend.CreateWithNativeName(
+		api.Session{
+			ShellPath: "/bin/bash",
+		},
+	)
+	if err == nil {
+		t.Fatal(
+			"CreateWithNativeName() returned nil error",
+		)
+	}
+
+	if runQuietCalled {
+		t.Fatal(
+			"RunQuiet() must not be called after failed creation",
+		)
 	}
 }

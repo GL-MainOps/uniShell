@@ -1,7 +1,6 @@
 package profile
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
@@ -33,12 +32,6 @@ func (l Loader) Load(
 		return Loaded{}, err
 	}
 
-	if name == "" {
-		return Loaded{}, errors.New(
-			"shell profile name cannot be empty",
-		)
-	}
-
 	var loaded Loaded
 
 	if includeShared {
@@ -68,6 +61,10 @@ func (l Loader) Load(
 		loaded.Shared = shared
 	}
 
+	if name == "" {
+		return loaded, nil
+	}
+
 	data, err := os.ReadFile(resolved.ProfilePath)
 	if err != nil {
 		return Loaded{}, fmt.Errorf(
@@ -80,4 +77,5 @@ func (l Loader) Load(
 	loaded.Profile = data
 
 	return loaded, nil
+
 }

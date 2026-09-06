@@ -38,6 +38,11 @@ type Command struct {
 	Env  []string
 }
 
+type Handoff struct {
+	Path string
+	Args []string
+}
+
 var supportedShells = []string{
 	"bash",
 	"zsh",
@@ -186,6 +191,8 @@ func NewCommand(
 	selected Shell,
 	runtimeBin string,
 	sessionRuntime string,
+	startup Startup,
+	handoff *Handoff,
 ) (Command, error) {
 	if selected.Path == "" {
 		return Command{}, errors.New(
@@ -202,11 +209,98 @@ func NewCommand(
 		return Command{}, err
 	}
 
+	for key, value := range startup.Env {
+		env = setEnvironment(env, key, value)
+	}
+
+	args := []string{selected.Path}
+	args = append(args, startup.Args...)
+
+	if handoff != nil {
+		handoffArgs, err := buildHandoffArgs(
+			selected.Name,
+			*handoff,
+		)
+		if err != nil {
+			return Command{}, err
+		}
+
+		args = append(args, handoffArgs...)
+	}
+
 	return Command{
 		Path: selected.Path,
-		Args: []string{selected.Path},
+		Args: args,
 		Env:  env,
 	}, nil
+}
+
+func buildHandoffArgs(
+	shellName string,
+	handoff Handoff,
+) ([]string, error) {
+	if handoff.Path == "" {
+		return nil, errors.New(
+			"handoff path cannot be empty",
+		)
+	}
+
+	command := buildHandoffCommand(
+		shellName,
+		handoff,
+	)
+
+	switch shellName {
+	case "bash", "zsh":
+		return []string{
+			"-i",
+			"-c",
+			command,
+		}, nil
+
+	case "fish", "nushell":
+		return []string{
+			"-c",
+			command,
+		}, nil
+
+	default:
+		return nil, fmt.Errorf(
+			"unsupported shell: %q",
+			shellName,
+		)
+	}
+}
+
+func buildHandoffCommand(
+	shellName string,
+	handoff Handoff,
+) string {
+	parts := make([]string, 0, len(handoff.Args)+2)
+	parts = append(parts, "exec")
+
+	quote := shellQuote
+	if shellName == "nushell" {
+		quote = nushellQuote
+	}
+
+	parts = append(parts, quote(handoff.Path))
+
+	for _, arg := range handoff.Args {
+		parts = append(parts, quote(arg))
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func nushellQuote(value string) string {
+	return `"` +
+		strings.NewReplacer(
+			`\`, `\\`,
+			`"`, `\"`,
+			`'`, `\'`,
+		).Replace(value) +
+		`"`
 }
 
 func (c Command) Run() error {
@@ -265,15 +359,20 @@ func resolveShell(
 	name string,
 	runtimeBin string,
 ) (string, Source, bool) {
+	executableName := name
+	if name == "nushell" {
+		executableName = "nu"
+	}
+
 	if name != "bash" && runtimeBin != "" {
-		bundled := filepath.Join(runtimeBin, name)
+		bundled := filepath.Join(runtimeBin, executableName)
 
 		if isExecutable(bundled) {
 			return bundled, SourceBundled, true
 		}
 	}
 
-	host, err := exec.LookPath(name)
+	host, err := exec.LookPath(executableName)
 	if err != nil {
 		return "", "", false
 	}

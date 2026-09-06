@@ -31,7 +31,6 @@ func TestAvailableShellsPrefersBundledShell(t *testing.T) {
 	runtimeBin := t.TempDir()
 
 	executable(t, runtimeBin, "zsh")
-
 	t.Setenv("PATH", t.TempDir())
 
 	available := availableShells(runtimeBin)
@@ -90,6 +89,9 @@ func TestSelectShellUsesAvailableRequestedShell(t *testing.T) {
 func TestSelectShellPromptsForUnavailableShell(t *testing.T) {
 	runtimeBin := t.TempDir()
 
+	t.Setenv("PATH", runtimeBin)
+
+	executable(t, runtimeBin, "bash")
 	executable(t, runtimeBin, "zsh")
 
 	var output strings.Builder
@@ -129,6 +131,9 @@ func TestSelectShellPromptsForUnavailableShell(t *testing.T) {
 func TestSelectShellRejectsInvalidSelection(t *testing.T) {
 	runtimeBin := t.TempDir()
 
+	t.Setenv("PATH", runtimeBin)
+
+	executable(t, runtimeBin, "bash")
 	executable(t, runtimeBin, "zsh")
 
 	var output strings.Builder
@@ -167,9 +172,15 @@ func TestSelectShellRejectsInvalidSelection(t *testing.T) {
 }
 
 func TestSelectShellCanExit(t *testing.T) {
+	runtimeBin := t.TempDir()
+
+	t.Setenv("PATH", runtimeBin)
+
+	executable(t, runtimeBin, "bash")
+
 	_, err := selectShell(
 		context.Background(),
-		t.TempDir(),
+		runtimeBin,
 		"fish",
 		strings.NewReader("q\n"),
 		&strings.Builder{},
@@ -185,12 +196,18 @@ func TestSelectShellCanExit(t *testing.T) {
 }
 
 func TestSelectShellHonorsCancellation(t *testing.T) {
+	runtimeBin := t.TempDir()
+
+	t.Setenv("PATH", runtimeBin)
+
+	executable(t, runtimeBin, "bash")
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	_, err := selectShell(
 		ctx,
-		t.TempDir(),
+		runtimeBin,
 		"fish",
 		strings.NewReader(""),
 		&strings.Builder{},

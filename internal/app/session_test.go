@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 type sessionTestBackend struct {
@@ -17,6 +18,16 @@ type sessionTestBackend struct {
 	attached   bool
 	detached   bool
 	alive      bool
+}
+
+func (sessionTestBackend) ProcessIdentity(
+	multiplexer.Session,
+) (sessionmeta.ProcessIdentity, error) {
+	return sessionmeta.ProcessIdentity{
+		PID:               os.Getpid(),
+		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+	}, nil
 }
 
 func (b *sessionTestBackend) Name() string {
@@ -70,18 +81,27 @@ func newManagedTestSession(
 		"runtime",
 	)
 
-	if err := multiplexer.WriteMetadata(
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf("create runtime path: %v", err)
+	}
+
+	if err := sessionmeta.WriteMetadata(
 		runtimePath,
-		multiplexer.Metadata{
-			ID:          "test-session",
-			Name:        "default",
-			Multiplexer: "test",
+		sessionmeta.Metadata{
+			ID:                "test-session",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeMultiplexer,
+			Name:              "default",
+			Multiplexer:       "test",
 			Endpoint: filepath.Join(
 				runtimePath,
 				"multiplexer",
 				"test.sock",
 			),
-			CreatedAt: time.Now().UTC(),
 		},
 	); err != nil {
 		t.Fatalf(
@@ -92,7 +112,7 @@ func newManagedTestSession(
 
 	return &Session{
 		Multiplexer: &multiplexer.ManagedSession{
-			Metadata: multiplexer.Metadata{
+			Metadata: sessionmeta.Metadata{
 				ID:          "test-session",
 				Name:        "default",
 				Multiplexer: "test",

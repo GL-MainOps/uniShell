@@ -3,14 +3,22 @@ package app
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
+	"syscall"
 	"testing"
+	"time"
 
+	"gitlab.com/mainops/uniShell/internal/bundle"
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 	"gitlab.com/mainops/uniShell/internal/runtime"
+	"gitlab.com/mainops/uniShell/internal/shell"
+
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 func TestNewUsesDefaultRuntimeRoot(t *testing.T) {
@@ -282,10 +290,38 @@ func TestStartSessionRequiresAuthentication(t *testing.T) {
 func testBundleSource(t *testing.T) BundleSource {
 	t.Helper()
 
+	sourceDir := t.TempDir()
+
+	if err := os.MkdirAll(
+		filepath.Join(sourceDir, "config", "shell", "shared"),
+		0o755,
+	); err != nil {
+		t.Fatalf("create test bundle shell configuration directory: %v", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(sourceDir, "config", "shell", "shared", "config.toml"),
+		[]byte("[environment]\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write test bundle shell configuration: %v", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(sourceDir, "test-tool"),
+		[]byte("test runtime payload\n"),
+		0o755,
+	); err != nil {
+		t.Fatalf("write test runtime payload: %v", err)
+	}
+
+	data, err := bundle.Create(sourceDir, "test-fixture-token")
+	if err != nil {
+		t.Fatalf("create test bundle: %v", err)
+	}
+
 	return func() ([]byte, error) {
-		return os.ReadFile(
-			filepath.Join("..", "bundle", "testdata", "runtime.bundle"),
-		)
+		return data, nil
 	}
 }
 
@@ -418,7 +454,80 @@ func TestNewUsesProvidedMultiplexerManager(t *testing.T) {
 }
 
 type appTestBackend struct {
-	created bool
+	created         bool
+	processIdentity sessionmeta.ProcessIdentity
+}
+
+func startAppProcessGroupHelper(t *testing.T) *exec.Cmd {
+	t.Helper()
+
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestAppProcessGroupHelper$",
+	)
+	cmd.Env = append(
+		os.Environ(),
+		"UNISHELL_APP_PROCESS_GROUP_HELPER=1",
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf(
+			"failed to start app process-group helper: %v",
+			err,
+		)
+	}
+
+	return cmd
+}
+
+func TestAppProcessGroupHelper(t *testing.T) {
+	if os.Getenv("UNISHELL_APP_PROCESS_GROUP_HELPER") != "1" {
+		return
+	}
+
+	for {
+		time.Sleep(time.Second)
+	}
+}
+
+func appProcessIdentity(
+	t *testing.T,
+	cmd *exec.Cmd,
+) sessionmeta.ProcessIdentity {
+	t.Helper()
+
+	startTicks, err := sessionmeta.ProcessStartTicks(cmd.Process.Pid)
+	if err != nil {
+		t.Fatalf(
+			"ProcessStartTicks() returned error: %v",
+			err,
+		)
+	}
+
+	processGroupID, err := sessionmeta.ProcessGroupID(
+		cmd.Process.Pid,
+	)
+	if err != nil {
+		t.Fatalf(
+			"ProcessGroupID() returned error: %v",
+			err,
+		)
+	}
+
+	return sessionmeta.ProcessIdentity{
+		PID:               cmd.Process.Pid,
+		ProcessStartTicks: startTicks,
+		ProcessGroupID:    processGroupID,
+	}
+}
+
+func (b *appTestBackend) ProcessIdentity(
+	multiplexer.Session,
+) (sessionmeta.ProcessIdentity, error) {
+	return b.processIdentity, nil
 }
 
 func (appTestBackend) Name() string {
@@ -464,8 +573,15 @@ func TestStartMultiplexerSessionCreatesManagedSession(t *testing.T) {
 
 	t.Setenv("UNISHELL_AUTH_TOKEN", "test-fixture-token")
 
+	helper := startAppProcessGroupHelper(t)
+	defer func() {
+		_ = helper.Process.Kill()
+		_ = helper.Wait()
+	}()
+
 	backend := &appTestBackend{
-		created: true,
+		created:         true,
+		processIdentity: appProcessIdentity(t, helper),
 	}
 
 	manager := multiplexer.NewManager(
@@ -563,7 +679,15 @@ func TestCreateMultiplexerSessionUsesProvidedMultiplexer(
 ) {
 	t.Setenv("UNISHELL_AUTH_TOKEN", "test-fixture-token")
 
-	backend := &appTestBackend{}
+	helper := startAppProcessGroupHelper(t)
+	defer func() {
+		_ = helper.Process.Kill()
+		_ = helper.Wait()
+	}()
+
+	backend := &appTestBackend{
+		processIdentity: appProcessIdentity(t, helper),
+	}
 
 	manager := multiplexer.NewManager(
 		multiplexer.NewRegistry(backend),
@@ -592,6 +716,7 @@ func TestCreateMultiplexerSessionUsesProvidedMultiplexer(
 		runtimeSession,
 		"test",
 		"bash",
+		shell.Startup{},
 	)
 	if err != nil {
 		t.Fatalf(
@@ -622,6 +747,104 @@ func TestCreateMultiplexerSessionUsesProvidedMultiplexer(
 
 	if err := session.Cleanup(); err != nil {
 		t.Fatalf("Cleanup() returned error: %v", err)
+	}
+}
+
+func TestCreateMultiplexerSessionPassesShellStartup(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	helper := startAppProcessGroupHelper(t)
+	defer func() {
+		_ = helper.Process.Kill()
+		_ = helper.Wait()
+	}()
+
+	backend := &appTestBackend{
+		processIdentity: appProcessIdentity(t, helper),
+	}
+
+	manager := multiplexer.NewManager(
+		multiplexer.NewRegistry(backend),
+	)
+
+	application, err := New(Options{
+		Version:         "1.0.0",
+		Commit:          "test",
+		Root:            filepath.Dir(runtimePath),
+		Multiplexer:     manager,
+		MultiplexerName: "test",
+		SessionName:     "default",
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	runtimeSession := &runtime.Session{
+		Paths: runtime.Paths{
+			Runtime: runtimePath,
+			Bin:     filepath.Join(runtimePath, "bin"),
+		},
+	}
+
+	startup := shell.Startup{
+		Args: []string{
+			"-d",
+		},
+		Env: map[string]string{
+			"ZDOTDIR": filepath.Join(
+				runtimePath,
+				"config",
+				"shell",
+				"zsh",
+			),
+		},
+	}
+
+	session, err := application.CreateMultiplexerSession(
+		runtimeSession,
+		"test",
+		"zsh",
+		startup,
+	)
+	if err != nil {
+		t.Fatalf(
+			"CreateMultiplexerSession() returned error: %v",
+			err,
+		)
+	}
+
+	if !reflect.DeepEqual(
+		session.Multiplexer.Session.ShellArgs,
+		startup.Args,
+	) {
+		t.Fatalf(
+			"shell args = %#v, want %#v",
+			session.Multiplexer.Session.ShellArgs,
+			startup.Args,
+		)
+	}
+
+	wantEnvironment := ""
+	for _, entry := range session.Multiplexer.Session.Env {
+		if strings.HasPrefix(entry, "ZDOTDIR=") {
+			wantEnvironment = entry
+			break
+		}
+	}
+
+	want := "ZDOTDIR=" + startup.Env["ZDOTDIR"]
+
+	if wantEnvironment != want {
+		t.Fatalf(
+			"ZDOTDIR environment = %q, want %q",
+			wantEnvironment,
+			want,
+		)
 	}
 }
 

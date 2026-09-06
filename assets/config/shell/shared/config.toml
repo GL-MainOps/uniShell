@@ -1,0 +1,10 @@
+[environment]
+UNISHELL_ASSET_TEST = "shared-config-active"
+
+[path]
+add = [
+    "$HOME/.unishell-test-bin",
+]
+
+[aliases]
+ushared = "printf 'shared-alias-active\\n'"

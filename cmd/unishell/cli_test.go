@@ -160,6 +160,48 @@ func TestParseCLIArgs(t *testing.T) {
 				"argument",
 			},
 		},
+		{
+			name: "shell profile option",
+			args: []string{
+				"--shell-profile",
+				"work",
+			},
+			wantOptions: cliOptions{
+				ShellProfile: "work",
+			},
+		},
+		{
+			name: "shell profile equals option",
+			args: []string{
+				"--shell-profile=work",
+			},
+			wantOptions: cliOptions{
+				ShellProfile: "work",
+			},
+		},
+		{
+			name: "shell profile option after command",
+			args: []string{
+				"shell",
+				"--shell-profile",
+				"work",
+			},
+			wantOptions: cliOptions{
+				ShellProfile: "work",
+			},
+			wantArgs: []string{
+				"shell",
+			},
+		},
+		{
+			name: "no shared rc option",
+			args: []string{
+				"--no-shared-rc",
+			},
+			wantOptions: cliOptions{
+				NoSharedRC: true,
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -301,6 +343,211 @@ func TestParseCLIArgsRejectsMissingMultiplexer(t *testing.T) {
 func TestParseCLIArgsRejectsEmptyMultiplexer(t *testing.T) {
 	_, _, err := parseCLIArgs([]string{
 		"--multiplexer=",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+}
+
+func TestParseCLIArgsUsesSessionEnvironment(t *testing.T) {
+	t.Setenv(sessionEnvName, "work")
+
+	options, _, err := parseCLIArgs(nil)
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.SessionName != "work" {
+		t.Fatalf(
+			"session name = %q, want %q",
+			options.SessionName,
+			"work",
+		)
+	}
+}
+
+func TestParseCLIArgsUsesMultiplexerSessionEnvironment(t *testing.T) {
+	t.Setenv(
+		multiplexerSessionEnvName,
+		"dev",
+	)
+
+	options, _, err := parseCLIArgs(nil)
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.MultiplexerSessionName != "dev" {
+		t.Fatalf(
+			"multiplexer session name = %q, want %q",
+			options.MultiplexerSessionName,
+			"dev",
+		)
+	}
+}
+
+func TestParseCLIArgsExplicitSessionOverridesEnvironment(t *testing.T) {
+	t.Setenv(sessionEnvName, "environment")
+
+	options, _, err := parseCLIArgs([]string{
+		"--session",
+		"cli",
+	})
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.SessionName != "cli" {
+		t.Fatalf(
+			"session name = %q, want %q",
+			options.SessionName,
+			"cli",
+		)
+	}
+}
+
+func TestParseCLIArgsExplicitMultiplexerSessionOverridesEnvironment(
+	t *testing.T,
+) {
+	t.Setenv(
+		multiplexerSessionEnvName,
+		"environment",
+	)
+
+	options, _, err := parseCLIArgs([]string{
+		"--multiplexer-session",
+		"cli",
+	})
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.MultiplexerSessionName != "cli" {
+		t.Fatalf(
+			"multiplexer session name = %q, want %q",
+			options.MultiplexerSessionName,
+			"cli",
+		)
+	}
+}
+
+func TestParseCLIArgsRejectsMissingSession(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--session",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+}
+
+func TestParseCLIArgsRejectsEmptySession(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--session=",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+}
+
+func TestParseCLIArgsRejectsMissingMultiplexerSession(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--multiplexer-session",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+}
+
+func TestParseCLIArgsRejectsEmptyMultiplexerSession(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--multiplexer-session=",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+}
+
+func TestParseCLIArgsUsesShellProfileEnvironment(t *testing.T) {
+	t.Setenv(
+		shellProfileEnvName,
+		"environment",
+	)
+
+	options, _, err := parseCLIArgs(nil)
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.ShellProfile != "environment" {
+		t.Fatalf(
+			"shell profile = %q, want %q",
+			options.ShellProfile,
+			"environment",
+		)
+	}
+}
+
+func TestParseCLIArgsExplicitShellProfileOverridesEnvironment(
+	t *testing.T,
+) {
+	t.Setenv(
+		shellProfileEnvName,
+		"environment",
+	)
+
+	options, _, err := parseCLIArgs([]string{
+		"--shell-profile",
+		"cli",
+	})
+	if err != nil {
+		t.Fatalf(
+			"parseCLIArgs() returned error: %v",
+			err,
+		)
+	}
+
+	if options.ShellProfile != "cli" {
+		t.Fatalf(
+			"shell profile = %q, want %q",
+			options.ShellProfile,
+			"cli",
+		)
+	}
+}
+
+func TestParseCLIArgsRejectsMissingShellProfile(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--shell-profile",
+	})
+
+	if err == nil {
+		t.Fatal("parseCLIArgs() returned nil error")
+	}
+}
+
+func TestParseCLIArgsRejectsEmptyShellProfile(t *testing.T) {
+	_, _, err := parseCLIArgs([]string{
+		"--shell-profile=",
 	})
 
 	if err == nil {

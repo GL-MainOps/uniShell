@@ -271,3 +271,36 @@ lifetime of the managed session.
 does not provide the override again. This does not affect  
 `UNISHELL_SESSION_RUNTIME_DIR`, which is recovered from the existing  
 session.
+
+
+## `clean` Command
+
+### `--target <session-name>`
+
+Selects a specific uniShell session for cleanup.
+
+Example:
+
+```bash
+unishell clean --target development
+```
+
+`--target` is a command-line-only option.
+
+When `--target` is not supplied, `clean` interactively determines which
+managed session should be cleaned.
+
+`clean` never deletes a session without explicit user confirmation.
+
+If the specified session does not exist, uniShell reports that the target
+was not found and does not delete another session.
+
+For safety, `clean` does not accept positional arguments.
+
+When `--target` is not supplied, uniShell displays a hint showing that a
+specific session can be selected directly:
+
+```text
+Hint: use --target <session-name> to select a session directly.
+Example: unishell clean --target development
+```

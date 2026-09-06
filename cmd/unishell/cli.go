@@ -6,12 +6,21 @@ import (
 	"strings"
 )
 
-const multiplexerEnvName = "UNISHELL_MULTIPLEXER"
+const (
+	multiplexerEnvName        = "UNISHELL_MULTIPLEXER"
+	sessionEnvName            = "UNISHELL_SESSION"
+	multiplexerSessionEnvName = "UNISHELL_MULTIPLEXER_SESSION"
+	shellProfileEnvName       = "UNISHELL_SHELL_PROFILE"
+)
 
 type cliOptions struct {
-	RuntimeDir  string
-	Shell       string
-	Multiplexer string
+	RuntimeDir             string
+	Shell                  string
+	ShellProfile           string
+	NoSharedRC             bool
+	Multiplexer            string
+	SessionName            string
+	MultiplexerSessionName string
 }
 
 func parseCLIArgs(args []string) (cliOptions, []string, error) {
@@ -20,6 +29,18 @@ func parseCLIArgs(args []string) (cliOptions, []string, error) {
 
 	options.Multiplexer = strings.TrimSpace(
 		os.Getenv(multiplexerEnvName),
+	)
+
+	options.SessionName = strings.TrimSpace(
+		os.Getenv(sessionEnvName),
+	)
+
+	options.MultiplexerSessionName = strings.TrimSpace(
+		os.Getenv(multiplexerSessionEnvName),
+	)
+
+	options.ShellProfile = strings.TrimSpace(
+		os.Getenv(shellProfileEnvName),
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -68,6 +89,68 @@ func parseCLIArgs(args []string) (cliOptions, []string, error) {
 
 			options.Shell = value
 
+		case arg == "--shell-profile":
+			if i+1 >= len(args) {
+				return cliOptions{}, nil, fmt.Errorf(
+					"--shell-profile requires a profile name",
+				)
+			}
+
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return cliOptions{}, nil, fmt.Errorf(
+					"--shell-profile requires a profile name",
+				)
+			}
+
+			options.ShellProfile = value
+			i++
+
+		case strings.HasPrefix(arg, "--shell-profile="):
+			value := strings.TrimSpace(
+				strings.TrimPrefix(arg, "--shell-profile="),
+			)
+
+			if value == "" {
+				return cliOptions{}, nil, fmt.Errorf(
+					"--shell-profile requires a profile name",
+				)
+			}
+
+			options.ShellProfile = value
+
+		case arg == "--no-shared-rc":
+			options.NoSharedRC = true
+
+		case arg == "--session":
+			if i+1 >= len(args) {
+				return cliOptions{}, nil, fmt.Errorf(
+					"--session requires a name",
+				)
+			}
+
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return cliOptions{}, nil, fmt.Errorf(
+					"--session requires a name",
+				)
+			}
+
+			options.SessionName = value
+			i++
+
+		case strings.HasPrefix(arg, "--session="):
+			value := strings.TrimSpace(
+				strings.TrimPrefix(arg, "--session="),
+			)
+
+			if value == "" {
+				return cliOptions{}, nil, fmt.Errorf(
+					"--session requires a name",
+				)
+			}
+
+			options.SessionName = value
 		case arg == "--multiplexer":
 			if i+1 >= len(args) {
 				return cliOptions{}, nil, fmt.Errorf(
@@ -92,6 +175,35 @@ func parseCLIArgs(args []string) (cliOptions, []string, error) {
 
 			options.Multiplexer = value
 
+		case arg == "--multiplexer-session":
+			if i+1 >= len(args) {
+				return cliOptions{}, nil, fmt.Errorf(
+					"--multiplexer-session requires a name",
+				)
+			}
+
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return cliOptions{}, nil, fmt.Errorf(
+					"--multiplexer-session requires a name",
+				)
+			}
+
+			options.MultiplexerSessionName = value
+			i++
+
+		case strings.HasPrefix(arg, "--multiplexer-session="):
+			value := strings.TrimSpace(
+				strings.TrimPrefix(arg, "--multiplexer-session="),
+			)
+
+			if value == "" {
+				return cliOptions{}, nil, fmt.Errorf(
+					"--multiplexer-session requires a name",
+				)
+			}
+
+			options.MultiplexerSessionName = value
 		default:
 			commandArgs = append(commandArgs, arg)
 		}

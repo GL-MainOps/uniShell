@@ -1,0 +1,22 @@
+services:
+  unishell:
+    container_name: unishell
+    build: .
+    # image: golang:alpine
+    user: "1000:100"
+    working_dir: /tmp/app
+    environment:
+      - UNISHELL_AUTH_TOKEN=pass
+      - UNISHELL_RUNTIME_DIR=/tmp/uHome/runtime-dir
+      - SSH_AUTH_SOCK=/ssh-agent
+      - HOME=/tmp/uHome
+      - GIT_SSH_COMMAND=ssh -o UserKnownHostsFile=/tmp/uHome/known_hosts -o StrictHostKeyChecking=accept-new
+    volumes:
+      #- ${SSH_AUTH_SOCK}:/ssh-agent
+      - ./uHome:/tmp/uHome
+      # - ./uHome/bin:/tmp/uHome/bin
+      - ~/storageHub/.YOS/uniShell-ng/.go-pkgs:/go/pkg:z
+      - ~/storageHub/.YOS/uniShell-ng/.go-pkgs/build-cache:/.cache:z
+      - ~/storageHub/.YOS/uniShell-ng:/tmp/app:z
+    command: /bin/bash -c "tail -f /dev/null"
+    restart: unless-stopped

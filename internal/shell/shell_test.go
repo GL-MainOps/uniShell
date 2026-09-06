@@ -3,7 +3,9 @@ package shell
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -127,6 +129,8 @@ func TestNewCommandBuildsRuntimeEnvironment(t *testing.T) {
 		selected,
 		"/runtime/bin",
 		"/runtime/session",
+		Startup{},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("NewCommand() returned error: %v", err)
@@ -173,6 +177,70 @@ func TestNewCommandBuildsRuntimeEnvironment(t *testing.T) {
 			"session runtime = %q, want %q",
 			runtimePath,
 			"/runtime/session",
+		)
+	}
+}
+
+func TestCommandRunPreservesProcessExitStatus(t *testing.T) {
+	command := Command{
+		Path: "/bin/sh",
+		Args: []string{
+			"/bin/sh",
+			"-c",
+			"exit 42",
+		},
+		Env: os.Environ(),
+	}
+
+	err := command.Run()
+	if err == nil {
+		t.Fatal("Command.Run() returned nil error")
+	}
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf(
+			"Command.Run() error = %T, want wrapped *exec.ExitError",
+			err,
+		)
+	}
+
+	if got := exitErr.ExitCode(); got != 42 {
+		t.Fatalf(
+			"Command.Run() exit code = %d, want 42",
+			got,
+		)
+	}
+}
+
+func TestCommandRunPreservesSIGINTExitStatus(t *testing.T) {
+	command := Command{
+		Path: "/bin/sh",
+		Args: []string{
+			"/bin/sh",
+			"-c",
+			"exit 130",
+		},
+		Env: os.Environ(),
+	}
+
+	err := command.Run()
+	if err == nil {
+		t.Fatal("Command.Run() returned nil error for exit 130")
+	}
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf(
+			"Command.Run() error = %T, want wrapped *exec.ExitError",
+			err,
+		)
+	}
+
+	if got := exitErr.ExitCode(); got != 130 {
+		t.Fatalf(
+			"Command.Run() exit code = %d, want 130",
+			got,
 		)
 	}
 }
@@ -647,6 +715,33 @@ func TestNewEnvironmentForShellRejectsIncompleteShell(t *testing.T) {
 	}
 }
 
+func TestNewCommandRejectsEmptyHandoffPath(t *testing.T) {
+	_, err := NewCommand(
+		Shell{
+			Name: "bash",
+			Path: "/bin/bash",
+		},
+		"/runtime/bin",
+		"/runtime/session",
+		Startup{},
+		&Handoff{},
+	)
+
+	if err == nil {
+		t.Fatal(
+			"NewCommand() returned nil error",
+		)
+	}
+
+	if err.Error() != "handoff path cannot be empty" {
+		t.Fatalf(
+			"error = %q, want %q",
+			err.Error(),
+			"handoff path cannot be empty",
+		)
+	}
+}
+
 func TestNewCommandSetsShellEnvironment(t *testing.T) {
 	selected := Shell{
 		Name:   "bash",
@@ -658,6 +753,8 @@ func TestNewCommandSetsShellEnvironment(t *testing.T) {
 		selected,
 		"/runtime/bin",
 		"/runtime/session",
+		Startup{},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf(
@@ -680,14 +777,198 @@ func TestNewCommandSetsShellEnvironment(t *testing.T) {
 	}
 }
 
+func TestNewCommandBuildsShellHandoff(t *testing.T) {
+	tests := []struct {
+		name      string
+		shellName string
+		shellPath string
+		wantArgs  []string
+	}{
+		{
+			name:      "bash",
+			shellName: "bash",
+			shellPath: "/bin/bash",
+			wantArgs: []string{
+				"/bin/bash",
+				"-i",
+				"-c",
+				`exec '/runtime/bin/tmux' '-L' 'unishell'`,
+			},
+		},
+		{
+			name:      "zsh",
+			shellName: "zsh",
+			shellPath: "/runtime/bin/zsh",
+			wantArgs: []string{
+				"/runtime/bin/zsh",
+				"-i",
+				"-c",
+				`exec '/runtime/bin/tmux' '-L' 'unishell'`,
+			},
+		},
+		{
+			name:      "fish",
+			shellName: "fish",
+			shellPath: "/runtime/bin/fish",
+			wantArgs: []string{
+				"/runtime/bin/fish",
+				"-c",
+				`exec '/runtime/bin/tmux' '-L' 'unishell'`,
+			},
+		},
+		{
+			name:      "nushell",
+			shellName: "nushell",
+			shellPath: "/runtime/bin/nushell",
+			wantArgs: []string{
+				"/runtime/bin/nushell",
+				"-c",
+				`exec "/runtime/bin/tmux" "-L" "unishell"`,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command, err := NewCommand(
+				Shell{
+					Name: test.shellName,
+					Path: test.shellPath,
+				},
+				"/runtime/bin",
+				"/runtime/session",
+				Startup{},
+				&Handoff{
+					Path: "/runtime/bin/tmux",
+					Args: []string{
+						"-L",
+						"unishell",
+					},
+				},
+			)
+			if err != nil {
+				t.Fatalf(
+					"NewCommand() returned error: %v",
+					err,
+				)
+			}
+
+			if !reflect.DeepEqual(
+				command.Args,
+				test.wantArgs,
+			) {
+				t.Fatalf(
+					"Args = %#v, want %#v",
+					command.Args,
+					test.wantArgs,
+				)
+			}
+		})
+	}
+}
+
+func TestNushellQuote(t *testing.T) {
+	value := `/runtime/it's/"config"\path`
+
+	got := nushellQuote(value)
+	want := `"/runtime/it\'s/\"config\"\\path"`
+
+	if got != want {
+		t.Fatalf(
+			"nushellQuote(%q) = %q, want %q",
+			value,
+			got,
+			want,
+		)
+	}
+}
+
 func TestNewCommandRejectsEmptyShellPath(t *testing.T) {
 	_, err := NewCommand(
 		Shell{Name: "bash"},
 		"/runtime/bin",
 		"/runtime/session",
+		Startup{},
+		nil,
 	)
 
 	if err == nil {
 		t.Fatal("NewCommand() returned nil error")
+	}
+}
+
+func TestResolveNushellUsesNuExecutableFromPATH(t *testing.T) {
+	runtimeBin := t.TempDir()
+	hostDir := t.TempDir()
+	host := executable(t, hostDir, "nu")
+
+	t.Setenv("PATH", hostDir)
+
+	got, err := Resolve("nushell", runtimeBin)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+
+	if got.Name != "nushell" {
+		t.Fatalf(
+			"shell name = %q, want %q",
+			got.Name,
+			"nushell",
+		)
+	}
+
+	if got.Path != host {
+		t.Fatalf(
+			"shell path = %q, want %q",
+			got.Path,
+			host,
+		)
+	}
+
+	if got.Source != SourceHost {
+		t.Fatalf(
+			"shell source = %q, want %q",
+			got.Source,
+			SourceHost,
+		)
+	}
+}
+
+func TestResolveNushellPrefersBundledNuExecutable(t *testing.T) {
+	runtimeBin := t.TempDir()
+	bundled := executable(t, runtimeBin, "nu")
+
+	hostDir := t.TempDir()
+	executable(t, hostDir, "nu")
+
+	t.Setenv("PATH", hostDir)
+
+	got, err := Resolve("nushell", runtimeBin)
+	if err != nil {
+		t.Fatalf("Resolve() returned error: %v", err)
+	}
+
+	if got.Name != "nushell" {
+		t.Fatalf(
+			"shell name = %q, want %q",
+			got.Name,
+			"nushell",
+		)
+	}
+
+	if got.Path != bundled {
+		t.Fatalf(
+			"shell path = %q, want bundled %q",
+			got.Path,
+			bundled,
+		)
+	}
+
+	if got.Source != SourceBundled {
+		t.Fatalf(
+			"shell source = %q, want %q",
+			got.Source,
+			SourceBundled,
+		)
 	}
 }

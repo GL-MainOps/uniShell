@@ -2,11 +2,17 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
+	"time"
 
 	"gitlab.com/mainops/uniShell/internal/app"
+	"gitlab.com/mainops/uniShell/internal/bundle"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
+
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 func TestRunShellCreatesThenReattachesExistingMultiplexerSession(
@@ -16,7 +22,15 @@ func TestRunShellCreatesThenReattachesExistingMultiplexerSession(
 
 	t.Setenv("UNISHELL_AUTH_TOKEN", "test-fixture-token")
 
-	backend := &lifecycleTestBackend{}
+	helper := startLifecycleProcessGroupHelper(t)
+	defer func() {
+		_ = helper.Process.Kill()
+		_ = helper.Wait()
+	}()
+
+	backend := &lifecycleTestBackend{
+		processIdentity: lifecycleProcessIdentity(t, helper),
+	}
 
 	manager := multiplexer.NewManager(
 		multiplexer.NewRegistry(backend),
@@ -150,12 +164,79 @@ func TestRunShellCreatesThenReattachesExistingMultiplexerSession(
 	}
 }
 
+func startLifecycleProcessGroupHelper(t *testing.T) *exec.Cmd {
+	t.Helper()
+
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestLifecycleProcessGroupHelper$",
+	)
+	cmd.Env = append(
+		os.Environ(),
+		"UNISHELL_LIFECYCLE_PROCESS_GROUP_HELPER=1",
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf(
+			"failed to start lifecycle process-group helper: %v",
+			err,
+		)
+	}
+
+	return cmd
+}
+
+func TestLifecycleProcessGroupHelper(t *testing.T) {
+	if os.Getenv("UNISHELL_LIFECYCLE_PROCESS_GROUP_HELPER") != "1" {
+		return
+	}
+
+	for {
+		time.Sleep(time.Second)
+	}
+}
+
+func lifecycleProcessIdentity(
+	t *testing.T,
+	cmd *exec.Cmd,
+) sessionmeta.ProcessIdentity {
+	t.Helper()
+
+	startTicks, err := sessionmeta.ProcessStartTicks(cmd.Process.Pid)
+	if err != nil {
+		t.Fatalf(
+			"ProcessStartTicks() returned error: %v",
+			err,
+		)
+	}
+
+	processGroupID, err := sessionmeta.ProcessGroupID(
+		cmd.Process.Pid,
+	)
+	if err != nil {
+		t.Fatalf(
+			"ProcessGroupID() returned error: %v",
+			err,
+		)
+	}
+
+	return sessionmeta.ProcessIdentity{
+		PID:               cmd.Process.Pid,
+		ProcessStartTicks: startTicks,
+		ProcessGroupID:    processGroupID,
+	}
+}
+
 type lifecycleTestBackend struct {
 	createCount  int
 	attachCount  int
 	destroyCount int
 
-	alive bool
+	alive           bool
+	processIdentity sessionmeta.ProcessIdentity
 }
 
 func (b *lifecycleTestBackend) Name() string {
@@ -182,6 +263,12 @@ func (b *lifecycleTestBackend) Create(
 	b.alive = true
 
 	return nil
+}
+
+func (b *lifecycleTestBackend) ProcessIdentity(
+	multiplexer.Session,
+) (sessionmeta.ProcessIdentity, error) {
+	return b.processIdentity, nil
 }
 
 func (b *lifecycleTestBackend) Attach(
@@ -216,16 +303,37 @@ func (b *lifecycleTestBackend) Destroy(
 func lifecycleTestBundleSource(t *testing.T) app.BundleSource {
 	t.Helper()
 
+	sourceDir := t.TempDir()
+
+	if err := os.MkdirAll(
+		filepath.Join(sourceDir, "config", "shell", "shared"),
+		0o755,
+	); err != nil {
+		t.Fatalf("create lifecycle test shell configuration directory: %v", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(sourceDir, "config", "shell", "shared", "config.toml"),
+		[]byte("[environment]\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write lifecycle test shell configuration: %v", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(sourceDir, "test-tool"),
+		[]byte("test runtime payload\n"),
+		0o755,
+	); err != nil {
+		t.Fatalf("write lifecycle test runtime payload: %v", err)
+	}
+
+	data, err := bundle.Create(sourceDir, "test-fixture-token")
+	if err != nil {
+		t.Fatalf("create lifecycle test bundle: %v", err)
+	}
+
 	return func() ([]byte, error) {
-		return os.ReadFile(
-			filepath.Join(
-				"..",
-				"..",
-				"internal",
-				"bundle",
-				"testdata",
-				"runtime.bundle",
-			),
-		)
+		return data, nil
 	}
 }

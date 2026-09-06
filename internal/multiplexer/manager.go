@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 type Manager struct {
@@ -23,7 +24,7 @@ func NewManager(registry *Registry) *Manager {
 }
 
 type ManagedSession struct {
-	Metadata Metadata
+	Metadata sessionmeta.Metadata
 	Backend  Backend
 	Session  Session
 }
@@ -36,6 +37,7 @@ func (m *Manager) Create(
 	endpoint string,
 	shellName string,
 	shellPath string,
+	shellArgs []string,
 	env []string,
 	options api.Options,
 ) (*ManagedSession, error) {
@@ -71,11 +73,25 @@ func (m *Manager) Create(
 		Endpoint:   endpoint,
 		ShellName:  shellName,
 		ShellPath:  shellPath,
+		ShellArgs:  append([]string(nil), shellArgs...),
 		Env:        append([]string(nil), env...),
 		Options:    options,
 	}
 
-	if err := backend.Create(session); err != nil {
+	var createdNativeName = nativeName
+
+	if creator, ok := backend.(api.NativeNameCreator); ok {
+		createdNativeName, err = creator.CreateWithNativeName(
+			session,
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"create %s session: %w",
+				backendName,
+				err,
+			)
+		}
+	} else if err := backend.Create(session); err != nil {
 		return nil, fmt.Errorf(
 			"create %s session: %w",
 			backendName,
@@ -83,18 +99,57 @@ func (m *Manager) Create(
 		)
 	}
 
-	metadata := Metadata{
-		ID:          id,
-		Name:        sessionName,
-		NativeName:  nativeName,
-		Multiplexer: backendName,
-		Endpoint:    endpoint,
-		ShellName:   shellName,
-		ShellPath:   shellPath,
-		CreatedAt:   time.Now().UTC(),
+	session.NativeName = createdNativeName
+
+	identityProvider, ok := backend.(api.ProcessIdentityProvider)
+	if !ok {
+		_ = backend.Destroy(session)
+
+		return nil, fmt.Errorf(
+			"multiplexer %q does not provide managed process identity",
+			backendName,
+		)
 	}
 
-	if err := WriteMetadata(
+	identity, err := identityProvider.ProcessIdentity(session)
+	if err != nil {
+		_ = backend.Destroy(session)
+
+		return nil, fmt.Errorf(
+			"discover %s session process identity: %w",
+			backendName,
+			err,
+		)
+	}
+
+	if identity.PID <= 0 ||
+		identity.ProcessStartTicks == 0 ||
+		identity.ProcessGroupID <= 0 {
+		_ = backend.Destroy(session)
+
+		return nil, fmt.Errorf(
+			"discover %s session process identity: invalid identity",
+			backendName,
+		)
+	}
+
+	metadata := sessionmeta.Metadata{
+		ID:                id,
+		PID:               identity.PID,
+		ProcessStartTicks: identity.ProcessStartTicks,
+		ProcessGroupID:    identity.ProcessGroupID,
+		CreatedAt:         time.Now().UTC(),
+		Version:           filepath.Base(filepath.Dir(runtimePath)),
+		Mode:              sessionmeta.ModeMultiplexer,
+		Name:              sessionName,
+		NativeName:        createdNativeName,
+		Multiplexer:       backendName,
+		Endpoint:          endpoint,
+		ShellName:         shellName,
+		ShellPath:         shellPath,
+	}
+
+	if err := sessionmeta.WriteMetadata(
 		runtimePath,
 		metadata,
 	); err != nil {
@@ -113,7 +168,7 @@ func (m *Manager) Create(
 func (m *Manager) Attach(
 	runtimePath string,
 ) (*ManagedSession, error) {
-	metadata, err := ReadMetadata(runtimePath)
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
 	if err != nil {
 		return nil, err
 	}
@@ -152,9 +207,15 @@ func (m *Manager) Attach(
 func (m *Manager) Destroy(
 	runtimePath string,
 ) error {
-	metadata, err := ReadMetadata(runtimePath)
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
 	if err != nil {
 		return err
+	}
+
+	processIdentity := sessionmeta.ProcessIdentity{
+		PID:               metadata.PID,
+		ProcessStartTicks: metadata.ProcessStartTicks,
+		ProcessGroupID:    metadata.ProcessGroupID,
 	}
 
 	backend, ok := m.registry.Get(
@@ -187,7 +248,15 @@ func (m *Manager) Destroy(
 		}
 	}
 
-	return RemoveMetadata(runtimePath)
+	if err := sessionmeta.TerminateProcessGroup(processIdentity); err != nil {
+		return fmt.Errorf(
+			"terminate %s session process group: %w",
+			metadata.Multiplexer,
+			err,
+		)
+	}
+
+	return sessionmeta.RemoveMetadata(runtimePath)
 }
 
 func generateSessionID() (string, error) {
@@ -204,7 +273,7 @@ func (m *Manager) Discover(
 	runtimePath string,
 	sessionName string,
 ) (*ManagedSession, error) {
-	metadata, err := ReadMetadata(runtimePath)
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrSessionNotFound
@@ -325,7 +394,7 @@ func (m *Manager) Reconcile(
 			entry.Name(),
 		)
 
-		metadata, err := ReadMetadata(runtimePath)
+		metadata, err := sessionmeta.ReadMetadata(runtimePath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
@@ -383,7 +452,7 @@ func (m *Manager) ReconcileSession(
 		)
 	}
 
-	metadata, err := ReadMetadata(runtimePath)
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return os.RemoveAll(runtimePath)
@@ -444,13 +513,19 @@ func (m *Manager) Cleanup(
 		)
 	}
 
-	metadata, err := ReadMetadata(runtimePath)
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return os.RemoveAll(runtimePath)
 		}
 
 		return err
+	}
+
+	processIdentity := sessionmeta.ProcessIdentity{
+		PID:               metadata.PID,
+		ProcessStartTicks: metadata.ProcessStartTicks,
+		ProcessGroupID:    metadata.ProcessGroupID,
 	}
 
 	backend, ok := m.registry.Get(
@@ -489,6 +564,14 @@ func (m *Manager) Cleanup(
 				err,
 			)
 		}
+	}
+
+	if err := sessionmeta.TerminateProcessGroup(processIdentity); err != nil {
+		return fmt.Errorf(
+			"terminate %s session process group: %w",
+			metadata.Multiplexer,
+			err,
+		)
 	}
 
 	if err := os.RemoveAll(runtimePath); err != nil {
