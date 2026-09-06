@@ -3,8 +3,11 @@ package multiplexer
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -99,6 +102,78 @@ func prepareManagerTestRuntime(
 			runtimePath,
 			err,
 		)
+	}
+}
+
+func startManagerProcessGroupHelper(t *testing.T) *exec.Cmd {
+	t.Helper()
+
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestManagerProcessGroupHelper$",
+	)
+
+	cmd.Env = append(
+		os.Environ(),
+		"UNISHELL_MANAGER_PROCESS_GROUP_HELPER=1",
+	)
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf(
+			"start manager process-group helper: %v",
+			err,
+		)
+	}
+
+	return cmd
+}
+
+func TestManagerProcessGroupHelper(t *testing.T) {
+	if os.Getenv("UNISHELL_MANAGER_PROCESS_GROUP_HELPER") != "1" {
+		return
+	}
+
+	for {
+		time.Sleep(time.Second)
+	}
+}
+
+func managerProcessIdentity(
+	t *testing.T,
+	cmd *exec.Cmd,
+) sessionmeta.ProcessIdentity {
+	t.Helper()
+
+	startTicks, err := sessionmeta.ProcessStartTicks(
+		cmd.Process.Pid,
+	)
+	if err != nil {
+		t.Fatalf(
+			"ProcessStartTicks(%d) returned error: %v",
+			cmd.Process.Pid,
+			err,
+		)
+	}
+
+	processGroupID, err := sessionmeta.ProcessGroupID(
+		cmd.Process.Pid,
+	)
+	if err != nil {
+		t.Fatalf(
+			"ProcessGroupID(%d) returned error: %v",
+			cmd.Process.Pid,
+			err,
+		)
+	}
+
+	return sessionmeta.ProcessIdentity{
+		PID:               cmd.Process.Pid,
+		ProcessStartTicks: startTicks,
+		ProcessGroupID:    processGroupID,
 	}
 }
 
@@ -445,10 +520,19 @@ func TestManagerDestroyRemovesMetadata(t *testing.T) {
 		t.Fatalf("create runtime path: %v", err)
 	}
 
+	cmd := startManagerProcessGroupHelper(t)
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+
+	identity := managerProcessIdentity(t, cmd)
+
 	backend := &managerTestBackend{
-		name:      "test",
-		available: true,
-		alive:     true,
+		name:            "test",
+		available:       true,
+		alive:           true,
+		processIdentity: identity,
 	}
 
 	manager := NewManager(
