@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 func TestCreateUsesSessionEndpointAndName(t *testing.T) {
@@ -353,6 +354,100 @@ func TestDestroyUsesSessionEndpointAndName(t *testing.T) {
 
 	if !reflect.DeepEqual(gotArgs, want) {
 		t.Fatalf("args = %#v, want %#v", gotArgs, want)
+	}
+}
+
+func TestProcessIdentityUsesSessionEndpointAndServerPID(t *testing.T) {
+	endpoint := filepath.Join(
+		t.TempDir(),
+		"multiplexer",
+		"tmux.sock",
+	)
+
+	pid := os.Getpid()
+	processStartTicks := sessionmeta.CurrentProcessStartTicks()
+	processGroupID := sessionmeta.CurrentProcessGroupID()
+
+	var gotArgs []string
+
+	backend := &Backend{
+		Binary: "fake-tmux",
+		RunOutput: func(_ string, args ...string) ([]byte, error) {
+			gotArgs = append([]string(nil), args...)
+			return []byte(fmt.Sprintf("%d\n", pid)), nil
+		},
+	}
+
+	got, err := backend.ProcessIdentity(api.Session{
+		NativeName: "work",
+		Endpoint:   endpoint,
+	})
+	if err != nil {
+		t.Fatalf("ProcessIdentity() returned error: %v", err)
+	}
+
+	wantArgs := []string{
+		"-S",
+		endpoint,
+		"display-message",
+		"-p",
+		"#{pid}",
+	}
+
+	if !reflect.DeepEqual(gotArgs, wantArgs) {
+		t.Fatalf(
+			"tmux invocation args = %#v, want %#v",
+			gotArgs,
+			wantArgs,
+		)
+	}
+
+	want := sessionmeta.ProcessIdentity{
+		PID:               pid,
+		ProcessStartTicks: processStartTicks,
+		ProcessGroupID:    processGroupID,
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf(
+			"ProcessIdentity() = %#v, want %#v",
+			got,
+			want,
+		)
+	}
+}
+
+func TestProcessIdentityRejectsInvalidServerPID(t *testing.T) {
+	backend := &Backend{
+		Binary: "fake-tmux",
+		RunOutput: func(_ string, _ ...string) ([]byte, error) {
+			return []byte("not-a-pid\n"), nil
+		},
+	}
+
+	_, err := backend.ProcessIdentity(api.Session{
+		NativeName: "work",
+		Endpoint:   "/tmp/unishell.sock",
+	})
+	if err == nil {
+		t.Fatal("ProcessIdentity() returned nil error, want invalid PID error")
+	}
+}
+
+func TestProcessIdentityPropagatesCommandFailure(t *testing.T) {
+	backend := &Backend{
+		Binary: "fake-tmux",
+		RunOutput: func(_ string, _ ...string) ([]byte, error) {
+			return nil, fmt.Errorf("tmux unavailable")
+		},
+	}
+
+	_, err := backend.ProcessIdentity(api.Session{
+		NativeName: "work",
+		Endpoint:   "/tmp/unishell.sock",
+	})
+	if err == nil {
+		t.Fatal("ProcessIdentity() returned nil error, want command failure")
 	}
 }
 

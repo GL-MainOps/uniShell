@@ -22,6 +22,9 @@ type managerTestBackend struct {
 	created        bool
 	createdSession Session
 	destroyed      bool
+
+	processIdentity sessionmeta.ProcessIdentity
+	identityError   error
 }
 
 func (b *managerTestBackend) Name() string {
@@ -64,6 +67,24 @@ func (b *managerTestBackend) Destroy(Session) error {
 	b.destroyed = true
 	b.alive = false
 	return nil
+}
+
+func (b *managerTestBackend) ProcessIdentity(
+	Session,
+) (sessionmeta.ProcessIdentity, error) {
+	if b.identityError != nil {
+		return sessionmeta.ProcessIdentity{}, b.identityError
+	}
+
+	if b.processIdentity.PID == 0 {
+		return sessionmeta.ProcessIdentity{
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+		}, nil
+	}
+
+	return b.processIdentity, nil
 }
 
 func prepareManagerTestRuntime(
@@ -151,16 +172,32 @@ func TestManagerCreateWritesMetadata(t *testing.T) {
 		)
 	}
 
-	if metadata.PID != os.Getpid() {
+	if metadata.PID != session.Metadata.PID {
 		t.Fatalf(
 			"metadata PID = %d, want %d",
 			metadata.PID,
-			os.Getpid(),
+			session.Metadata.PID,
 		)
 	}
 
-	if metadata.ProcessStartTicks == 0 {
-		t.Fatal("metadata process start ticks is zero")
+	if metadata.ProcessStartTicks != session.Metadata.ProcessStartTicks {
+		t.Fatalf(
+			"metadata process start ticks = %d, want %d",
+			metadata.ProcessStartTicks,
+			session.Metadata.ProcessStartTicks,
+		)
+	}
+
+	if metadata.ProcessGroupID != session.Metadata.ProcessGroupID {
+		t.Fatalf(
+			"metadata process group ID = %d, want %d",
+			metadata.ProcessGroupID,
+			session.Metadata.ProcessGroupID,
+		)
+	}
+
+	if metadata.ProcessGroupID <= 0 {
+		t.Fatal("metadata process group ID is not positive")
 	}
 
 	if metadata.Version == "" {
@@ -599,6 +636,7 @@ func TestManagerDiscoverRejectsStaleMetadata(t *testing.T) {
 
 	metadata := sessionmeta.Metadata{
 		PID:               os.Getpid(),
+		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
 		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
 		CreatedAt:         time.Now().UTC(),
 		Version:           "development",
@@ -648,6 +686,7 @@ func TestManagerDiscoverRejectsUnavailableBackend(t *testing.T) {
 
 	metadata := sessionmeta.Metadata{
 		PID:               os.Getpid(),
+		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
 		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
 		CreatedAt:         time.Now().UTC(),
 		Version:           "development",
@@ -1920,6 +1959,197 @@ func TestManagerCreateDoesNotCreateLegacyMultiplexerMetadata(
 	); err != nil {
 		t.Fatalf(
 			"unified session metadata does not exist: %v",
+			err,
+		)
+	}
+}
+
+func TestManagerCreatePersistsBackendProcessIdentity(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	prepareManagerTestRuntime(t, runtimePath)
+
+	want := sessionmeta.ProcessIdentity{
+		PID:               os.Getpid(),
+		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+	}
+
+	backend := &managerTestBackend{
+		name:            "test",
+		available:       true,
+		processIdentity: want,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	session, err := manager.Create(
+		"test",
+		"default",
+		"native-default",
+		runtimePath,
+		endpoint,
+		"bash",
+		"/bin/bash",
+		nil,
+		nil,
+		api.Options{},
+	)
+	if err != nil {
+		t.Fatalf(
+			"Create() returned error: %v",
+			err,
+		)
+	}
+
+	if session.Metadata.PID != want.PID {
+		t.Fatalf(
+			"session PID = %d, want %d",
+			session.Metadata.PID,
+			want.PID,
+		)
+	}
+
+	if session.Metadata.ProcessStartTicks != want.ProcessStartTicks {
+		t.Fatalf(
+			"session process start ticks = %d, want %d",
+			session.Metadata.ProcessStartTicks,
+			want.ProcessStartTicks,
+		)
+	}
+
+	if session.Metadata.ProcessGroupID != want.ProcessGroupID {
+		t.Fatalf(
+			"session process group ID = %d, want %d",
+			session.Metadata.ProcessGroupID,
+			want.ProcessGroupID,
+		)
+	}
+}
+
+func TestManagerCreateDestroysBackendWhenProcessIdentityDiscoveryFails(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	prepareManagerTestRuntime(t, runtimePath)
+
+	identityError := errors.New("identity discovery failed")
+
+	backend := &managerTestBackend{
+		name:          "test",
+		available:     true,
+		identityError: identityError,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	_, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+		"",
+		"",
+		nil,
+		nil,
+		api.Options{},
+	)
+	if err == nil {
+		t.Fatal(
+			"Create() returned nil error",
+		)
+	}
+
+	if !errors.Is(err, identityError) {
+		t.Fatalf(
+			"Create() error = %v, want wrapped identity error",
+			err,
+		)
+	}
+
+	if !backend.destroyed {
+		t.Fatal(
+			"backend Destroy() was not called after identity discovery failure",
+		)
+	}
+
+	if _, err := os.Stat(
+		sessionmeta.MetadataPath(runtimePath),
+	); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf(
+			"session metadata exists after identity discovery failure, stat error = %v",
+			err,
+		)
+	}
+}
+
+func TestManagerCreateRejectsInvalidProcessIdentity(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	prepareManagerTestRuntime(t, runtimePath)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		processIdentity: sessionmeta.ProcessIdentity{
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			ProcessGroupID:    0,
+		},
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	_, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+		"",
+		"",
+		nil,
+		nil,
+		api.Options{},
+	)
+	if err == nil {
+		t.Fatal(
+			"Create() returned nil error for invalid process identity",
+		)
+	}
+
+	if !backend.destroyed {
+		t.Fatal(
+			"backend Destroy() was not called after invalid process identity",
+		)
+	}
+
+	if _, err := os.Stat(
+		sessionmeta.MetadataPath(runtimePath),
+	); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf(
+			"session metadata exists after invalid process identity, stat error = %v",
 			err,
 		)
 	}

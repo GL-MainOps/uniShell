@@ -21,6 +21,7 @@ type Metadata struct {
 	ID                string    `json:"id"`
 	PID               int       `json:"pid"`
 	ProcessStartTicks uint64    `json:"process_start_ticks"`
+	ProcessGroupID    int       `json:"process_group_id"`
 	CreatedAt         time.Time `json:"created_at"`
 	Version           string    `json:"version"`
 	Mode              Mode      `json:"mode"`
@@ -142,6 +143,13 @@ func validateMetadata(metadata Metadata) error {
 	if metadata.ProcessStartTicks == 0 {
 		return fmt.Errorf(
 			"invalid session metadata: missing process start ticks",
+		)
+	}
+
+	if metadata.Mode == ModeMultiplexer &&
+		metadata.ProcessGroupID <= 0 {
+		return fmt.Errorf(
+			"invalid session metadata: invalid process group ID",
 		)
 	}
 

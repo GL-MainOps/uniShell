@@ -14,6 +14,8 @@ import (
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 	"gitlab.com/mainops/uniShell/internal/shell"
+
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 func TestNewUsesDefaultRuntimeRoot(t *testing.T) {
@@ -450,6 +452,16 @@ func TestNewUsesProvidedMultiplexerManager(t *testing.T) {
 
 type appTestBackend struct {
 	created bool
+}
+
+func (appTestBackend) ProcessIdentity(
+	multiplexer.Session,
+) (sessionmeta.ProcessIdentity, error) {
+	return sessionmeta.ProcessIdentity{
+		PID:               os.Getpid(),
+		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+	}, nil
 }
 
 func (appTestBackend) Name() string {

@@ -101,10 +101,43 @@ func (m *Manager) Create(
 
 	session.NativeName = createdNativeName
 
+	identityProvider, ok := backend.(api.ProcessIdentityProvider)
+	if !ok {
+		_ = backend.Destroy(session)
+
+		return nil, fmt.Errorf(
+			"multiplexer %q does not provide managed process identity",
+			backendName,
+		)
+	}
+
+	identity, err := identityProvider.ProcessIdentity(session)
+	if err != nil {
+		_ = backend.Destroy(session)
+
+		return nil, fmt.Errorf(
+			"discover %s session process identity: %w",
+			backendName,
+			err,
+		)
+	}
+
+	if identity.PID <= 0 ||
+		identity.ProcessStartTicks == 0 ||
+		identity.ProcessGroupID <= 0 {
+		_ = backend.Destroy(session)
+
+		return nil, fmt.Errorf(
+			"discover %s session process identity: invalid identity",
+			backendName,
+		)
+	}
+
 	metadata := sessionmeta.Metadata{
 		ID:                id,
-		PID:               os.Getpid(),
-		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+		PID:               identity.PID,
+		ProcessStartTicks: identity.ProcessStartTicks,
+		ProcessGroupID:    identity.ProcessGroupID,
 		CreatedAt:         time.Now().UTC(),
 		Version:           filepath.Base(filepath.Dir(runtimePath)),
 		Mode:              sessionmeta.ModeMultiplexer,

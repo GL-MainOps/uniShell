@@ -11,6 +11,54 @@ import (
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 )
 
+func TestIsManagedServerCommandMatchesExactNativeName(t *testing.T) {
+	args := []string{
+		"/tmp/uHome/bin/zellij",
+		"--server",
+		"/tmp/zellij-1000/contract_version_1/work",
+	}
+
+	if !isManagedServerCommand(args, "work") {
+		t.Fatal("isManagedServerCommand() = false, want true")
+	}
+}
+
+func TestIsManagedServerCommandRejectsNativeNamePrefix(t *testing.T) {
+	args := []string{
+		"/tmp/uHome/bin/zellij",
+		"--server",
+		"/tmp/zellij-1000/contract_version_1/work-other",
+	}
+
+	if isManagedServerCommand(args, "work") {
+		t.Fatal("isManagedServerCommand() = true, want false")
+	}
+}
+
+func TestIsManagedServerCommandRejectsNonServerProcess(t *testing.T) {
+	args := []string{
+		"/tmp/uHome/bin/zellij",
+		"attach",
+		"work",
+	}
+
+	if isManagedServerCommand(args, "work") {
+		t.Fatal("isManagedServerCommand() = true, want false")
+	}
+}
+
+func TestIsManagedServerCommandRejectsDifferentBinary(t *testing.T) {
+	args := []string{
+		"/tmp/uHome/bin/other",
+		"--server",
+		"/tmp/zellij-1000/contract_version_1/work",
+	}
+
+	if isManagedServerCommand(args, "work") {
+		t.Fatal("isManagedServerCommand() = true, want false")
+	}
+}
+
 func TestCreateUsesBackgroundSession(t *testing.T) {
 	var (
 		gotArgs []string

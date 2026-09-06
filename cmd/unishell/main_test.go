@@ -361,6 +361,16 @@ func (b *shellTestBackend) Create(multiplexer.Session) error {
 	return nil
 }
 
+func (b *shellTestBackend) ProcessIdentity(
+	multiplexer.Session,
+) (sessionmeta.ProcessIdentity, error) {
+	return sessionmeta.ProcessIdentity{
+		PID:               os.Getpid(),
+		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+	}, nil
+}
+
 func (b *shellTestBackend) Attach(multiplexer.Session) error {
 	b.attached = true
 	return b.attachErr

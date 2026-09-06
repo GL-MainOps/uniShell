@@ -20,6 +20,16 @@ type sessionTestBackend struct {
 	alive      bool
 }
 
+func (sessionTestBackend) ProcessIdentity(
+	multiplexer.Session,
+) (sessionmeta.ProcessIdentity, error) {
+	return sessionmeta.ProcessIdentity{
+		PID:               os.Getpid(),
+		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+	}, nil
+}
+
 func (b *sessionTestBackend) Name() string {
 	return "test"
 }
@@ -81,6 +91,7 @@ func newManagedTestSession(
 			ID:                "test-session",
 			PID:               os.Getpid(),
 			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
 			CreatedAt:         time.Now().UTC(),
 			Version:           "development",
 			Mode:              sessionmeta.ModeMultiplexer,

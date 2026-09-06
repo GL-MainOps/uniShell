@@ -26,6 +26,7 @@ func TestMetadataRoundTrip(t *testing.T) {
 		ID:                "43b9ab54912bf09a03cc414bf7697bf1",
 		PID:               12345,
 		ProcessStartTicks: 987654,
+		ProcessGroupID:    12345,
 		CreatedAt:         created,
 		Version:           "development",
 		Mode:              ModeNormal,
@@ -89,6 +90,14 @@ func TestMetadataRoundTrip(t *testing.T) {
 			"ProcessStartTicks = %d, want %d",
 			got.ProcessStartTicks,
 			want.ProcessStartTicks,
+		)
+	}
+
+	if got.ProcessGroupID != want.ProcessGroupID {
+		t.Fatalf(
+			"ProcessGroupID = %d, want %d",
+			got.ProcessGroupID,
+			want.ProcessGroupID,
 		)
 	}
 
@@ -251,6 +260,39 @@ func TestRemoveMetadataIsIdempotent(t *testing.T) {
 		t.Fatalf(
 			"second RemoveMetadata() returned error: %v",
 			err,
+		)
+	}
+}
+
+func TestReadMetadataRejectsMultiplexerMetadataWithoutProcessGroupID(
+	t *testing.T,
+) {
+	runtimePath := t.TempDir()
+
+	metadata := `{
+		"id": "session",
+		"pid": 1234,
+		"process_start_ticks": 1,
+		"process_group_id": 0,
+		"created_at": "2026-09-02T17:30:00Z",
+		"version": "development",
+		"mode": "multiplexer"
+	}`
+
+	if err := os.WriteFile(
+		MetadataPath(runtimePath),
+		[]byte(metadata),
+		0600,
+	); err != nil {
+		t.Fatalf(
+			"write invalid metadata: %v",
+			err,
+		)
+	}
+
+	if _, err := ReadMetadata(runtimePath); err == nil {
+		t.Fatal(
+			"ReadMetadata() returned nil error for invalid process group ID",
 		)
 	}
 }

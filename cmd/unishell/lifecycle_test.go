@@ -8,6 +8,8 @@ import (
 	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/bundle"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
+
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 func TestRunShellCreatesThenReattachesExistingMultiplexerSession(
@@ -183,6 +185,16 @@ func (b *lifecycleTestBackend) Create(
 	b.alive = true
 
 	return nil
+}
+
+func (b *lifecycleTestBackend) ProcessIdentity(
+	multiplexer.Session,
+) (sessionmeta.ProcessIdentity, error) {
+	return sessionmeta.ProcessIdentity{
+		PID:               os.Getpid(),
+		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+	}, nil
 }
 
 func (b *lifecycleTestBackend) Attach(

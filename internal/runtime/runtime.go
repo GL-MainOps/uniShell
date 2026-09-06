@@ -103,6 +103,7 @@ func (s *Session) Prepare() error {
 		ID:                s.ID,
 		PID:               os.Getpid(),
 		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
 		CreatedAt:         time.Now().UTC(),
 		Version:           filepath.Base(filepath.Dir(s.Paths.Runtime)),
 		Mode:              sessionmeta.Mode(s.Mode),
@@ -111,6 +112,11 @@ func (s *Session) Prepare() error {
 	if metadata.ProcessStartTicks == 0 {
 		_ = os.RemoveAll(s.Paths.Runtime)
 		return errors.New("unable to determine current process start time")
+	}
+
+	if metadata.ProcessGroupID <= 0 {
+		_ = os.RemoveAll(s.Paths.Runtime)
+		return errors.New("unable to determine current process group ID")
 	}
 
 	if err := sessionmeta.WriteMetadata(

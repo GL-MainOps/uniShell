@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 	"gitlab.com/mainops/uniShell/internal/multiplexer/config"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 type CommandRunner func(
@@ -77,6 +80,110 @@ func (b *Backend) Capabilities() map[api.Capability]bool {
 func (b *Backend) Available() bool {
 	_, err := exec.LookPath(b.Binary)
 	return err == nil
+}
+
+func (b *Backend) ProcessIdentity(
+	session api.Session,
+) (sessionmeta.ProcessIdentity, error) {
+	if session.NativeName == "" {
+		return sessionmeta.ProcessIdentity{}, fmt.Errorf(
+			"zellij native session name cannot be empty",
+		)
+	}
+
+	pid, err := findServerPID(session.NativeName)
+	if err != nil {
+		return sessionmeta.ProcessIdentity{}, err
+	}
+
+	processStartTicks, err := sessionmeta.ProcessStartTicks(pid)
+	if err != nil {
+		return sessionmeta.ProcessIdentity{}, fmt.Errorf(
+			"read zellij server process identity: %w",
+			err,
+		)
+	}
+
+	processGroupID, err := sessionmeta.ProcessGroupID(pid)
+	if err != nil {
+		return sessionmeta.ProcessIdentity{}, fmt.Errorf(
+			"read zellij server process group: %w",
+			err,
+		)
+	}
+
+	return sessionmeta.ProcessIdentity{
+		PID:               pid,
+		ProcessStartTicks: processStartTicks,
+		ProcessGroupID:    processGroupID,
+	}, nil
+}
+
+func findServerPID(nativeName string) (int, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0, fmt.Errorf(
+			"read process directory: %w",
+			err,
+		)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+
+		cmdline, err := os.ReadFile(
+			filepath.Join("/proc", entry.Name(), "cmdline"),
+		)
+		if err != nil {
+			continue
+		}
+
+		args := strings.Split(
+			strings.TrimRight(string(cmdline), "\x00"),
+			"\x00",
+		)
+
+		if isManagedServerCommand(args, nativeName) {
+			return pid, nil
+		}
+	}
+
+	return 0, fmt.Errorf(
+		"zellij server for native session %q not found",
+		nativeName,
+	)
+}
+
+func isManagedServerCommand(
+	args []string,
+	nativeName string,
+) bool {
+	if len(args) < 3 {
+		return false
+	}
+
+	if filepath.Base(args[0]) != "zellij" {
+		return false
+	}
+
+	for index := 1; index < len(args)-1; index++ {
+		if args[index] != "--server" {
+			continue
+		}
+
+		serverEndpoint := args[index+1]
+
+		return filepath.Base(serverEndpoint) == nativeName
+	}
+
+	return false
 }
 
 func (b *Backend) Create(session api.Session) error {
