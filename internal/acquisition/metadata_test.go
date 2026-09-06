@@ -185,3 +185,54 @@ func TestSourceMetadataValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestGitHubReleaseSourceMetadata(t *testing.T) {
+	const document = `
+[[tools]]
+name = "example"
+
+[[tools.artifacts]]
+platform = "linux"
+architecture = "amd64"
+
+[tools.artifacts.source]
+kind = "github-release"
+
+[tools.artifacts.source.github_release]
+owner = "example"
+repository = "tool"
+release = "latest"
+asset = "tool-linux-amd64.tar.gz"
+`
+
+	manifest, err := LoadManifest(strings.NewReader(document))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	tools, err := manifest.BuildTools()
+	if err != nil {
+		t.Fatalf("unexpected conversion error: %v", err)
+	}
+
+	source, ok := tools[0].Artifacts[0].Source.(GitHubReleaseSource)
+	if !ok {
+		t.Fatalf("expected GitHubReleaseSource, got %T", tools[0].Artifacts[0].Source)
+	}
+
+	if source.Owner != "example" {
+		t.Fatalf("expected owner %q, got %q", "example", source.Owner)
+	}
+
+	if source.Repository != "tool" {
+		t.Fatalf("expected repository %q, got %q", "tool", source.Repository)
+	}
+
+	if source.Release != "latest" {
+		t.Fatalf("expected release %q, got %q", "latest", source.Release)
+	}
+
+	if source.Asset != "tool-linux-amd64.tar.gz" {
+		t.Fatalf("expected asset %q, got %q", "tool-linux-amd64.tar.gz", source.Asset)
+	}
+}

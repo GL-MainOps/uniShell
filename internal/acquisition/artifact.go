@@ -51,10 +51,10 @@ type Source interface {
 }
 
 type GitHubReleaseSource struct {
-	Owner      string
-	Repository string
-	Release    string
-	Asset      string
+	Owner      string `toml:"owner"`
+	Repository string `toml:"repository"`
+	Release    string `toml:"release"`
+	Asset      string `toml:"asset"`
 }
 
 func (s GitHubReleaseSource) Kind() SourceKind {
