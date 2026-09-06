@@ -168,6 +168,57 @@ func processIdentityForTestProcess(pid int) (ProcessIdentity, error) {
 	}, nil
 }
 
+func waitForProcessState(
+	t *testing.T,
+	pid int,
+	want byte,
+) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		state, err := processState(pid)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				t.Fatalf(
+					"process %d disappeared before reaching state %q",
+					pid,
+					want,
+				)
+			}
+
+			t.Fatalf(
+				"processState(%d) returned error: %v",
+				pid,
+				err,
+			)
+		}
+
+		if state == want {
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	state, err := processState(pid)
+	if err != nil {
+		t.Fatalf(
+			"processState(%d) returned error after timeout: %v",
+			pid,
+			err,
+		)
+	}
+
+	t.Fatalf(
+		"process %d reached state %q, want %q",
+		pid,
+		state,
+		want,
+	)
+}
+
 func TestTerminateProcessGroupTerminatesOwnedGroup(t *testing.T) {
 	cmd := startProcessGroupTestHelper(t)
 
@@ -239,6 +290,12 @@ func TestProcessGroupLiveMembersIgnoresZombieMembers(t *testing.T) {
 			err,
 		)
 	}
+
+	waitForProcessState(
+		t,
+		cmd.Process.Pid,
+		'Z',
+	)
 
 	members, err := ProcessGroupLiveMembers(
 		identity.ProcessGroupID,

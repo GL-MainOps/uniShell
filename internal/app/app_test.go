@@ -3,10 +3,13 @@ package app
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"gitlab.com/mainops/uniShell/internal/bundle"
 	"gitlab.com/mainops/uniShell/internal/credentials"
@@ -451,17 +454,80 @@ func TestNewUsesProvidedMultiplexerManager(t *testing.T) {
 }
 
 type appTestBackend struct {
-	created bool
+	created         bool
+	processIdentity sessionmeta.ProcessIdentity
 }
 
-func (appTestBackend) ProcessIdentity(
+func startAppProcessGroupHelper(t *testing.T) *exec.Cmd {
+	t.Helper()
+
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestAppProcessGroupHelper$",
+	)
+	cmd.Env = append(
+		os.Environ(),
+		"UNISHELL_APP_PROCESS_GROUP_HELPER=1",
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf(
+			"failed to start app process-group helper: %v",
+			err,
+		)
+	}
+
+	return cmd
+}
+
+func TestAppProcessGroupHelper(t *testing.T) {
+	if os.Getenv("UNISHELL_APP_PROCESS_GROUP_HELPER") != "1" {
+		return
+	}
+
+	for {
+		time.Sleep(time.Second)
+	}
+}
+
+func appProcessIdentity(
+	t *testing.T,
+	cmd *exec.Cmd,
+) sessionmeta.ProcessIdentity {
+	t.Helper()
+
+	startTicks, err := sessionmeta.ProcessStartTicks(cmd.Process.Pid)
+	if err != nil {
+		t.Fatalf(
+			"ProcessStartTicks() returned error: %v",
+			err,
+		)
+	}
+
+	processGroupID, err := sessionmeta.ProcessGroupID(
+		cmd.Process.Pid,
+	)
+	if err != nil {
+		t.Fatalf(
+			"ProcessGroupID() returned error: %v",
+			err,
+		)
+	}
+
+	return sessionmeta.ProcessIdentity{
+		PID:               cmd.Process.Pid,
+		ProcessStartTicks: startTicks,
+		ProcessGroupID:    processGroupID,
+	}
+}
+
+func (b *appTestBackend) ProcessIdentity(
 	multiplexer.Session,
 ) (sessionmeta.ProcessIdentity, error) {
-	return sessionmeta.ProcessIdentity{
-		PID:               os.Getpid(),
-		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
-		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
-	}, nil
+	return b.processIdentity, nil
 }
 
 func (appTestBackend) Name() string {
@@ -507,8 +573,15 @@ func TestStartMultiplexerSessionCreatesManagedSession(t *testing.T) {
 
 	t.Setenv("UNISHELL_AUTH_TOKEN", "test-fixture-token")
 
+	helper := startAppProcessGroupHelper(t)
+	defer func() {
+		_ = helper.Process.Kill()
+		_ = helper.Wait()
+	}()
+
 	backend := &appTestBackend{
-		created: true,
+		created:         true,
+		processIdentity: appProcessIdentity(t, helper),
 	}
 
 	manager := multiplexer.NewManager(
@@ -606,7 +679,15 @@ func TestCreateMultiplexerSessionUsesProvidedMultiplexer(
 ) {
 	t.Setenv("UNISHELL_AUTH_TOKEN", "test-fixture-token")
 
-	backend := &appTestBackend{}
+	helper := startAppProcessGroupHelper(t)
+	defer func() {
+		_ = helper.Process.Kill()
+		_ = helper.Wait()
+	}()
+
+	backend := &appTestBackend{
+		processIdentity: appProcessIdentity(t, helper),
+	}
 
 	manager := multiplexer.NewManager(
 		multiplexer.NewRegistry(backend),
@@ -677,7 +758,15 @@ func TestCreateMultiplexerSessionPassesShellStartup(
 		"runtime",
 	)
 
-	backend := &appTestBackend{}
+	helper := startAppProcessGroupHelper(t)
+	defer func() {
+		_ = helper.Process.Kill()
+		_ = helper.Wait()
+	}()
+
+	backend := &appTestBackend{
+		processIdentity: appProcessIdentity(t, helper),
+	}
 
 	manager := multiplexer.NewManager(
 		multiplexer.NewRegistry(backend),

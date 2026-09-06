@@ -2,8 +2,11 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
+	"time"
 
 	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/bundle"
@@ -19,7 +22,15 @@ func TestRunShellCreatesThenReattachesExistingMultiplexerSession(
 
 	t.Setenv("UNISHELL_AUTH_TOKEN", "test-fixture-token")
 
-	backend := &lifecycleTestBackend{}
+	helper := startLifecycleProcessGroupHelper(t)
+	defer func() {
+		_ = helper.Process.Kill()
+		_ = helper.Wait()
+	}()
+
+	backend := &lifecycleTestBackend{
+		processIdentity: lifecycleProcessIdentity(t, helper),
+	}
 
 	manager := multiplexer.NewManager(
 		multiplexer.NewRegistry(backend),
@@ -153,12 +164,79 @@ func TestRunShellCreatesThenReattachesExistingMultiplexerSession(
 	}
 }
 
+func startLifecycleProcessGroupHelper(t *testing.T) *exec.Cmd {
+	t.Helper()
+
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestLifecycleProcessGroupHelper$",
+	)
+	cmd.Env = append(
+		os.Environ(),
+		"UNISHELL_LIFECYCLE_PROCESS_GROUP_HELPER=1",
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf(
+			"failed to start lifecycle process-group helper: %v",
+			err,
+		)
+	}
+
+	return cmd
+}
+
+func TestLifecycleProcessGroupHelper(t *testing.T) {
+	if os.Getenv("UNISHELL_LIFECYCLE_PROCESS_GROUP_HELPER") != "1" {
+		return
+	}
+
+	for {
+		time.Sleep(time.Second)
+	}
+}
+
+func lifecycleProcessIdentity(
+	t *testing.T,
+	cmd *exec.Cmd,
+) sessionmeta.ProcessIdentity {
+	t.Helper()
+
+	startTicks, err := sessionmeta.ProcessStartTicks(cmd.Process.Pid)
+	if err != nil {
+		t.Fatalf(
+			"ProcessStartTicks() returned error: %v",
+			err,
+		)
+	}
+
+	processGroupID, err := sessionmeta.ProcessGroupID(
+		cmd.Process.Pid,
+	)
+	if err != nil {
+		t.Fatalf(
+			"ProcessGroupID() returned error: %v",
+			err,
+		)
+	}
+
+	return sessionmeta.ProcessIdentity{
+		PID:               cmd.Process.Pid,
+		ProcessStartTicks: startTicks,
+		ProcessGroupID:    processGroupID,
+	}
+}
+
 type lifecycleTestBackend struct {
 	createCount  int
 	attachCount  int
 	destroyCount int
 
-	alive bool
+	alive           bool
+	processIdentity sessionmeta.ProcessIdentity
 }
 
 func (b *lifecycleTestBackend) Name() string {
@@ -190,11 +268,7 @@ func (b *lifecycleTestBackend) Create(
 func (b *lifecycleTestBackend) ProcessIdentity(
 	multiplexer.Session,
 ) (sessionmeta.ProcessIdentity, error) {
-	return sessionmeta.ProcessIdentity{
-		PID:               os.Getpid(),
-		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
-		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
-	}, nil
+	return b.processIdentity, nil
 }
 
 func (b *lifecycleTestBackend) Attach(
