@@ -248,7 +248,7 @@ func TestAcquirerRejectsDownloadedChecksumMismatch(t *testing.T) {
 	}
 }
 
-func TestAcquirerRejectsCachedChecksumMismatch(t *testing.T) {
+func TestAcquirerRedownloadsCachedChecksumMismatch(t *testing.T) {
 	cache := &fakeCache{
 		content: "corrupted cached artifact",
 	}
@@ -256,7 +256,7 @@ func TestAcquirerRejectsCachedChecksumMismatch(t *testing.T) {
 		content: "downloaded artifact",
 	}
 
-	content := "expected artifact"
+	content := "downloaded artifact"
 	sum := sha256.Sum256([]byte(content))
 
 	artifact := testResolvedArtifact()
@@ -264,33 +264,44 @@ func TestAcquirerRejectsCachedChecksumMismatch(t *testing.T) {
 
 	acquirer := NewAcquirer(downloader, cache)
 
-	_, err := acquirer.Acquire(
+	reader, err := acquirer.Acquire(
 		context.Background(),
 		artifact,
 		nil,
 	)
-	if err == nil {
-		t.Fatal("Acquire() error = nil, want checksum mismatch")
+	if err != nil {
+		t.Fatalf("Acquire() error = %v", err)
+	}
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
 	}
 
-	if !errors.Is(err, ErrChecksumMismatch) {
-		t.Fatalf(
-			"Acquire() error = %v, want ErrChecksumMismatch",
-			err,
-		)
+	if string(data) != content {
+		t.Fatalf("content = %q, want %q", data, content)
 	}
 
-	if downloader.calls != 0 {
+	if downloader.calls != 1 {
 		t.Fatalf(
-			"downloader calls = %d, want 0",
+			"downloader calls = %d, want 1",
 			downloader.calls,
 		)
 	}
 
-	if cache.putCalls != 0 {
+	if cache.putCalls != 1 {
 		t.Fatalf(
-			"cache put calls = %d, want 0",
+			"cache put calls = %d, want 1",
 			cache.putCalls,
+		)
+	}
+
+	if cache.content != content {
+		t.Fatalf(
+			"cached content = %q, want %q",
+			cache.content,
+			content,
 		)
 	}
 }

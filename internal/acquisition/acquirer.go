@@ -3,6 +3,7 @@ package acquisition
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 )
@@ -49,19 +50,21 @@ func (a Acquirer) Acquire(
 			return nil, closeErr
 		}
 
-		if artifact.Checksum != "" {
-			if err := VerifyChecksum(
-				bytes.NewReader(data),
-				artifact.Checksum,
-			); err != nil {
-				return nil, err
-			}
+		if artifact.Checksum == "" {
+			return io.NopCloser(bytes.NewReader(data)), nil
 		}
 
-		return io.NopCloser(bytes.NewReader(data)), nil
+		if err := VerifyChecksum(
+			bytes.NewReader(data),
+			artifact.Checksum,
+		); err == nil {
+			return io.NopCloser(bytes.NewReader(data)), nil
+		} else if !errors.Is(err, ErrChecksumMismatch) {
+			return nil, err
+		}
 	}
 
-	if err != ErrCacheMiss {
+	if err != nil && err != ErrCacheMiss {
 		return nil, err
 	}
 
