@@ -50,10 +50,6 @@ func (a Acquirer) Acquire(
 			return nil, closeErr
 		}
 
-		if artifact.Checksum == "" {
-			return io.NopCloser(bytes.NewReader(data)), nil
-		}
-
 		if err := VerifyChecksum(
 			bytes.NewReader(data),
 			artifact.Checksum,
@@ -85,13 +81,11 @@ func (a Acquirer) Acquire(
 		return nil, fmt.Errorf("%w: %v", ErrDownloadFailed, err)
 	}
 
-	if artifact.Checksum != "" {
-		if err := VerifyChecksum(
-			bytes.NewReader(downloaded.Bytes()),
-			artifact.Checksum,
-		); err != nil {
-			return nil, err
-		}
+	if err := VerifyChecksum(
+		bytes.NewReader(downloaded.Bytes()),
+		artifact.Checksum,
+	); err != nil {
+		return nil, err
 	}
 
 	if err := a.Cache.Put(

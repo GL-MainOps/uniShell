@@ -16,6 +16,7 @@ func TestFilesystemCachePutAndGet(t *testing.T) {
 		Platform:     Platform("linux"),
 		Architecture: Architecture("amd64"),
 		URL:          "https://example.com/tool",
+		Checksum:     "0000000000000000000000000000000000000000000000000000000000000000",
 	}
 
 	const want = "cached artifact"
@@ -52,6 +53,7 @@ func TestFilesystemCacheGetMissing(t *testing.T) {
 		Platform:     Platform("linux"),
 		Architecture: Architecture("amd64"),
 		URL:          "https://example.com/missing",
+		Checksum:     "0000000000000000000000000000000000000000000000000000000000000000",
 	}
 
 	_, err := cache.Get(context.Background(), artifact)
@@ -68,6 +70,7 @@ func TestFilesystemCacheRejectsNilReader(t *testing.T) {
 		Platform:     Platform("linux"),
 		Architecture: Architecture("amd64"),
 		URL:          "https://example.com/tool",
+		Checksum:     "0000000000000000000000000000000000000000000000000000000000000000",
 	}
 
 	err := cache.Put(context.Background(), artifact, nil)
@@ -84,6 +87,7 @@ func TestFilesystemCacheHonorsContextCancellation(t *testing.T) {
 		Platform:     Platform("linux"),
 		Architecture: Architecture("amd64"),
 		URL:          "https://example.com/tool",
+		Checksum:     "0000000000000000000000000000000000000000000000000000000000000000",
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -108,6 +112,7 @@ func TestFilesystemCacheSeparatesArtifactsWithSameURLBasename(t *testing.T) {
 		Platform:     Platform("linux"),
 		Architecture: Architecture("amd64"),
 		URL:          "https://example.com/releases/tool",
+		Checksum:     "0000000000000000000000000000000000000000000000000000000000000000",
 	}
 
 	second := first

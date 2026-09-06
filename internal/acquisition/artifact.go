@@ -139,5 +139,9 @@ func (a ResolvedArtifact) Validate() error {
 		return fmt.Errorf("%w: architecture is required", ErrInvalidResolvedArtifact)
 	}
 
+	if a.Checksum == "" {
+		return fmt.Errorf("%w: checksum is required", ErrInvalidResolvedArtifact)
+	}
+
 	return nil
 }

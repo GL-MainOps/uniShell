@@ -74,11 +74,15 @@ func (c *fakeCache) Put(
 }
 
 func testResolvedArtifact() ResolvedArtifact {
+	content := "downloaded"
+	sum := sha256.Sum256([]byte(content))
+
 	return ResolvedArtifact{
 		Version:      "1.0.0",
 		Platform:     Platform("linux"),
 		Architecture: Architecture("amd64"),
 		URL:          "https://example.com/tool",
+		Checksum:     hex.EncodeToString(sum[:]),
 	}
 }
 
@@ -90,11 +94,16 @@ func TestAcquirerReturnsCachedArtifact(t *testing.T) {
 		content: "cached",
 	}
 
+	artifact := testResolvedArtifact()
+
+	sum := sha256.Sum256([]byte("cached"))
+	artifact.Checksum = hex.EncodeToString(sum[:])
+
 	acquirer := NewAcquirer(downloader, cache)
 
 	reader, err := acquirer.Acquire(
 		context.Background(),
-		testResolvedArtifact(),
+		artifact,
 		nil,
 	)
 	if err != nil {

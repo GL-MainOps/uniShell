@@ -119,6 +119,11 @@ func TestResolvedArtifactValidate(t *testing.T) {
 			URL:      "https://example.com/tool",
 			Platform: "linux",
 		},
+		{
+			URL:          "https://example.com/tool",
+			Platform:     "linux",
+			Architecture: "amd64",
+		},
 	}
 
 	for _, artifact := range tests {

@@ -8,6 +8,7 @@ func TestCacheKeyDiffersForDifferentArtifacts(t *testing.T) {
 		Platform:     Platform("linux"),
 		Architecture: Architecture("amd64"),
 		URL:          "https://example.com/tool-a/tool",
+		Checksum:     "0000000000000000000000000000000000000000000000000000000000000000",
 	}
 
 	second := first
@@ -35,6 +36,7 @@ func TestCacheKeyDiffersForDifferentRevision(t *testing.T) {
 		Architecture: Architecture("amd64"),
 		URL:          "https://example.com/tool",
 		Revision:     "commit-a",
+		Checksum:     "0000000000000000000000000000000000000000000000000000000000000000",
 	}
 
 	second := first
