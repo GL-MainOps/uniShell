@@ -10,9 +10,8 @@ import (
 )
 
 type CleanSession struct {
-	Metadata    sessionmeta.Metadata
-	RuntimeDir  string
-	Multiplexer *Session
+	Metadata   sessionmeta.Metadata
+	RuntimeDir string
 }
 
 func (a *App) DiscoverCleanSessions() ([]*CleanSession, error) {
@@ -58,24 +57,6 @@ func (a *App) DiscoverCleanSessions() ([]*CleanSession, error) {
 			RuntimeDir: runtimeDir,
 		}
 
-		if metadata.Mode == sessionmeta.ModeMultiplexer {
-			managed, err := a.Multiplexer.Discover(
-				runtimeDir,
-				metadata.Name,
-			)
-			if err != nil {
-				return nil, fmt.Errorf(
-					"discover multiplexer session %q: %w",
-					metadata.Name,
-					err,
-				)
-			}
-
-			cleanSession.Multiplexer = &Session{
-				Multiplexer: managed,
-			}
-		}
-
 		sessions = append(sessions, cleanSession)
 	}
 
@@ -110,6 +91,45 @@ func (a *App) TerminateNormalSession(
 	if err != nil {
 		return fmt.Errorf(
 			"terminate normal session %q: %w",
+			cleanSession.Metadata.Name,
+			err,
+		)
+	}
+
+	return nil
+}
+
+func (a *App) CleanupMultiplexerSession(
+	cleanSession *CleanSession,
+) error {
+	if cleanSession == nil {
+		return fmt.Errorf("clean session cannot be nil")
+	}
+
+	if cleanSession.Metadata.Mode != sessionmeta.ModeMultiplexer {
+		return fmt.Errorf(
+			"session %q is not a multiplexer session",
+			cleanSession.Metadata.Name,
+		)
+	}
+
+	if a.Multiplexer == nil {
+		return fmt.Errorf(
+			"multiplexer manager is unavailable",
+		)
+	}
+
+	runtimePath := cleanSession.RuntimeDir
+	if runtimePath == "" {
+		return fmt.Errorf(
+			"multiplexer session %q runtime path is empty",
+			cleanSession.Metadata.Name,
+		)
+	}
+
+	if err := a.Multiplexer.Cleanup(runtimePath); err != nil {
+		return fmt.Errorf(
+			"cleanup multiplexer session %q: %w",
 			cleanSession.Metadata.Name,
 			err,
 		)

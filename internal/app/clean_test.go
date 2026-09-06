@@ -9,9 +9,55 @@ import (
 	"testing"
 	"time"
 
+	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
+
+type cleanTestBackend struct {
+	alive     bool
+	destroyed bool
+}
+
+func (b *cleanTestBackend) Name() string {
+	return "test"
+}
+
+func (b *cleanTestBackend) Capabilities() map[multiplexer.Capability]bool {
+	return map[multiplexer.Capability]bool{
+		multiplexer.CapabilitySessions: true,
+		multiplexer.CapabilityAttach:   true,
+		multiplexer.CapabilityDetach:   true,
+		multiplexer.CapabilityDestroy:  true,
+	}
+}
+
+func (b *cleanTestBackend) Available() bool {
+	return true
+}
+
+func (b *cleanTestBackend) Create(multiplexer.Session) error {
+	b.alive = true
+	return nil
+}
+
+func (b *cleanTestBackend) Attach(multiplexer.Session) error {
+	return nil
+}
+
+func (b *cleanTestBackend) Detach(multiplexer.Session) error {
+	return nil
+}
+
+func (b *cleanTestBackend) IsAlive(multiplexer.Session) bool {
+	return b.alive
+}
+
+func (b *cleanTestBackend) Destroy(multiplexer.Session) error {
+	b.destroyed = true
+	b.alive = false
+	return nil
+}
 
 func writeCleanTestMetadata(
 	t *testing.T,
@@ -50,6 +96,226 @@ func writeCleanTestMetadata(
 		metadata,
 	); err != nil {
 		t.Fatalf("write metadata: %v", err)
+	}
+}
+
+func TestCleanupMultiplexerSessionTerminatesOwnedGroup(
+	t *testing.T,
+) {
+	root := t.TempDir()
+	runtimeDir := filepath.Join(
+		root,
+		"multiplexer-session",
+	)
+
+	if err := os.MkdirAll(runtimeDir, 0700); err != nil {
+		t.Fatalf(
+			"create runtime directory: %v",
+			err,
+		)
+	}
+
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestCleanupMultiplexerSessionHelper$",
+	)
+
+	cmd.Env = append(
+		os.Environ(),
+		"UNISHELL_CLEAN_MULTIPLEXER_HELPER=1",
+	)
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf(
+			"start multiplexer helper: %v",
+			err,
+		)
+	}
+
+	startTicks, err := sessionmeta.ProcessStartTicks(
+		cmd.Process.Pid,
+	)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+
+		t.Fatalf(
+			"ProcessStartTicks() returned error: %v",
+			err,
+		)
+	}
+
+	processGroupID, err := sessionmeta.ProcessGroupID(
+		cmd.Process.Pid,
+	)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+
+		t.Fatalf(
+			"ProcessGroupID() returned error: %v",
+			err,
+		)
+	}
+
+	backend := &cleanTestBackend{
+		alive: true,
+	}
+
+	if err := sessionmeta.WriteMetadata(
+		runtimeDir,
+		sessionmeta.Metadata{
+			ID:                "multiplexer-test-id",
+			PID:               cmd.Process.Pid,
+			ProcessStartTicks: startTicks,
+			ProcessGroupID:    processGroupID,
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeMultiplexer,
+			Name:              "development",
+			Multiplexer:       "test",
+			NativeName:        "native-development",
+			Endpoint: filepath.Join(
+				runtimeDir,
+				"multiplexer",
+				"test.sock",
+			),
+		},
+	); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+
+		t.Fatalf(
+			"WriteMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	application := &App{
+		Paths: runtime.Paths{
+			Runtime: root,
+		},
+		Multiplexer: multiplexer.NewManager(
+			multiplexer.NewRegistry(backend),
+		),
+	}
+
+	cleanSession := &CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "multiplexer-test-id",
+			PID:               cmd.Process.Pid,
+			ProcessStartTicks: startTicks,
+			ProcessGroupID:    processGroupID,
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeMultiplexer,
+			Name:              "development",
+			Multiplexer:       "test",
+		},
+		RuntimeDir: runtimeDir,
+	}
+
+	if err := application.CleanupMultiplexerSession(
+		cleanSession,
+	); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+
+		t.Fatalf(
+			"CleanupMultiplexerSession() returned error: %v",
+			err,
+		)
+	}
+
+	if !backend.destroyed {
+		t.Fatal(
+			"CleanupMultiplexerSession() did not destroy backend session",
+		)
+	}
+
+	if _, err := os.Stat(runtimeDir); !os.IsNotExist(err) {
+		t.Fatalf(
+			"runtime directory still exists, stat error = %v",
+			err,
+		)
+	}
+
+	if err := cmd.Wait(); err == nil {
+		t.Fatal(
+			"multiplexer helper exited successfully after cleanup",
+		)
+	}
+}
+
+func TestCleanupMultiplexerSessionHelper(t *testing.T) {
+	if os.Getenv("UNISHELL_CLEAN_MULTIPLEXER_HELPER") != "1" {
+		return
+	}
+
+	for {
+		time.Sleep(time.Second)
+	}
+}
+
+func TestCleanupMultiplexerSessionRejectsNormalSession(
+	t *testing.T,
+) {
+	err := (&App{}).CleanupMultiplexerSession(
+		&CleanSession{
+			Metadata: sessionmeta.Metadata{
+				Name: "development",
+				Mode: sessionmeta.ModeNormal,
+			},
+		},
+	)
+
+	if err == nil {
+		t.Fatal(
+			"CleanupMultiplexerSession() returned nil for normal session",
+		)
+	}
+
+	if !strings.Contains(
+		err.Error(),
+		"not a multiplexer session",
+	) {
+		t.Fatalf(
+			"CleanupMultiplexerSession() error = %q, want multiplexer-session error",
+			err,
+		)
+	}
+}
+
+func TestCleanupMultiplexerSessionRejectsMissingMultiplexer(
+	t *testing.T,
+) {
+	err := (&App{}).CleanupMultiplexerSession(
+		&CleanSession{
+			Metadata: sessionmeta.Metadata{
+				Name: "development",
+				Mode: sessionmeta.ModeMultiplexer,
+			},
+		},
+	)
+
+	if err == nil {
+		t.Fatal(
+			"CleanupMultiplexerSession() returned nil for missing multiplexer",
+		)
+	}
+
+	if !strings.Contains(
+		err.Error(),
+		"multiplexer manager is unavailable",
+	) {
+		t.Fatalf(
+			"CleanupMultiplexerSession() error = %q, want unavailable-manager error",
+			err,
+		)
 	}
 }
 
