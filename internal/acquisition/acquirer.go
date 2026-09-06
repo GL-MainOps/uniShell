@@ -38,7 +38,27 @@ func (a Acquirer) Acquire(
 
 	cached, err := a.Cache.Get(ctx, artifact)
 	if err == nil {
-		return cached, nil
+		data, readErr := io.ReadAll(cached)
+		closeErr := cached.Close()
+
+		if readErr != nil {
+			return nil, readErr
+		}
+
+		if closeErr != nil {
+			return nil, closeErr
+		}
+
+		if artifact.Checksum != "" {
+			if err := VerifyChecksum(
+				bytes.NewReader(data),
+				artifact.Checksum,
+			); err != nil {
+				return nil, err
+			}
+		}
+
+		return io.NopCloser(bytes.NewReader(data)), nil
 	}
 
 	if err != ErrCacheMiss {
@@ -60,6 +80,15 @@ func (a Acquirer) Acquire(
 
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrDownloadFailed, err)
+	}
+
+	if artifact.Checksum != "" {
+		if err := VerifyChecksum(
+			bytes.NewReader(downloaded.Bytes()),
+			artifact.Checksum,
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := a.Cache.Put(
