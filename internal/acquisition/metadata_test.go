@@ -236,3 +236,47 @@ asset = "tool-linux-amd64.tar.gz"
 		t.Fatalf("expected asset %q, got %q", "tool-linux-amd64.tar.gz", source.Asset)
 	}
 }
+
+func TestSourceCredentialEnvironmentMetadata(t *testing.T) {
+	const document = `
+[[tools]]
+name = "example"
+
+[[tools.artifacts]]
+platform = "linux"
+architecture = "amd64"
+
+[tools.artifacts.source]
+kind = "github-release"
+
+[tools.artifacts.source.github_release]
+owner = "example"
+repository = "tool"
+release = "latest"
+asset = "tool-linux-amd64.tar.gz"
+credential_env = "UNISHELL_ARTIFACT_TOKEN"
+`
+
+	manifest, err := LoadManifest(strings.NewReader(document))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	tools, err := manifest.BuildTools()
+	if err != nil {
+		t.Fatalf("unexpected conversion error: %v", err)
+	}
+
+	source, ok := tools[0].Artifacts[0].Source.(GitHubReleaseSource)
+	if !ok {
+		t.Fatalf("expected GitHubReleaseSource, got %T", tools[0].Artifacts[0].Source)
+	}
+
+	if source.CredentialEnv != "UNISHELL_ARTIFACT_TOKEN" {
+		t.Fatalf(
+			"expected credential environment variable %q, got %q",
+			"UNISHELL_ARTIFACT_TOKEN",
+			source.CredentialEnv,
+		)
+	}
+}

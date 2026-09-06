@@ -9,7 +9,7 @@ import (
 
 type testDownloader struct{}
 
-func (testDownloader) Download(_ context.Context, _ ResolvedArtifact, dst io.Writer) error {
+func (testDownloader) Download(_ context.Context, _ DownloadRequest, dst io.Writer) error {
 	_, err := io.WriteString(dst, "downloaded")
 	return err
 }
@@ -36,11 +36,16 @@ func TestDownloaderContract(t *testing.T) {
 	var downloader Downloader = testDownloader{}
 
 	var dst strings.Builder
-	err := downloader.Download(context.Background(), ResolvedArtifact{
-		Version:      "1.0.0",
-		Platform:     "linux",
-		Architecture: "amd64",
-		URL:          "https://example.com/tool",
+	err := downloader.Download(context.Background(), DownloadRequest{
+		Artifact: ResolvedArtifact{
+			Version:      "1.0.0",
+			Platform:     "linux",
+			Architecture: "amd64",
+			URL:          "https://example.com/tool",
+		},
+		Headers: map[string]string{
+			"Authorization": "Bearer test-token",
+		},
 	}, &dst)
 	if err != nil {
 		t.Fatalf("unexpected download error: %v", err)

@@ -51,10 +51,11 @@ type Source interface {
 }
 
 type GitHubReleaseSource struct {
-	Owner      string `toml:"owner"`
-	Repository string `toml:"repository"`
-	Release    string `toml:"release"`
-	Asset      string `toml:"asset"`
+	Owner         string `toml:"owner"`
+	Repository    string `toml:"repository"`
+	Release       string `toml:"release"`
+	Asset         string `toml:"asset"`
+	CredentialEnv string `toml:"credential_env"`
 }
 
 func (s GitHubReleaseSource) Kind() SourceKind {
@@ -62,10 +63,11 @@ func (s GitHubReleaseSource) Kind() SourceKind {
 }
 
 type GitHubFileSource struct {
-	Owner      string `toml:"owner"`
-	Repository string `toml:"repository"`
-	Path       string `toml:"path"`
-	Ref        string `toml:"ref"`
+	Owner         string `toml:"owner"`
+	Repository    string `toml:"repository"`
+	Path          string `toml:"path"`
+	Ref           string `toml:"ref"`
+	CredentialEnv string `toml:"credential_env"`
 }
 
 func (s GitHubFileSource) Kind() SourceKind {
@@ -73,7 +75,8 @@ func (s GitHubFileSource) Kind() SourceKind {
 }
 
 type DirectURLSource struct {
-	URL string `toml:"url"`
+	URL           string `toml:"url"`
+	CredentialEnv string `toml:"credential_env"`
 }
 
 func (s DirectURLSource) Kind() SourceKind {
