@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -351,22 +352,37 @@ func TerminateProcessGroup(identity ProcessIdentity) error {
 }
 
 func verifyProcessGroupTerminated(processGroupID int) error {
-	members, err := ProcessGroupLiveMembers(processGroupID)
-	if err != nil {
-		return fmt.Errorf(
-			"verify process group %d termination: %w",
-			processGroupID,
-			err,
-		)
+	const (
+		verificationAttempts = 20
+		verificationInterval = 10 * time.Millisecond
+	)
+
+	var members []int
+
+	for attempt := 0; attempt < verificationAttempts; attempt++ {
+		var err error
+
+		members, err = ProcessGroupLiveMembers(processGroupID)
+		if err != nil {
+			return fmt.Errorf(
+				"verify process group %d termination: %w",
+				processGroupID,
+				err,
+			)
+		}
+
+		if len(members) == 0 {
+			return nil
+		}
+
+		if attempt+1 < verificationAttempts {
+			time.Sleep(verificationInterval)
+		}
 	}
 
-	if len(members) != 0 {
-		return fmt.Errorf(
-			"process group %d still contains processes: %v",
-			processGroupID,
-			members,
-		)
-	}
-
-	return nil
+	return fmt.Errorf(
+		"process group %d still contains processes: %v",
+		processGroupID,
+		members,
+	)
 }
