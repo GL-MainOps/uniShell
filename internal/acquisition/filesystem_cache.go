@@ -104,5 +104,10 @@ func (c FilesystemCache) path(artifact ResolvedArtifact) (string, error) {
 		return "", fmt.Errorf("artifact URL does not provide a cache filename")
 	}
 
-	return filepath.Join(c.Dir, name), nil
+	key, err := cacheKey(artifact)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(c.Dir, name+"-"+key), nil
 }
