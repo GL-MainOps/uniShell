@@ -7,12 +7,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 	"gitlab.com/mainops/uniShell/internal/shell"
@@ -202,27 +205,29 @@ func shellTestRuntime(t *testing.T) *runtime.Session {
 }
 
 type shellTestApplication struct {
-	discoverSession            *app.Session
-	discoverSessions           []*multiplexer.ManagedSession
-	discoverCleanSessions      []*app.CleanSession
-	discoverCleanSessionCalls  int
-	discoverCleanSessionResult [][]*app.CleanSession
-	terminateNormalSessionErr  error
-	terminatedCleanSession     *app.CleanSession
-	discoverErr                error
-	startSession               *app.Session
-	startErr                   error
-	preparedSession            *runtime.Session
-	preparedErr                error
-	createdSession             *app.Session
-	createdErr                 error
-	requestedShell             string
-	requestedMultiplexer       string
-	runtimeSession             *runtime.Session
-	runtimeSessionErr          error
-	authErr                    error
-	createdMultiplexer         string
-	createdStartup             shell.Startup
+	discoverSession              *app.Session
+	discoverSessions             []*multiplexer.ManagedSession
+	discoverCleanSessions        []*app.CleanSession
+	discoverCleanSessionCalls    int
+	discoverCleanSessionResult   [][]*app.CleanSession
+	terminateNormalSessionErr    error
+	terminatedCleanSession       *app.CleanSession
+	cleanedMultiplexerSession    *app.CleanSession
+	cleanupMultiplexerSessionErr error
+	discoverErr                  error
+	startSession                 *app.Session
+	startErr                     error
+	preparedSession              *runtime.Session
+	preparedErr                  error
+	createdSession               *app.Session
+	createdErr                   error
+	requestedShell               string
+	requestedMultiplexer         string
+	runtimeSession               *runtime.Session
+	runtimeSessionErr            error
+	authErr                      error
+	createdMultiplexer           string
+	createdStartup               shell.Startup
 }
 
 func (a *shellTestApplication) StartMultiplexerSession() (*app.Session, error) {
@@ -331,6 +336,13 @@ func (a *shellTestApplication) TerminateNormalSession(
 	return a.terminateNormalSessionErr
 }
 
+func (a *shellTestApplication) CleanupMultiplexerSession(
+	session *app.CleanSession,
+) error {
+	a.cleanedMultiplexerSession = session
+	return a.cleanupMultiplexerSessionErr
+}
+
 type shellTestBackend struct {
 	attached  bool
 	detached  bool
@@ -388,6 +400,441 @@ func (b *shellTestBackend) IsAlive(multiplexer.Session) bool {
 func (b *shellTestBackend) Destroy(multiplexer.Session) error {
 	b.destroyed = true
 	return nil
+}
+
+type cleanLifecycleBackend struct {
+	alive     bool
+	destroyed bool
+	identity  sessionmeta.ProcessIdentity
+}
+
+func (b *cleanLifecycleBackend) Name() string {
+	return "test"
+}
+
+func (b *cleanLifecycleBackend) Capabilities() map[multiplexer.Capability]bool {
+	return map[multiplexer.Capability]bool{
+		multiplexer.CapabilitySessions: true,
+		multiplexer.CapabilityDestroy:  true,
+	}
+}
+
+func (b *cleanLifecycleBackend) Available() bool {
+	return true
+}
+
+func (b *cleanLifecycleBackend) Create(
+	multiplexer.Session,
+) error {
+	b.alive = true
+	return nil
+}
+
+func (b *cleanLifecycleBackend) ProcessIdentity(
+	multiplexer.Session,
+) (sessionmeta.ProcessIdentity, error) {
+	return b.identity, nil
+}
+
+func (b *cleanLifecycleBackend) Attach(
+	multiplexer.Session,
+) error {
+	return nil
+}
+
+func (b *cleanLifecycleBackend) Detach(
+	multiplexer.Session,
+) error {
+	return nil
+}
+
+func (b *cleanLifecycleBackend) IsAlive(
+	multiplexer.Session,
+) bool {
+	return b.alive
+}
+
+func (b *cleanLifecycleBackend) Destroy(
+	multiplexer.Session,
+) error {
+	b.destroyed = true
+	b.alive = false
+	return nil
+}
+
+func startCleanLifecycleProcessGroupHelper(
+	t *testing.T,
+) *exec.Cmd {
+	t.Helper()
+
+	cmd := exec.Command(
+		os.Args[0],
+		"-test.run=^TestCleanLifecycleProcessGroupHelper$",
+	)
+
+	cmd.Env = append(
+		os.Environ(),
+		"UNISHELL_CLEAN_LIFECYCLE_HELPER=1",
+	)
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf(
+			"start clean lifecycle process-group helper: %v",
+			err,
+		)
+	}
+
+	return cmd
+}
+
+func TestCleanLifecycleProcessGroupHelper(
+	t *testing.T,
+) {
+	if os.Getenv("UNISHELL_CLEAN_LIFECYCLE_HELPER") != "1" {
+		return
+	}
+
+	for {
+		time.Sleep(time.Second)
+	}
+}
+
+func cleanLifecycleProcessIdentity(
+	t *testing.T,
+	cmd *exec.Cmd,
+) sessionmeta.ProcessIdentity {
+	t.Helper()
+
+	startTicks, err := sessionmeta.ProcessStartTicks(
+		cmd.Process.Pid,
+	)
+	if err != nil {
+		t.Fatalf(
+			"ProcessStartTicks(%d) returned error: %v",
+			cmd.Process.Pid,
+			err,
+		)
+	}
+
+	processGroupID, err := sessionmeta.ProcessGroupID(
+		cmd.Process.Pid,
+	)
+	if err != nil {
+		t.Fatalf(
+			"ProcessGroupID(%d) returned error: %v",
+			cmd.Process.Pid,
+			err,
+		)
+	}
+
+	return sessionmeta.ProcessIdentity{
+		PID:               cmd.Process.Pid,
+		ProcessStartTicks: startTicks,
+		ProcessGroupID:    processGroupID,
+	}
+}
+
+func TestRunCleanTerminatesConfirmedMultiplexerSessionEndToEnd(
+	t *testing.T,
+) {
+	root := t.TempDir()
+	runtimeRoot := filepath.Join(
+		root,
+		"runtime",
+		"1.0.0",
+	)
+
+	runtimePath := filepath.Join(
+		runtimeRoot,
+		"session",
+	)
+
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf(
+			"create runtime path %q: %v",
+			runtimePath,
+			err,
+		)
+	}
+
+	cmd := startCleanLifecycleProcessGroupHelper(t)
+	defer func() {
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+		}
+
+		_ = cmd.Wait()
+	}()
+
+	identity := cleanLifecycleProcessIdentity(t, cmd)
+
+	backend := &cleanLifecycleBackend{
+		identity: identity,
+		alive:    true,
+	}
+
+	manager := multiplexer.NewManager(
+		multiplexer.NewRegistry(backend),
+	)
+
+	t.Setenv(
+		"UNISHELL_AUTH_TOKEN",
+		"test-fixture-token",
+	)
+
+	application, err := app.New(app.Options{
+		Version:     "1.0.0",
+		Commit:      "test",
+		Root:        root,
+		Multiplexer: manager,
+	})
+	if err != nil {
+		t.Fatalf(
+			"app.New() returned error: %v",
+			err,
+		)
+	}
+
+	_, err = manager.Create(
+		"test",
+		"development",
+		"",
+		runtimePath,
+		"/tmp/test.endpoint",
+		"",
+		"",
+		nil,
+		nil,
+		api.Options{},
+	)
+	if err != nil {
+		t.Fatalf(
+			"manager.Create() returned error: %v",
+			err,
+		)
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf(
+			"os.Pipe() returned error: %v",
+			err,
+		)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("y\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	if err := runClean(
+		application,
+		[]string{"--target", "development"},
+	); err != nil {
+		t.Fatalf(
+			"runClean() returned error: %v",
+			err,
+		)
+	}
+
+	if !backend.destroyed {
+		t.Fatal(
+			"runClean() did not destroy the multiplexer backend",
+		)
+	}
+
+	if _, err := os.Stat(runtimePath); !os.IsNotExist(err) {
+		t.Fatalf(
+			"runtime path still exists after clean: %v",
+			err,
+		)
+	}
+
+	if err := cmd.Wait(); err == nil {
+		t.Fatal(
+			"managed process-group helper remained alive after clean",
+		)
+	}
+}
+
+func TestRunCleanTerminatesConfirmedMultiplexerSession(
+	t *testing.T,
+) {
+	target := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "development-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeMultiplexer,
+			Name:              "development",
+			Multiplexer:       "test",
+		},
+		RuntimeDir: "/tmp/development",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			target,
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf(
+			"os.Pipe() returned error: %v",
+			err,
+		)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("y\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	if err := runClean(
+		application,
+		[]string{"--target", "development"},
+	); err != nil {
+		t.Fatalf(
+			"runClean() returned error: %v",
+			err,
+		)
+	}
+
+	if application.cleanedMultiplexerSession != target {
+		t.Fatal(
+			"runClean() did not clean the confirmed multiplexer session",
+		)
+	}
+
+	if application.terminatedCleanSession != nil {
+		t.Fatal(
+			"runClean() incorrectly used normal-session termination",
+		)
+	}
+}
+
+func TestRunCleanReportsMultiplexerCleanupError(
+	t *testing.T,
+) {
+	target := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:                "development-id",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeMultiplexer,
+			Name:              "development",
+			Multiplexer:       "test",
+		},
+		RuntimeDir: "/tmp/development",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			target,
+		},
+		cleanupMultiplexerSessionErr: errors.New(
+			"multiplexer cleanup failed",
+		),
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf(
+			"os.Pipe() returned error: %v",
+			err,
+		)
+	}
+
+	defer reader.Close()
+
+	if _, err := writer.WriteString("y\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	err = runClean(
+		application,
+		[]string{"--target", "development"},
+	)
+
+	if err == nil {
+		t.Fatal(
+			"runClean() returned nil after multiplexer cleanup failure",
+		)
+	}
+
+	if !strings.Contains(
+		err.Error(),
+		"multiplexer cleanup failed",
+	) {
+		t.Fatalf(
+			"runClean() error = %q, want multiplexer cleanup failure",
+			err,
+		)
+	}
 }
 
 func TestRunShellAttachesExistingSession(t *testing.T) {

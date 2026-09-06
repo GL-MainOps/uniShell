@@ -610,6 +610,7 @@ func parseCleanArgs(args []string) (cleanOptions, error) {
 type cleanApplication interface {
 	DiscoverCleanSessions() ([]*app.CleanSession, error)
 	TerminateNormalSession(*app.CleanSession) error
+	CleanupMultiplexerSession(*app.CleanSession) error
 }
 
 var errCleanSelectionCancelled = errors.New(
@@ -775,21 +776,34 @@ func runClean(
 		)
 	}
 
-	if revalidatedTarget.Metadata.Mode != sessionmeta.ModeNormal {
+	switch revalidatedTarget.Metadata.Mode {
+	case sessionmeta.ModeNormal:
+		if err := application.TerminateNormalSession(
+			revalidatedTarget,
+		); err != nil {
+			return fmt.Errorf(
+				"terminate clean session %q: %w",
+				revalidatedTarget.Metadata.Name,
+				err,
+			)
+		}
+
+	case sessionmeta.ModeMultiplexer:
+		if err := application.CleanupMultiplexerSession(
+			revalidatedTarget,
+		); err != nil {
+			return fmt.Errorf(
+				"cleanup multiplexer session %q: %w",
+				revalidatedTarget.Metadata.Name,
+				err,
+			)
+		}
+
+	default:
 		return fmt.Errorf(
 			"clean session %q uses unsupported termination mode %q",
 			revalidatedTarget.Metadata.Name,
 			revalidatedTarget.Metadata.Mode,
-		)
-	}
-
-	if err := application.TerminateNormalSession(
-		revalidatedTarget,
-	); err != nil {
-		return fmt.Errorf(
-			"terminate clean session %q: %w",
-			revalidatedTarget.Metadata.Name,
-			err,
 		)
 	}
 
