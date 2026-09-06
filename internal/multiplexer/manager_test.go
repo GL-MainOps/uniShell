@@ -1585,6 +1585,97 @@ func TestManagerCleanupPreservesRuntimeWhenBackendUnavailable(
 	}
 }
 
+func TestManagerCleanupPreservesRuntimeWhenProcessIdentityFails(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	prepareManagerTestRuntime(t, runtimePath)
+
+	cmd := startManagerProcessGroupHelper(t)
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+
+	identity := managerProcessIdentity(t, cmd)
+
+	backend := &managerTestBackend{
+		name:            "test",
+		available:       true,
+		alive:           false,
+		processIdentity: identity,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+		"",
+		"",
+		nil,
+		nil,
+		api.Options{},
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	backend.alive = false
+
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
+	if err != nil {
+		t.Fatalf(
+			"ReadMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	metadata.ProcessStartTicks++
+
+	if err := sessionmeta.WriteMetadata(runtimePath, metadata); err != nil {
+		t.Fatalf(
+			"WriteMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	err = manager.Cleanup(runtimePath)
+	if err == nil {
+		t.Fatal(
+			"Cleanup() returned nil for mismatched persisted process identity",
+		)
+	}
+
+	if !strings.Contains(err.Error(), "process identity mismatch") {
+		t.Fatalf(
+			"Cleanup() error = %q, want process identity mismatch",
+			err,
+		)
+	}
+
+	if _, err := os.Stat(runtimePath); err != nil {
+		t.Fatalf(
+			"runtime path was removed after process identity failure: %v",
+			err,
+		)
+	}
+
+	if backend.destroyed {
+		t.Fatal(
+			"backend session was destroyed after process identity failure",
+		)
+	}
+}
+
 func TestManagerCreatePersistsShell(t *testing.T) {
 	runtimePath := filepath.Join(
 		t.TempDir(),
