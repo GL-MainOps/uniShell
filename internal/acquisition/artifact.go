@@ -33,12 +33,51 @@ type Artifact struct {
 	Version      string
 	Platform     Platform
 	Architecture Architecture
-	Source       Source
+	ArchiveType  string
+	BinaryPath   string
 	Checksum     string
+	Validation   ValidationRequirements
+	Source       Source
+}
+
+type ValidationRequirements struct {
+	StaticELF  bool `toml:"static_elf"`
+	Musl       bool `toml:"musl"`
+	Executable bool `toml:"executable"`
 }
 
 type Source interface {
 	Kind() SourceKind
+}
+
+type GitHubReleaseSource struct {
+	Owner      string
+	Repository string
+	Release    string
+	Asset      string
+}
+
+func (s GitHubReleaseSource) Kind() SourceKind {
+	return SourceKindGitHubRelease
+}
+
+type GitHubFileSource struct {
+	Owner      string `toml:"owner"`
+	Repository string `toml:"repository"`
+	Path       string `toml:"path"`
+	Ref        string `toml:"ref"`
+}
+
+func (s GitHubFileSource) Kind() SourceKind {
+	return SourceKindGitHubFile
+}
+
+type DirectURLSource struct {
+	URL string `toml:"url"`
+}
+
+func (s DirectURLSource) Kind() SourceKind {
+	return SourceKindDirectURL
 }
 
 type ResolvedArtifact struct {
