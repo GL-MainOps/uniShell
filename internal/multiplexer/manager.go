@@ -212,6 +212,12 @@ func (m *Manager) Destroy(
 		return err
 	}
 
+	processIdentity := sessionmeta.ProcessIdentity{
+		PID:               metadata.PID,
+		ProcessStartTicks: metadata.ProcessStartTicks,
+		ProcessGroupID:    metadata.ProcessGroupID,
+	}
+
 	backend, ok := m.registry.Get(
 		metadata.Multiplexer,
 	)
@@ -240,6 +246,14 @@ func (m *Manager) Destroy(
 				err,
 			)
 		}
+	}
+
+	if err := sessionmeta.TerminateProcessGroup(processIdentity); err != nil {
+		return fmt.Errorf(
+			"terminate %s session process group: %w",
+			metadata.Multiplexer,
+			err,
+		)
 	}
 
 	return sessionmeta.RemoveMetadata(runtimePath)
@@ -508,6 +522,12 @@ func (m *Manager) Cleanup(
 		return err
 	}
 
+	processIdentity := sessionmeta.ProcessIdentity{
+		PID:               metadata.PID,
+		ProcessStartTicks: metadata.ProcessStartTicks,
+		ProcessGroupID:    metadata.ProcessGroupID,
+	}
+
 	backend, ok := m.registry.Get(
 		metadata.Multiplexer,
 	)
@@ -544,6 +564,14 @@ func (m *Manager) Cleanup(
 				err,
 			)
 		}
+	}
+
+	if err := sessionmeta.TerminateProcessGroup(processIdentity); err != nil {
+		return fmt.Errorf(
+			"terminate %s session process group: %w",
+			metadata.Multiplexer,
+			err,
+		)
 	}
 
 	if err := os.RemoveAll(runtimePath); err != nil {

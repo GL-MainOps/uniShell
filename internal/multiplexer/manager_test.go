@@ -25,6 +25,7 @@ type managerTestBackend struct {
 	created        bool
 	createdSession Session
 	destroyed      bool
+	destroyErr     error
 
 	processIdentity sessionmeta.ProcessIdentity
 	identityError   error
@@ -68,6 +69,11 @@ func (b *managerTestBackend) IsAlive(Session) bool {
 
 func (b *managerTestBackend) Destroy(Session) error {
 	b.destroyed = true
+
+	if b.destroyErr != nil {
+		return b.destroyErr
+	}
+
 	b.alive = false
 	return nil
 }
@@ -1434,10 +1440,19 @@ func TestManagerCleanupDestroysLiveSessionAndRemovesRuntime(
 
 	prepareManagerTestRuntime(t, runtimePath)
 
+	cmd := startManagerProcessGroupHelper(t)
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+
+	identity := managerProcessIdentity(t, cmd)
+
 	backend := &managerTestBackend{
-		name:      "test",
-		available: true,
-		alive:     true,
+		name:            "test",
+		available:       true,
+		alive:           true,
+		processIdentity: identity,
 	}
 
 	manager := NewManager(
@@ -1460,7 +1475,10 @@ func TestManagerCleanupDestroysLiveSessionAndRemovesRuntime(
 	}
 
 	if err := manager.Cleanup(runtimePath); err != nil {
-		t.Fatalf("Cleanup() returned error: %v", err)
+		t.Fatalf(
+			"Cleanup() returned error: %v",
+			err,
+		)
 	}
 
 	if !backend.destroyed {
@@ -1476,6 +1494,12 @@ func TestManagerCleanupDestroysLiveSessionAndRemovesRuntime(
 			err,
 		)
 	}
+
+	if err := cmd.Wait(); err == nil {
+		t.Fatal(
+			"managed process exited successfully after process-group cleanup",
+		)
+	}
 }
 
 func TestManagerCleanupRemovesStaleSessionRuntime(
@@ -1488,10 +1512,23 @@ func TestManagerCleanupRemovesStaleSessionRuntime(
 
 	prepareManagerTestRuntime(t, runtimePath)
 
+	cmd := startManagerProcessGroupHelper(t)
+
+	identity := managerProcessIdentity(t, cmd)
+
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatalf("kill stale helper: %v", err)
+	}
+
+	if err := cmd.Wait(); err == nil {
+		t.Fatal("stale helper exited successfully")
+	}
+
 	backend := &managerTestBackend{
-		name:      "test",
-		available: true,
-		alive:     false,
+		name:            "test",
+		available:       true,
+		alive:           false,
+		processIdentity: identity,
 	}
 
 	manager := NewManager(
@@ -1672,6 +1709,80 @@ func TestManagerCleanupPreservesRuntimeWhenProcessIdentityFails(
 	if backend.destroyed {
 		t.Fatal(
 			"backend session was destroyed after process identity failure",
+		)
+	}
+}
+
+func TestManagerCleanupPreservesRuntimeWhenDestroyFails(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	prepareManagerTestRuntime(t, runtimePath)
+
+	cmd := startManagerProcessGroupHelper(t)
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+
+	identity := managerProcessIdentity(t, cmd)
+
+	backend := &managerTestBackend{
+		name:            "test",
+		available:       true,
+		alive:           true,
+		destroyErr:      errors.New("destroy failed"),
+		processIdentity: identity,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	if _, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		endpoint,
+		"",
+		"",
+		nil,
+		nil,
+		api.Options{},
+	); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	err := manager.Cleanup(runtimePath)
+	if err == nil {
+		t.Fatal(
+			"Cleanup() returned nil when backend destruction failed",
+		)
+	}
+
+	if !strings.Contains(err.Error(), "destroy failed") {
+		t.Fatalf(
+			"Cleanup() error = %q, want destroy failure",
+			err,
+		)
+	}
+
+	if _, err := os.Stat(runtimePath); err != nil {
+		t.Fatalf(
+			"runtime was removed after destroy failure: %v",
+			err,
+		)
+	}
+
+	if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
+		t.Fatalf(
+			"managed process was terminated after destroy failure: %v",
+			err,
 		)
 	}
 }
