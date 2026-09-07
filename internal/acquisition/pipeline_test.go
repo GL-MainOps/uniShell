@@ -1,0 +1,380 @@
+package acquisition
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+type pipelineStager struct {
+	calls    int
+	artifact Artifact
+	data     string
+	err      error
+}
+
+func (s *pipelineStager) Stage(
+	_ context.Context,
+	artifact Artifact,
+	reader io.Reader,
+) (StagedArtifact, error) {
+	s.calls++
+	s.artifact = artifact
+
+	if s.err != nil {
+		return StagedArtifact{}, s.err
+	}
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return StagedArtifact{}, err
+	}
+
+	s.data = string(data)
+
+	return StagedArtifact{
+		RootPath:   "/tmp/staged",
+		BinaryPath: "/tmp/staged/tool",
+		BinaryName: artifact.BinaryName,
+	}, nil
+}
+
+func pipelineResolvedArtifact(content string) ResolvedArtifact {
+	sum := sha256.Sum256([]byte(content))
+
+	return ResolvedArtifact{
+		Version:      "1.0.0",
+		Platform:     Platform("linux"),
+		Architecture: Architecture("amd64"),
+		URL:          "https://example.com/tool",
+		Checksum:     hex.EncodeToString(sum[:]),
+	}
+}
+
+func pipelineArtifact() Artifact {
+	return Artifact{
+		Version:      "1.0.0",
+		Platform:     Platform("linux"),
+		Architecture: Architecture("amd64"),
+		BinaryName:   "tool",
+		Source: DirectURLSource{
+			URL: "https://example.com/tool",
+		},
+	}
+}
+
+func TestPipelineAcquireAndStage(t *testing.T) {
+	content := "downloaded artifact"
+
+	downloader := &fakeDownloader{
+		content: content,
+	}
+	cache := &fakeCache{
+		getErr: ErrCacheMiss,
+	}
+	stager := &pipelineStager{}
+
+	pipeline := NewPipeline(
+		NewAcquirer(downloader, cache),
+		stager,
+	)
+
+	artifact := pipelineArtifact()
+	resolved := pipelineResolvedArtifact(content)
+
+	staged, err := pipeline.AcquireAndStage(
+		context.Background(),
+		artifact,
+		resolved,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("AcquireAndStage() error = %v", err)
+	}
+
+	if stager.calls != 1 {
+		t.Fatalf("stager calls = %d, want 1", stager.calls)
+	}
+
+	if stager.data != content {
+		t.Fatalf(
+			"staged content = %q, want %q",
+			stager.data,
+			content,
+		)
+	}
+
+	if stager.artifact.BinaryName != "tool" {
+		t.Fatalf(
+			"staged artifact BinaryName = %q, want %q",
+			stager.artifact.BinaryName,
+			"tool",
+		)
+	}
+
+	if staged.BinaryName != "tool" {
+		t.Fatalf(
+			"result BinaryName = %q, want %q",
+			staged.BinaryName,
+			"tool",
+		)
+	}
+
+	if downloader.calls != 1 {
+		t.Fatalf(
+			"downloader calls = %d, want 1",
+			downloader.calls,
+		)
+	}
+
+	if cache.putCalls != 1 {
+		t.Fatalf(
+			"cache put calls = %d, want 1",
+			cache.putCalls,
+		)
+	}
+}
+
+func TestPipelineUsesCachedArtifact(t *testing.T) {
+	content := "cached artifact"
+
+	sum := sha256.Sum256([]byte(content))
+
+	artifact := pipelineArtifact()
+	resolved := pipelineResolvedArtifact(content)
+	resolved.Checksum = hex.EncodeToString(sum[:])
+
+	downloader := &fakeDownloader{
+		content: "should not download",
+	}
+	cache := &fakeCache{
+		content: content,
+	}
+	stager := &pipelineStager{}
+
+	pipeline := NewPipeline(
+		NewAcquirer(downloader, cache),
+		stager,
+	)
+
+	_, err := pipeline.AcquireAndStage(
+		context.Background(),
+		artifact,
+		resolved,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("AcquireAndStage() error = %v", err)
+	}
+
+	if downloader.calls != 0 {
+		t.Fatalf(
+			"downloader calls = %d, want 0",
+			downloader.calls,
+		)
+	}
+
+	if stager.calls != 1 {
+		t.Fatalf(
+			"stager calls = %d, want 1",
+			stager.calls,
+		)
+	}
+
+	if stager.data != content {
+		t.Fatalf(
+			"staged content = %q, want %q",
+			stager.data,
+			content,
+		)
+	}
+}
+
+func TestPipelineDoesNotStageAfterAcquisitionFailure(t *testing.T) {
+	downloadErr := errors.New("download failure")
+
+	downloader := &fakeDownloader{
+		err: downloadErr,
+	}
+	cache := &fakeCache{
+		getErr: ErrCacheMiss,
+	}
+	stager := &pipelineStager{}
+
+	pipeline := NewPipeline(
+		NewAcquirer(downloader, cache),
+		stager,
+	)
+
+	_, err := pipeline.AcquireAndStage(
+		context.Background(),
+		pipelineArtifact(),
+		pipelineResolvedArtifact("downloaded artifact"),
+		nil,
+	)
+	if err == nil {
+		t.Fatal("AcquireAndStage() error = nil, want download failure")
+	}
+
+	if !errors.Is(err, downloadErr) {
+		t.Fatalf(
+			"AcquireAndStage() error = %v, want download failure",
+			err,
+		)
+	}
+
+	if stager.calls != 0 {
+		t.Fatalf(
+			"stager calls = %d, want 0",
+			stager.calls,
+		)
+	}
+}
+
+func TestPipelinePropagatesStagingFailure(t *testing.T) {
+	stageErr := errors.New("staging failure")
+
+	downloader := &fakeDownloader{
+		content: "downloaded artifact",
+	}
+	cache := &fakeCache{
+		getErr: ErrCacheMiss,
+	}
+	stager := &pipelineStager{
+		err: stageErr,
+	}
+
+	pipeline := NewPipeline(
+		NewAcquirer(downloader, cache),
+		stager,
+	)
+
+	_, err := pipeline.AcquireAndStage(
+		context.Background(),
+		pipelineArtifact(),
+		pipelineResolvedArtifact("downloaded artifact"),
+		nil,
+	)
+	if err == nil {
+		t.Fatal("AcquireAndStage() error = nil, want staging failure")
+	}
+
+	if !errors.Is(err, stageErr) {
+		t.Fatalf(
+			"AcquireAndStage() error = %v, want staging failure",
+			err,
+		)
+	}
+}
+
+func TestPipelineRejectsNilStager(t *testing.T) {
+	downloader := &fakeDownloader{
+		content: "downloaded artifact",
+	}
+	cache := &fakeCache{
+		getErr: ErrCacheMiss,
+	}
+
+	pipeline := NewPipeline(
+		NewAcquirer(downloader, cache),
+		nil,
+	)
+
+	_, err := pipeline.AcquireAndStage(
+		context.Background(),
+		pipelineArtifact(),
+		pipelineResolvedArtifact("downloaded artifact"),
+		nil,
+	)
+	if err == nil {
+		t.Fatal("AcquireAndStage() error = nil, want nil stager error")
+	}
+
+	if !strings.Contains(
+		err.Error(),
+		"stager is nil",
+	) {
+		t.Fatalf(
+			"AcquireAndStage() error = %v, want stager is nil",
+			err,
+		)
+	}
+
+	if downloader.calls != 0 {
+		t.Fatalf(
+			"downloader calls = %d, want 0",
+			downloader.calls,
+		)
+	}
+}
+
+func TestPipelineStagesRealFilesystemArtifact(t *testing.T) {
+	content := "binary"
+
+	sum := sha256.Sum256([]byte(content))
+
+	artifact := pipelineArtifact()
+	artifact.BinaryName = "tool"
+
+	resolved := pipelineResolvedArtifact(content)
+	resolved.Checksum = hex.EncodeToString(sum[:])
+
+	baseDir := t.TempDir()
+	stager := NewFilesystemStager(baseDir)
+
+	pipeline := NewPipeline(
+		NewAcquirer(
+			&fakeDownloader{
+				content: content,
+			},
+			&fakeCache{
+				getErr: ErrCacheMiss,
+			},
+		),
+		stager,
+	)
+
+	staged, err := pipeline.AcquireAndStage(
+		context.Background(),
+		artifact,
+		resolved,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("AcquireAndStage() error = %v", err)
+	}
+	defer os.RemoveAll(staged.RootPath)
+
+	wantPath := filepath.Join(
+		staged.RootPath,
+		"tool",
+	)
+
+	if staged.BinaryPath != wantPath {
+		t.Fatalf(
+			"BinaryPath = %q, want %q",
+			staged.BinaryPath,
+			wantPath,
+		)
+	}
+
+	data, err := os.ReadFile(staged.BinaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	if !bytes.Equal(data, []byte(content)) {
+		t.Fatalf(
+			"staged binary = %q, want %q",
+			data,
+			content,
+		)
+	}
+}
