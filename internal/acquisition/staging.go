@@ -98,7 +98,11 @@ func (s FilesystemStager) Stage(
 			return StagedArtifact{}, err
 		}
 
-		binaryPath = filepath.Join(root, artifact.BinaryPath)
+		binaryPath, err = selectStagedBinary(root, artifact.BinaryPath)
+		if err != nil {
+			os.RemoveAll(root)
+			return StagedArtifact{}, err
+		}
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -127,6 +131,24 @@ func safeArchiveTarget(root, name string) (string, error) {
 
 	if !unishellruntime.IsWithinRoot(paths, target) {
 		return "", fmt.Errorf("archive entry path escapes staging root: %q", name)
+	}
+
+	return target, nil
+}
+
+func selectStagedBinary(root, binaryPath string) (string, error) {
+	target, err := safeArchiveTarget(root, binaryPath)
+	if err != nil {
+		return "", err
+	}
+
+	info, err := os.Stat(target)
+	if err != nil {
+		return "", fmt.Errorf("staged binary path %q is unavailable: %w", binaryPath, err)
+	}
+
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("staged binary path %q is not a regular file", binaryPath)
 	}
 
 	return target, nil

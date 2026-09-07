@@ -379,6 +379,117 @@ func TestFilesystemStagerStagesZipArtifact(t *testing.T) {
 	}
 }
 
+func TestFilesystemStagerSelectsBinaryPath(t *testing.T) {
+	stager := NewFilesystemStager(t.TempDir())
+
+	archiveData := createTar(t, map[string]string{
+		"zellij":       "binary",
+		"README":       "documentation",
+		"other/helper": "helper",
+	})
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "tar",
+		BinaryPath:   "zellij",
+		BinaryName:   "zellij",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	staged, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err != nil {
+		t.Fatalf("Stage() error = %v", err)
+	}
+
+	data, err := os.ReadFile(staged.BinaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile(BinaryPath) error = %v", err)
+	}
+
+	if string(data) != "binary" {
+		t.Fatalf("BinaryPath content = %q, want %q", data, "binary")
+	}
+
+	if staged.BinaryPath != filepath.Join(staged.RootPath, "zellij") {
+		t.Fatalf(
+			"BinaryPath = %q, want %q",
+			staged.BinaryPath,
+			filepath.Join(staged.RootPath, "zellij"),
+		)
+	}
+}
+
+func TestFilesystemStagerRejectsMissingBinaryPath(t *testing.T) {
+	stager := NewFilesystemStager(t.TempDir())
+
+	archiveData := createTar(t, map[string]string{
+		"README": "documentation",
+	})
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "tar",
+		BinaryPath:   "zellij",
+		BinaryName:   "zellij",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	_, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err == nil {
+		t.Fatal("Stage() returned nil error, want missing binary path error")
+	}
+
+	if !strings.Contains(err.Error(), `staged binary path "zellij" is unavailable`) {
+		t.Fatalf("Stage() error = %v, want missing binary path error", err)
+	}
+}
+
+func TestFilesystemStagerRejectsMissingZipBinaryPath(t *testing.T) {
+	stager := NewFilesystemStager(t.TempDir())
+
+	archiveData := createZip(t, map[string]string{
+		"README": "documentation",
+	})
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "zip",
+		BinaryPath:   "zellij",
+		BinaryName:   "zellij",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	_, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err == nil {
+		t.Fatal("Stage() returned nil error, want missing binary path error")
+	}
+
+	if !strings.Contains(err.Error(), `staged binary path "zellij" is unavailable`) {
+		t.Fatalf("Stage() error = %v, want missing binary path error", err)
+	}
+}
+
 func TestFilesystemStagerRejectsTarPathTraversal(t *testing.T) {
 	stager := NewFilesystemStager(t.TempDir())
 
