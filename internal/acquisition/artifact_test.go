@@ -135,6 +135,21 @@ func TestArtifactDirectArtifact(t *testing.T) {
 	}
 }
 
+func TestArtifactRejectsMissingBinaryName(t *testing.T) {
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	if err := artifact.Validate(); err == nil {
+		t.Fatal("expected validation error for missing binary name")
+	}
+}
+
 func TestResolvedArtifactValidate(t *testing.T) {
 	valid := ResolvedArtifact{
 		Version:      "1.0.0",

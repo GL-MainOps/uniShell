@@ -68,13 +68,22 @@ func (s FilesystemStager) Stage(
 	var binaryPath string
 
 	if artifact.ArchiveType == "" {
-		binaryPath = filepath.Join(root, artifact.BinaryName)
+		binaryPath, err = safeArchiveTarget(root, artifact.BinaryName)
+		if err != nil {
+			os.RemoveAll(root)
+			return StagedArtifact{}, fmt.Errorf(
+				"invalid binary name %q: %w",
+				artifact.BinaryName,
+				err,
+			)
+		}
 
 		file, err := os.OpenFile(
 			binaryPath,
 			os.O_WRONLY|os.O_CREATE|os.O_EXCL,
 			0700,
 		)
+
 		if err != nil {
 			os.RemoveAll(root)
 			return StagedArtifact{}, err
@@ -176,6 +185,19 @@ func canonicalizeStagedBinary(
 
 	if selectedPath == target {
 		return target, nil
+	}
+
+	if _, err := os.Lstat(target); err == nil {
+		return "", fmt.Errorf(
+			"canonical binary target %q already exists",
+			binaryName,
+		)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf(
+			"check canonical binary target %q: %w",
+			binaryName,
+			err,
+		)
 	}
 
 	if err := os.Rename(selectedPath, target); err != nil {

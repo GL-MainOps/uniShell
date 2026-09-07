@@ -121,6 +121,10 @@ func (a Artifact) Validate() error {
 		return fmt.Errorf("%w: architecture is required", ErrInvalidArtifact)
 	}
 
+	if a.BinaryName == "" {
+		return fmt.Errorf("%w: binary name is required", ErrInvalidArtifact)
+	}
+
 	if a.Source == nil {
 		return fmt.Errorf("%w: source is required", ErrInvalidArtifact)
 	}

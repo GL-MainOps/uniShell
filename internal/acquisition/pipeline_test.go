@@ -315,6 +315,48 @@ func TestPipelineRejectsNilStager(t *testing.T) {
 	}
 }
 
+func TestPipelineRejectsCanceledContextBeforeAcquisition(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	downloader := &fakeDownloader{
+		content: "downloaded artifact",
+	}
+	cache := &fakeCache{
+		getErr: ErrCacheMiss,
+	}
+	stager := &pipelineStager{}
+
+	pipeline := NewPipeline(
+		NewAcquirer(downloader, cache),
+		stager,
+	)
+
+	_, err := pipeline.AcquireAndStage(
+		ctx,
+		pipelineArtifact(),
+		pipelineResolvedArtifact("downloaded artifact"),
+		nil,
+	)
+	if err == nil {
+		t.Fatal("AcquireAndStage() error = nil, want context cancellation")
+	}
+
+	if !errors.Is(err, ErrDownloadFailed) {
+		t.Fatalf(
+			"AcquireAndStage() error = %v, want download failure",
+			err,
+		)
+	}
+
+	if stager.calls != 0 {
+		t.Fatalf(
+			"stager calls = %d, want 0",
+			stager.calls,
+		)
+	}
+}
+
 func TestPipelineStagesRealFilesystemArtifact(t *testing.T) {
 	content := "binary"
 

@@ -57,6 +57,66 @@ func TestFilesystemStagerStagesDirectArtifact(t *testing.T) {
 	}
 }
 
+func TestFilesystemStagerRejectsInvalidDirectBinaryName(t *testing.T) {
+	stager := NewFilesystemStager(t.TempDir())
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "",
+		BinaryName:   "../zellij",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	_, err := stager.Stage(
+		context.Background(),
+		artifact,
+		strings.NewReader("binary"),
+	)
+	if err == nil {
+		t.Fatal("Stage() returned nil error, want invalid binary name error")
+	}
+
+	if !strings.Contains(err.Error(), "archive entry path escapes staging root") {
+		t.Fatalf(
+			"Stage() error = %v, want binary name containment error",
+			err,
+		)
+	}
+}
+
+func TestFilesystemStagerRejectsAbsoluteDirectBinaryName(t *testing.T) {
+	stager := NewFilesystemStager(t.TempDir())
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "",
+		BinaryName:   "/tmp/zellij",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	_, err := stager.Stage(
+		context.Background(),
+		artifact,
+		strings.NewReader("binary"),
+	)
+	if err == nil {
+		t.Fatal("Stage() returned nil error, want absolute binary name error")
+	}
+
+	if !strings.Contains(err.Error(), "archive entry path is absolute") {
+		t.Fatalf(
+			"Stage() error = %v, want absolute binary name error",
+			err,
+		)
+	}
+}
+
 func TestFilesystemStagerRejectsArchive(t *testing.T) {
 	stager := NewFilesystemStager(t.TempDir())
 
@@ -417,6 +477,42 @@ func TestFilesystemStagerSelectsBinaryPath(t *testing.T) {
 	)); !os.IsNotExist(err) {
 		t.Fatalf(
 			"original archive binary still exists, err = %v",
+			err,
+		)
+	}
+}
+
+func TestFilesystemStagerRejectsCanonicalBinaryCollision(t *testing.T) {
+	stager := NewFilesystemStager(t.TempDir())
+
+	archiveData := createTar(t, map[string]string{
+		"zellij-0.45.1/zellij": "selected-binary",
+		"zellij":               "existing-binary",
+	})
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "tar",
+		BinaryPath:   "zellij-0.45.1/zellij",
+		BinaryName:   "zellij",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	_, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err == nil {
+		t.Fatal("Stage() returned nil error, want canonical binary collision error")
+	}
+
+	if !strings.Contains(err.Error(), "canonical binary target") {
+		t.Fatalf(
+			"Stage() error = %v, want canonical binary collision error",
 			err,
 		)
 	}
