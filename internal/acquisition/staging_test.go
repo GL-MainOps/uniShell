@@ -2,6 +2,7 @@ package acquisition
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -62,7 +63,7 @@ func TestFilesystemStagerRejectsArchive(t *testing.T) {
 	artifact := Artifact{
 		Platform:     "linux",
 		Architecture: "amd64",
-		ArchiveType:  "zip",
+		ArchiveType:  "7z",
 		BinaryName:   "example",
 		Source: testSource{
 			kind: SourceKindDirectURL,
@@ -96,6 +97,234 @@ func TestFilesystemStagerStagesTarGzArtifact(t *testing.T) {
 		Platform:     "linux",
 		Architecture: "amd64",
 		ArchiveType:  "tar.gz",
+		BinaryPath:   "example-1.0.0-linux-amd64/example",
+		BinaryName:   "example",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	staged, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err != nil {
+		t.Fatalf("Stage() returned error: %v", err)
+	}
+	defer os.RemoveAll(staged.RootPath)
+
+	if staged.BinaryName != "example" {
+		t.Fatalf("BinaryName = %q, want %q", staged.BinaryName, "example")
+	}
+
+	wantPath := filepath.Join(
+		staged.RootPath,
+		"example-1.0.0-linux-amd64",
+		"example",
+	)
+	if staged.BinaryPath != wantPath {
+		t.Fatalf("BinaryPath = %q, want %q", staged.BinaryPath, wantPath)
+	}
+
+	data, err := os.ReadFile(staged.BinaryPath)
+	if err != nil {
+		t.Fatalf("read staged binary: %v", err)
+	}
+
+	if string(data) != "example-binary" {
+		t.Fatalf("staged binary = %q, want %q", data, "example-binary")
+	}
+
+	readmePath := filepath.Join(
+		staged.RootPath,
+		"example-1.0.0-linux-amd64",
+		"README.md",
+	)
+	readme, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatalf("read staged README: %v", err)
+	}
+
+	if string(readme) != "documentation" {
+		t.Fatalf("staged README = %q, want %q", readme, "documentation")
+	}
+}
+
+func TestFilesystemStagerStagesTgzArtifact(t *testing.T) {
+	baseDir := t.TempDir()
+	stager := NewFilesystemStager(baseDir)
+
+	archiveData := createTarGz(t, map[string]string{
+		"example-1.0.0-linux-amd64/README.md": "documentation",
+		"example-1.0.0-linux-amd64/example":   "example-binary",
+	})
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "tgz",
+		BinaryPath:   "example-1.0.0-linux-amd64/example",
+		BinaryName:   "example",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	staged, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err != nil {
+		t.Fatalf("Stage() returned error: %v", err)
+	}
+	defer os.RemoveAll(staged.RootPath)
+
+	if staged.BinaryName != "example" {
+		t.Fatalf("BinaryName = %q, want %q", staged.BinaryName, "example")
+	}
+
+	wantPath := filepath.Join(
+		staged.RootPath,
+		"example-1.0.0-linux-amd64",
+		"example",
+	)
+	if staged.BinaryPath != wantPath {
+		t.Fatalf("BinaryPath = %q, want %q", staged.BinaryPath, wantPath)
+	}
+
+	data, err := os.ReadFile(staged.BinaryPath)
+	if err != nil {
+		t.Fatalf("read staged binary: %v", err)
+	}
+
+	if string(data) != "example-binary" {
+		t.Fatalf("staged binary = %q, want %q", data, "example-binary")
+	}
+}
+
+func TestFilesystemStagerStagesTarArtifact(t *testing.T) {
+	baseDir := t.TempDir()
+	stager := NewFilesystemStager(baseDir)
+
+	archiveData := createTar(t, map[string]string{
+		"example-1.0.0-linux-amd64/README.md": "documentation",
+		"example-1.0.0-linux-amd64/example":   "example-binary",
+	})
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "tar",
+		BinaryPath:   "example-1.0.0-linux-amd64/example",
+		BinaryName:   "example",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	staged, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err != nil {
+		t.Fatalf("Stage() returned error: %v", err)
+	}
+	defer os.RemoveAll(staged.RootPath)
+
+	if staged.BinaryName != "example" {
+		t.Fatalf("BinaryName = %q, want %q", staged.BinaryName, "example")
+	}
+
+	wantPath := filepath.Join(
+		staged.RootPath,
+		"example-1.0.0-linux-amd64",
+		"example",
+	)
+	if staged.BinaryPath != wantPath {
+		t.Fatalf("BinaryPath = %q, want %q", staged.BinaryPath, wantPath)
+	}
+
+	data, err := os.ReadFile(staged.BinaryPath)
+	if err != nil {
+		t.Fatalf("read staged binary: %v", err)
+	}
+
+	if string(data) != "example-binary" {
+		t.Fatalf("staged binary = %q, want %q", data, "example-binary")
+	}
+}
+
+func createTar(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+
+	var buffer bytes.Buffer
+	tarWriter := tar.NewWriter(&buffer)
+
+	for name, contents := range files {
+		data := []byte(contents)
+
+		header := &tar.Header{
+			Name: name,
+			Mode: 0700,
+			Size: int64(len(data)),
+		}
+
+		if err := tarWriter.WriteHeader(header); err != nil {
+			t.Fatalf("WriteHeader() returned error: %v", err)
+		}
+
+		if _, err := tarWriter.Write(data); err != nil {
+			t.Fatalf("Write() returned error: %v", err)
+		}
+	}
+
+	if err := tarWriter.Close(); err != nil {
+		t.Fatalf("tar Close() returned error: %v", err)
+	}
+
+	return buffer.Bytes()
+}
+
+func createZip(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+
+	var buffer bytes.Buffer
+	zipWriter := zip.NewWriter(&buffer)
+
+	for name, contents := range files {
+		writer, err := zipWriter.Create(name)
+		if err != nil {
+			t.Fatalf("Create() returned error: %v", err)
+		}
+
+		if _, err := writer.Write([]byte(contents)); err != nil {
+			t.Fatalf("Write() returned error: %v", err)
+		}
+	}
+
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip Close() returned error: %v", err)
+	}
+
+	return buffer.Bytes()
+}
+
+func TestFilesystemStagerStagesZipArtifact(t *testing.T) {
+	baseDir := t.TempDir()
+	stager := NewFilesystemStager(baseDir)
+
+	archiveData := createZip(t, map[string]string{
+		"example-1.0.0-linux-amd64/README.md": "documentation",
+		"example-1.0.0-linux-amd64/example":   "example-binary",
+	})
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "zip",
 		BinaryPath:   "example-1.0.0-linux-amd64/example",
 		BinaryName:   "example",
 		Source: testSource{

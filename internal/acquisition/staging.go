@@ -2,6 +2,8 @@ package acquisition
 
 import (
 	"archive/tar"
+	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -48,7 +50,11 @@ func (s FilesystemStager) Stage(
 		return StagedArtifact{}, err
 	}
 
-	if artifact.ArchiveType != "" && artifact.ArchiveType != "tar.gz" {
+	if artifact.ArchiveType != "" &&
+		artifact.ArchiveType != "tar" &&
+		artifact.ArchiveType != "tar.gz" &&
+		artifact.ArchiveType != "tgz" &&
+		artifact.ArchiveType != "zip" {
 		return StagedArtifact{}, ErrUnsupportedArchiveType
 	}
 
@@ -85,7 +91,7 @@ func (s FilesystemStager) Stage(
 			return StagedArtifact{}, closeErr
 		}
 	} else {
-		if err := extractTarGz(root, reader); err != nil {
+		if err := extractArchive(root, artifact.ArchiveType, reader); err != nil {
 			os.RemoveAll(root)
 			return StagedArtifact{}, err
 		}
@@ -105,14 +111,30 @@ func (s FilesystemStager) Stage(
 	}, nil
 }
 
-func extractTarGz(root string, reader io.Reader) error {
-	gzipReader, err := gzip.NewReader(reader)
-	if err != nil {
-		return err
-	}
-	defer gzipReader.Close()
+func extractArchive(root, archiveType string, reader io.Reader) error {
+	switch archiveType {
+	case "tar":
+		return extractTar(root, reader)
 
-	tarReader := tar.NewReader(gzipReader)
+	case "tar.gz", "tgz":
+		gzipReader, err := gzip.NewReader(reader)
+		if err != nil {
+			return err
+		}
+		defer gzipReader.Close()
+
+		return extractTar(root, gzipReader)
+
+	case "zip":
+		return extractZip(root, reader)
+
+	default:
+		return ErrUnsupportedArchiveType
+	}
+}
+
+func extractTar(root string, reader io.Reader) error {
+	tarReader := tar.NewReader(reader)
 
 	for {
 		header, err := tarReader.Next()
@@ -159,4 +181,65 @@ func extractTarGz(root string, reader io.Reader) error {
 			return fmt.Errorf("unsupported tar entry type %d", header.Typeflag)
 		}
 	}
+}
+
+func extractZip(root string, reader io.Reader) error {
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return err
+	}
+
+	zipReader, err := zip.NewReader(
+		bytes.NewReader(data),
+		int64(len(data)),
+	)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range zipReader.File {
+		target := filepath.Join(root, filepath.FromSlash(entry.Name))
+
+		if entry.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, os.FileMode(entry.Mode())); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+			return err
+		}
+
+		source, err := entry.Open()
+		if err != nil {
+			return err
+		}
+
+		file, err := os.OpenFile(
+			target,
+			os.O_WRONLY|os.O_CREATE|os.O_EXCL,
+			os.FileMode(entry.Mode()),
+		)
+		if err != nil {
+			source.Close()
+			return err
+		}
+
+		_, copyErr := io.Copy(file, source)
+		sourceCloseErr := source.Close()
+		fileCloseErr := file.Close()
+
+		if copyErr != nil {
+			return copyErr
+		}
+		if sourceCloseErr != nil {
+			return sourceCloseErr
+		}
+		if fileCloseErr != nil {
+			return fileCloseErr
+		}
+	}
+
+	return nil
 }
