@@ -99,7 +99,7 @@ func TestResolvedArtifactValidate(t *testing.T) {
 		Architecture: "amd64",
 		URL:          "https://example.com/tool",
 		Revision:     "abcdef1234567890",
-		Checksum:     "0123456789abcdef",
+		Checksum:     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 	}
 
 	if err := valid.Validate(); err != nil {
@@ -110,19 +110,34 @@ func TestResolvedArtifactValidate(t *testing.T) {
 		{
 			Platform:     "linux",
 			Architecture: "amd64",
+			Checksum:     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		},
 		{
 			URL:          "https://example.com/tool",
 			Architecture: "amd64",
+			Checksum:     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		},
 		{
 			URL:      "https://example.com/tool",
 			Platform: "linux",
+			Checksum: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		},
 		{
 			URL:          "https://example.com/tool",
 			Platform:     "linux",
 			Architecture: "amd64",
+		},
+		{
+			URL:          "https://example.com/tool",
+			Platform:     "linux",
+			Architecture: "amd64",
+			Checksum:     "not-a-hex-checksum",
+		},
+		{
+			URL:          "https://example.com/tool",
+			Platform:     "linux",
+			Architecture: "amd64",
+			Checksum:     "00",
 		},
 	}
 

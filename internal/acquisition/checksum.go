@@ -11,27 +11,36 @@ import (
 
 var ErrChecksumMismatch = errors.New("checksum mismatch")
 
+func validateChecksum(expected string) ([]byte, error) {
+	expected = strings.TrimSpace(expected)
+	if expected == "" {
+		return nil, fmt.Errorf("%w: checksum is required", ErrInvalidResolvedArtifact)
+	}
+
+	expectedBytes, err := hex.DecodeString(expected)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid checksum: %v", ErrInvalidResolvedArtifact, err)
+	}
+
+	if len(expectedBytes) != sha256.Size {
+		return nil, fmt.Errorf(
+			"%w: checksum must be %d bytes",
+			ErrInvalidResolvedArtifact,
+			sha256.Size,
+		)
+	}
+
+	return expectedBytes, nil
+}
+
 func VerifyChecksum(reader io.Reader, expected string) error {
 	if reader == nil {
 		return fmt.Errorf("%w: reader is nil", ErrInvalidResolvedArtifact)
 	}
 
-	expected = strings.TrimSpace(expected)
-	if expected == "" {
-		return fmt.Errorf("%w: checksum is required", ErrInvalidResolvedArtifact)
-	}
-
-	expectedBytes, err := hex.DecodeString(expected)
+	expectedBytes, err := validateChecksum(expected)
 	if err != nil {
-		return fmt.Errorf("%w: invalid checksum: %v", ErrInvalidResolvedArtifact, err)
-	}
-
-	if len(expectedBytes) != sha256.Size {
-		return fmt.Errorf(
-			"%w: checksum must be %d bytes",
-			ErrInvalidResolvedArtifact,
-			sha256.Size,
-		)
+		return err
 	}
 
 	hash := sha256.New()

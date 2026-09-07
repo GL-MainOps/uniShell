@@ -63,11 +63,11 @@ func TestCacheKeyDiffersForDifferentChecksum(t *testing.T) {
 		Platform:     Platform("linux"),
 		Architecture: Architecture("amd64"),
 		URL:          "https://example.com/tool",
-		Checksum:     "sha256:first",
+		Checksum:     "0000000000000000000000000000000000000000000000000000000000000000",
 	}
 
 	second := first
-	second.Checksum = "sha256:second"
+	second.Checksum = "1111111111111111111111111111111111111111111111111111111111111111"
 
 	firstKey, err := cacheKey(first)
 	if err != nil {
@@ -91,7 +91,7 @@ func TestCacheKeyIsStable(t *testing.T) {
 		Architecture: Architecture("amd64"),
 		URL:          "https://example.com/tool",
 		Revision:     "commit-a",
-		Checksum:     "sha256:abc",
+		Checksum:     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 	}
 
 	first, err := cacheKey(artifact)

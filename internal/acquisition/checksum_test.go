@@ -102,3 +102,39 @@ func TestVerifyChecksumRejectsMissingChecksum(t *testing.T) {
 		)
 	}
 }
+
+func TestValidateChecksumAcceptsSHA256(t *testing.T) {
+	checksum := strings.Repeat("0", sha256.Size*2)
+
+	if _, err := validateChecksum(checksum); err != nil {
+		t.Fatalf("validateChecksum() error = %v", err)
+	}
+}
+
+func TestValidateChecksumRejectsInvalidEncoding(t *testing.T) {
+	_, err := validateChecksum("not-a-hex-checksum")
+	if err == nil {
+		t.Fatal("validateChecksum() error = nil, want invalid checksum error")
+	}
+
+	if !errors.Is(err, ErrInvalidResolvedArtifact) {
+		t.Fatalf(
+			"validateChecksum() error = %v, want ErrInvalidResolvedArtifact",
+			err,
+		)
+	}
+}
+
+func TestValidateChecksumRejectsWrongLength(t *testing.T) {
+	_, err := validateChecksum("00")
+	if err == nil {
+		t.Fatal("validateChecksum() error = nil, want invalid checksum length error")
+	}
+
+	if !errors.Is(err, ErrInvalidResolvedArtifact) {
+		t.Fatalf(
+			"validateChecksum() error = %v, want ErrInvalidResolvedArtifact",
+			err,
+		)
+	}
+}
