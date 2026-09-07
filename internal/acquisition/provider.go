@@ -3,6 +3,6 @@ package acquisition
 import "context"
 
 type Provider interface {
-	Kind() SourceKind
 	Resolve(context.Context, Artifact) (ResolvedArtifact, error)
+	Headers(Artifact) (map[string]string, error)
 }

@@ -13,13 +13,54 @@ cleanup() {
 trap cleanup EXIT
 
 BUNDLE_BUILDER="$OUTPUT_DIR/bundle-builder"
+TOOL_FETCHER="$OUTPUT_DIR/tool-fetch"
 BUNDLE_OUTPUT="$TMP_DIR/runtime.bundle"
 BUNDLE_SOURCE="$ROOT_DIR/internal/bundle/generated_bundle.go"
 UNISHELL_BINARY="$OUTPUT_DIR/unishell"
 
+SKIP_FETCH=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --skip-fetch)
+            SKIP_FETCH=true
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "error: unknown build option: $1" >&2
+            exit 1
+            ;;
+    esac
+done
+
+if [[ $# -gt 0 ]]; then
+    echo "error: unexpected build argument: $1" >&2
+    exit 1
+fi
+
 mkdir -p "$OUTPUT_DIR" "$TMP_DIR"
 
 cd "$ROOT_DIR"
+
+if [[ "$SKIP_FETCH" == false ]]; then
+    echo "==> Building tool-fetch"
+
+    go build \
+        -trimpath \
+        -ldflags "-s -w" \
+        -o "$TOOL_FETCHER" \
+        ./cmd/tool-fetch
+
+    echo "==> Fetching runtime tools"
+
+    "$TOOL_FETCHER"
+else
+    echo "==> Skipping runtime tool acquisition"
+fi
 
 echo "==> Building bundle-builder"
 
