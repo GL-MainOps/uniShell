@@ -11,6 +11,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	unishellruntime "gitlab.com/mainops/uniShell/internal/runtime"
 )
 
 type StagedArtifact struct {
@@ -111,6 +113,25 @@ func (s FilesystemStager) Stage(
 	}, nil
 }
 
+func safeArchiveTarget(root, name string) (string, error) {
+	path := filepath.FromSlash(name)
+	if filepath.IsAbs(path) {
+		return "", fmt.Errorf("archive entry path is absolute: %q", name)
+	}
+
+	target := filepath.Join(root, path)
+
+	paths := unishellruntime.Paths{
+		Root: root,
+	}
+
+	if !unishellruntime.IsWithinRoot(paths, target) {
+		return "", fmt.Errorf("archive entry path escapes staging root: %q", name)
+	}
+
+	return target, nil
+}
+
 func extractArchive(root, archiveType string, reader io.Reader) error {
 	switch archiveType {
 	case "tar":
@@ -145,7 +166,10 @@ func extractTar(root string, reader io.Reader) error {
 			return err
 		}
 
-		target := filepath.Join(root, filepath.FromSlash(header.Name))
+		target, err := safeArchiveTarget(root, header.Name)
+		if err != nil {
+			return err
+		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
@@ -198,7 +222,10 @@ func extractZip(root string, reader io.Reader) error {
 	}
 
 	for _, entry := range zipReader.File {
-		target := filepath.Join(root, filepath.FromSlash(entry.Name))
+		target, err := safeArchiveTarget(root, entry.Name)
+		if err != nil {
+			return err
+		}
 
 		if entry.FileInfo().IsDir() {
 			if err := os.MkdirAll(target, os.FileMode(entry.Mode())); err != nil {

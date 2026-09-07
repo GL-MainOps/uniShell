@@ -379,6 +379,130 @@ func TestFilesystemStagerStagesZipArtifact(t *testing.T) {
 	}
 }
 
+func TestFilesystemStagerRejectsTarPathTraversal(t *testing.T) {
+	stager := NewFilesystemStager(t.TempDir())
+
+	archiveData := createTar(t, map[string]string{
+		"../../outside": "malicious",
+	})
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "tar",
+		BinaryPath:   "../../outside",
+		BinaryName:   "example",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	_, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err == nil {
+		t.Fatal("Stage() returned nil error, want path traversal error")
+	}
+	if !strings.Contains(err.Error(), "escapes staging root") {
+		t.Fatalf("Stage() error = %v, want path traversal error", err)
+	}
+}
+
+func TestFilesystemStagerRejectsZipPathTraversal(t *testing.T) {
+	stager := NewFilesystemStager(t.TempDir())
+
+	archiveData := createZip(t, map[string]string{
+		"../../outside": "malicious",
+	})
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "zip",
+		BinaryPath:   "../../outside",
+		BinaryName:   "example",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	_, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err == nil {
+		t.Fatal("Stage() returned nil error, want path traversal error")
+	}
+	if !strings.Contains(err.Error(), "escapes staging root") {
+		t.Fatalf("Stage() error = %v, want path traversal error", err)
+	}
+}
+
+func TestFilesystemStagerRejectsAbsoluteArchivePath(t *testing.T) {
+	stager := NewFilesystemStager(t.TempDir())
+
+	archiveData := createTar(t, map[string]string{
+		"/outside": "malicious",
+	})
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "tar",
+		BinaryPath:   "/outside",
+		BinaryName:   "example",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	_, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err == nil {
+		t.Fatal("Stage() returned nil error, want absolute path error")
+	}
+	if !strings.Contains(err.Error(), "archive entry path is absolute") {
+		t.Fatalf("Stage() error = %v, want absolute path error", err)
+	}
+}
+
+func TestFilesystemStagerRejectsZipAbsoluteArchivePath(t *testing.T) {
+	stager := NewFilesystemStager(t.TempDir())
+
+	archiveData := createZip(t, map[string]string{
+		"/outside": "malicious",
+	})
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "zip",
+		BinaryPath:   "/outside",
+		BinaryName:   "example",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	_, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err == nil {
+		t.Fatal("Stage() returned nil error, want absolute path error")
+	}
+	if !strings.Contains(err.Error(), "archive entry path is absolute") {
+		t.Fatalf("Stage() error = %v, want absolute path error", err)
+	}
+}
+
 func createTarGz(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 
