@@ -1,0 +1,76 @@
+# uniShell tool acquisition definition
+#
+# Blueprint:
+#   Copy this file to:
+#
+#     assets/tools/<tool-name>.toml
+#
+# Each tool definition describes the artifacts uniShell may acquire for
+# the supported platform/architecture.
+#
+# This file is an example/blueprint only. It is not itself a production
+# tool definition.
+
+[[tools]]
+name = "example"
+
+[[tools.artifacts]]
+version = "1.0.0"
+
+# Target operating system.
+platform = "linux"
+
+# Target CPU architecture.
+architecture = "amd64"
+
+# Leave empty for a direct executable artifact.
+#
+# Examples:
+#   archive_type = ""
+#   archive_type = "tar.gz"
+archive_type = "tar.gz"
+
+# Path to the executable inside the extracted artifact.
+#
+# This is relative to the artifact staging root.
+binary_path = "example-1.0.0-linux-amd64/example"
+
+# Canonical executable name used by uniShell.
+#
+# The downloaded filename and archive directory do not determine the
+# executable name exposed by uniShell.
+binary_name = "example"
+
+# Expected SHA-256 digest of the resolved artifact.
+checksum = "sha256:replace-with-64-hexadecimal-characters"
+
+[tools.artifacts.validation]
+static_elf = true
+musl = true
+executable = true
+
+[tools.artifacts.source]
+kind = "github-release"
+
+[tools.artifacts.source.github_release]
+owner = "example"
+repository = "example"
+release = "latest"
+asset = "example-1.0.0-linux-amd64.tar.gz"
+
+# Repository convention
+#
+# Production tool definitions belong under:
+#
+#     assets/tools/
+#
+# Example:
+#
+#     assets/tools/example.toml
+#
+# These files are build-time acquisition metadata. They are NOT runtime
+# assets and are intentionally excluded from the generated uniShell
+# runtime bundle.
+#
+# Do not place production tool definitions in docs/examples/.
+# docs/examples/ contains documentation and copyable blueprints only.

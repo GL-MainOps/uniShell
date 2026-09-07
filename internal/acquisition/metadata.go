@@ -28,6 +28,7 @@ type ArtifactMetadata struct {
 	Architecture Architecture           `toml:"architecture"`
 	ArchiveType  string                 `toml:"archive_type"`
 	BinaryPath   string                 `toml:"binary_path"`
+	BinaryName   string                 `toml:"binary_name"`
 	Checksum     string                 `toml:"checksum"`
 	Validation   ValidationRequirements `toml:"validation"`
 	Source       SourceMetadata         `toml:"source"`
@@ -171,6 +172,7 @@ func (a ArtifactMetadata) Artifact() (Artifact, error) {
 		Architecture: a.Architecture,
 		ArchiveType:  a.ArchiveType,
 		BinaryPath:   a.BinaryPath,
+		BinaryName:   a.BinaryName,
 		Checksum:     a.Checksum,
 		Validation:   a.Validation,
 		Source:       source,

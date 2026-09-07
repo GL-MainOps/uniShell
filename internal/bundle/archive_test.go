@@ -53,6 +53,65 @@ func TestCreateArchive(t *testing.T) {
 	assertArchiveEntry(t, files, "config")
 }
 
+func TestCreateArchiveExcludesToolMetadata(t *testing.T) {
+	source := t.TempDir()
+
+	toolsDir := filepath.Join(source, "assets", "tools")
+	if err := os.MkdirAll(toolsDir, 0700); err != nil {
+		t.Fatalf("create tools directory: %v", err)
+	}
+
+	runtimeDir := filepath.Join(source, "assets", "bin")
+	if err := os.MkdirAll(runtimeDir, 0700); err != nil {
+		t.Fatalf("create runtime directory: %v", err)
+	}
+
+	toolDefinition := []byte(`
+[[tools]]
+name = "example"
+`)
+
+	if err := os.WriteFile(
+		filepath.Join(toolsDir, "example.toml"),
+		toolDefinition,
+		0600,
+	); err != nil {
+		t.Fatalf("write tool definition: %v", err)
+	}
+
+	runtimeTool := []byte("#!/bin/sh\necho runtime\n")
+	if err := os.WriteFile(
+		filepath.Join(runtimeDir, "example"),
+		runtimeTool,
+		0755,
+	); err != nil {
+		t.Fatalf("write runtime tool: %v", err)
+	}
+
+	archive, err := CreateArchive(source)
+	if err != nil {
+		t.Fatalf("CreateArchive() returned error: %v", err)
+	}
+
+	files := readArchive(t, archive)
+
+	if _, ok := files["assets/tools"]; ok {
+		t.Fatal("archive contains excluded assets/tools directory")
+	}
+
+	if _, ok := files["assets/tools/example.toml"]; ok {
+		t.Fatal("archive contains excluded tool definition")
+	}
+
+	assertArchiveFile(
+		t,
+		files,
+		"assets/bin/example",
+		runtimeTool,
+		0755,
+	)
+}
+
 func TestCreateArchivePreservesEmptyDirectories(t *testing.T) {
 	source := t.TempDir()
 

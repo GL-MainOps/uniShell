@@ -35,6 +35,7 @@ type Artifact struct {
 	Architecture Architecture
 	ArchiveType  string
 	BinaryPath   string
+	BinaryName   string
 	Checksum     string
 	Validation   ValidationRequirements
 	Source       Source

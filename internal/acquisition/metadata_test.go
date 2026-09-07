@@ -15,7 +15,8 @@ version = "latest"
 platform = "linux"
 architecture = "amd64"
 archive_type = "tar.gz"
-binary_path = "zellij"
+binary_path = "zellij-x86_64-unknown-linux-musl/zellij"
+binary_name = "zellij"
 checksum = "sha256:example"
 
 [tools.artifacts.validation]
@@ -71,8 +72,16 @@ asset = "zellij-x86_64-unknown-linux-musl.tar.gz"
 		t.Fatalf("expected archive type %q, got %q", "tar.gz", artifact.ArchiveType)
 	}
 
-	if artifact.BinaryPath != "zellij" {
-		t.Fatalf("expected binary path %q, got %q", "zellij", artifact.BinaryPath)
+	if artifact.BinaryPath != "zellij-x86_64-unknown-linux-musl/zellij" {
+		t.Fatalf(
+			"expected binary path %q, got %q",
+			"zellij-x86_64-unknown-linux-musl/zellij",
+			artifact.BinaryPath,
+		)
+	}
+
+	if artifact.BinaryName != "zellij" {
+		t.Fatalf("expected binary name %q, got %q", "zellij", artifact.BinaryName)
 	}
 
 	if artifact.Source.Kind() != SourceKindGitHubRelease {

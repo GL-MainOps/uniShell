@@ -16,6 +16,7 @@ func TestToolValidate(t *testing.T) {
 	validArtifact := Artifact{
 		Platform:     "linux",
 		Architecture: "amd64",
+		BinaryName:   "example",
 		Source: testSource{
 			kind: SourceKindDirectURL,
 		},
@@ -89,6 +90,28 @@ func TestToolValidate(t *testing.T) {
 				t.Fatalf("unexpected validation error: %v", err)
 			}
 		})
+	}
+}
+
+func TestArtifactBinaryName(t *testing.T) {
+	artifact := Artifact{
+		Version:      "1.0.0",
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "tar.gz",
+		BinaryPath:   "example-1.0.0-linux-amd64/example",
+		BinaryName:   "example",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	if err := artifact.Validate(); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+
+	if artifact.BinaryName != "example" {
+		t.Fatalf("BinaryName = %q, want %q", artifact.BinaryName, "example")
 	}
 }
 
