@@ -105,7 +105,7 @@ architecture = "amd64"
 archive_type = "<archive-type>"
 binary_path = "<path-inside-archive-or-empty-for-direct-artifact>"
 binary_name = "<canonical-executable-name>"
-checksum = "sha256:<64-hexadecimal-characters>"
+checksum = "<64-hexadecimal-characters>"
 
 [tools.artifacts.validation]
 static_elf = true
@@ -368,18 +368,18 @@ binary_name = "fd"
 
 ## 12. Checksum
 
-Every production artifact must provide its expected checksum.
+Every production artifact must provide its expected SHA-256 checksum.
 
 Current format:
 
 ```toml
-checksum = "sha256:<64-hexadecimal-characters>"
+checksum = "<64-hexadecimal-characters>"
 ```
 
 Example shape:
 
 ```toml
-checksum = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 ```
 
 The checksum must represent the downloaded artifact itself.
@@ -514,7 +514,7 @@ architecture = "amd64"
 archive_type = "tar.gz"
 binary_path = "example-1.0.0-linux-amd64/example"
 binary_name = "example"
-checksum = "sha256:replace-with-64-hexadecimal-characters"
+checksum = "replace-with-64-hexadecimal-characters"
 
 [tools.artifacts.validation]
 static_elf = true
@@ -593,13 +593,13 @@ Normally this should be the command users expect to execute.
 
 ### Step 5 — Obtain the artifact checksum
 
-Calculate or obtain the authoritative SHA-256 checksum for the exact  
+Calculate or obtain the authoritative SHA-256 checksum for the exact
 downloaded artifact.
 
 Set:
 
 ```toml
-checksum = "sha256:<digest>"
+checksum = "<64-hexadecimal-characters>"
 ```
 
 Do not substitute a checksum from another version, architecture, or asset.
