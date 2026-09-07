@@ -118,11 +118,7 @@ func TestFilesystemStagerStagesTarGzArtifact(t *testing.T) {
 		t.Fatalf("BinaryName = %q, want %q", staged.BinaryName, "example")
 	}
 
-	wantPath := filepath.Join(
-		staged.RootPath,
-		"example-1.0.0-linux-amd64",
-		"example",
-	)
+	wantPath := filepath.Join(staged.RootPath, "example")
 	if staged.BinaryPath != wantPath {
 		t.Fatalf("BinaryPath = %q, want %q", staged.BinaryPath, wantPath)
 	}
@@ -185,11 +181,7 @@ func TestFilesystemStagerStagesTgzArtifact(t *testing.T) {
 		t.Fatalf("BinaryName = %q, want %q", staged.BinaryName, "example")
 	}
 
-	wantPath := filepath.Join(
-		staged.RootPath,
-		"example-1.0.0-linux-amd64",
-		"example",
-	)
+	wantPath := filepath.Join(staged.RootPath, "example")
 	if staged.BinaryPath != wantPath {
 		t.Fatalf("BinaryPath = %q, want %q", staged.BinaryPath, wantPath)
 	}
@@ -238,11 +230,7 @@ func TestFilesystemStagerStagesTarArtifact(t *testing.T) {
 		t.Fatalf("BinaryName = %q, want %q", staged.BinaryName, "example")
 	}
 
-	wantPath := filepath.Join(
-		staged.RootPath,
-		"example-1.0.0-linux-amd64",
-		"example",
-	)
+	wantPath := filepath.Join(staged.RootPath, "example")
 	if staged.BinaryPath != wantPath {
 		t.Fatalf("BinaryPath = %q, want %q", staged.BinaryPath, wantPath)
 	}
@@ -346,11 +334,7 @@ func TestFilesystemStagerStagesZipArtifact(t *testing.T) {
 		t.Fatalf("BinaryName = %q, want %q", staged.BinaryName, "example")
 	}
 
-	wantPath := filepath.Join(
-		staged.RootPath,
-		"example-1.0.0-linux-amd64",
-		"example",
-	)
+	wantPath := filepath.Join(staged.RootPath, "example")
 	if staged.BinaryPath != wantPath {
 		t.Fatalf("BinaryPath = %q, want %q", staged.BinaryPath, wantPath)
 	}
@@ -383,16 +367,16 @@ func TestFilesystemStagerSelectsBinaryPath(t *testing.T) {
 	stager := NewFilesystemStager(t.TempDir())
 
 	archiveData := createTar(t, map[string]string{
-		"zellij":       "binary",
-		"README":       "documentation",
-		"other/helper": "helper",
+		"zellij-0.45.1/zellij": "binary",
+		"zellij-0.45.1/README": "documentation",
+		"other/helper":         "helper",
 	})
 
 	artifact := Artifact{
 		Platform:     "linux",
 		Architecture: "amd64",
 		ArchiveType:  "tar",
-		BinaryPath:   "zellij",
+		BinaryPath:   "zellij-0.45.1/zellij",
 		BinaryName:   "zellij",
 		Source: testSource{
 			kind: SourceKindDirectURL,
@@ -417,11 +401,58 @@ func TestFilesystemStagerSelectsBinaryPath(t *testing.T) {
 		t.Fatalf("BinaryPath content = %q, want %q", data, "binary")
 	}
 
-	if staged.BinaryPath != filepath.Join(staged.RootPath, "zellij") {
+	wantPath := filepath.Join(staged.RootPath, "zellij")
+	if staged.BinaryPath != wantPath {
 		t.Fatalf(
 			"BinaryPath = %q, want %q",
 			staged.BinaryPath,
-			filepath.Join(staged.RootPath, "zellij"),
+			wantPath,
+		)
+	}
+
+	if _, err := os.Stat(filepath.Join(
+		staged.RootPath,
+		"zellij-0.45.1",
+		"zellij",
+	)); !os.IsNotExist(err) {
+		t.Fatalf(
+			"original archive binary still exists, err = %v",
+			err,
+		)
+	}
+}
+
+func TestFilesystemStagerRejectsInvalidBinaryName(t *testing.T) {
+	stager := NewFilesystemStager(t.TempDir())
+
+	archiveData := createTar(t, map[string]string{
+		"zellij-0.45.1/zellij": "binary",
+	})
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "tar",
+		BinaryPath:   "zellij-0.45.1/zellij",
+		BinaryName:   "../zellij",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	_, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err == nil {
+		t.Fatal("Stage() returned nil error, want invalid binary name error")
+	}
+
+	if !strings.Contains(err.Error(), "archive entry path escapes staging root") {
+		t.Fatalf(
+			"Stage() error = %v, want invalid binary name error",
+			err,
 		)
 	}
 }
@@ -437,7 +468,7 @@ func TestFilesystemStagerRejectsMissingBinaryPath(t *testing.T) {
 		Platform:     "linux",
 		Architecture: "amd64",
 		ArchiveType:  "tar",
-		BinaryPath:   "zellij",
+		BinaryPath:   "zellij-0.45.1/zellij",
 		BinaryName:   "zellij",
 		Source: testSource{
 			kind: SourceKindDirectURL,
@@ -453,7 +484,7 @@ func TestFilesystemStagerRejectsMissingBinaryPath(t *testing.T) {
 		t.Fatal("Stage() returned nil error, want missing binary path error")
 	}
 
-	if !strings.Contains(err.Error(), `staged binary path "zellij" is unavailable`) {
+	if !strings.Contains(err.Error(), `staged binary path "zellij-0.45.1/zellij" is unavailable`) {
 		t.Fatalf("Stage() error = %v, want missing binary path error", err)
 	}
 }
@@ -469,7 +500,7 @@ func TestFilesystemStagerRejectsMissingZipBinaryPath(t *testing.T) {
 		Platform:     "linux",
 		Architecture: "amd64",
 		ArchiveType:  "zip",
-		BinaryPath:   "zellij",
+		BinaryPath:   "zellij-0.45.1/zellij",
 		BinaryName:   "zellij",
 		Source: testSource{
 			kind: SourceKindDirectURL,
@@ -485,7 +516,7 @@ func TestFilesystemStagerRejectsMissingZipBinaryPath(t *testing.T) {
 		t.Fatal("Stage() returned nil error, want missing binary path error")
 	}
 
-	if !strings.Contains(err.Error(), `staged binary path "zellij" is unavailable`) {
+	if !strings.Contains(err.Error(), `staged binary path "zellij-0.45.1/zellij" is unavailable`) {
 		t.Fatalf("Stage() error = %v, want missing binary path error", err)
 	}
 }

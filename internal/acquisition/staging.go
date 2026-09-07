@@ -98,7 +98,17 @@ func (s FilesystemStager) Stage(
 			return StagedArtifact{}, err
 		}
 
-		binaryPath, err = selectStagedBinary(root, artifact.BinaryPath)
+		selectedPath, err := selectStagedBinary(root, artifact.BinaryPath)
+		if err != nil {
+			os.RemoveAll(root)
+			return StagedArtifact{}, err
+		}
+
+		binaryPath, err = canonicalizeStagedBinary(
+			root,
+			selectedPath,
+			artifact.BinaryName,
+		)
 		if err != nil {
 			os.RemoveAll(root)
 			return StagedArtifact{}, err
@@ -149,6 +159,31 @@ func selectStagedBinary(root, binaryPath string) (string, error) {
 
 	if !info.Mode().IsRegular() {
 		return "", fmt.Errorf("staged binary path %q is not a regular file", binaryPath)
+	}
+
+	return target, nil
+}
+
+func canonicalizeStagedBinary(
+	root,
+	selectedPath,
+	binaryName string,
+) (string, error) {
+	target, err := safeArchiveTarget(root, binaryName)
+	if err != nil {
+		return "", fmt.Errorf("invalid binary name %q: %w", binaryName, err)
+	}
+
+	if selectedPath == target {
+		return target, nil
+	}
+
+	if err := os.Rename(selectedPath, target); err != nil {
+		return "", fmt.Errorf(
+			"canonicalize staged binary as %q: %w",
+			binaryName,
+			err,
+		)
 	}
 
 	return target, nil
