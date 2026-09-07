@@ -1,7 +1,11 @@
 package acquisition
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -44,7 +48,7 @@ func (s FilesystemStager) Stage(
 		return StagedArtifact{}, err
 	}
 
-	if artifact.ArchiveType != "" {
+	if artifact.ArchiveType != "" && artifact.ArchiveType != "tar.gz" {
 		return StagedArtifact{}, ErrUnsupportedArchiveType
 	}
 
@@ -53,29 +57,40 @@ func (s FilesystemStager) Stage(
 		return StagedArtifact{}, err
 	}
 
-	binaryPath := filepath.Join(root, artifact.BinaryName)
+	var binaryPath string
 
-	file, err := os.OpenFile(
-		binaryPath,
-		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
-		0700,
-	)
-	if err != nil {
-		os.RemoveAll(root)
-		return StagedArtifact{}, err
-	}
+	if artifact.ArchiveType == "" {
+		binaryPath = filepath.Join(root, artifact.BinaryName)
 
-	_, copyErr := io.Copy(file, reader)
-	closeErr := file.Close()
+		file, err := os.OpenFile(
+			binaryPath,
+			os.O_WRONLY|os.O_CREATE|os.O_EXCL,
+			0700,
+		)
+		if err != nil {
+			os.RemoveAll(root)
+			return StagedArtifact{}, err
+		}
 
-	if copyErr != nil {
-		os.RemoveAll(root)
-		return StagedArtifact{}, copyErr
-	}
+		_, copyErr := io.Copy(file, reader)
+		closeErr := file.Close()
 
-	if closeErr != nil {
-		os.RemoveAll(root)
-		return StagedArtifact{}, closeErr
+		if copyErr != nil {
+			os.RemoveAll(root)
+			return StagedArtifact{}, copyErr
+		}
+
+		if closeErr != nil {
+			os.RemoveAll(root)
+			return StagedArtifact{}, closeErr
+		}
+	} else {
+		if err := extractTarGz(root, reader); err != nil {
+			os.RemoveAll(root)
+			return StagedArtifact{}, err
+		}
+
+		binaryPath = filepath.Join(root, artifact.BinaryPath)
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -88,4 +103,60 @@ func (s FilesystemStager) Stage(
 		BinaryPath: binaryPath,
 		BinaryName: artifact.BinaryName,
 	}, nil
+}
+
+func extractTarGz(root string, reader io.Reader) error {
+	gzipReader, err := gzip.NewReader(reader)
+	if err != nil {
+		return err
+	}
+	defer gzipReader.Close()
+
+	tarReader := tar.NewReader(gzipReader)
+
+	for {
+		header, err := tarReader.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		target := filepath.Join(root, filepath.FromSlash(header.Name))
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
+				return err
+			}
+
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+				return err
+			}
+
+			file, err := os.OpenFile(
+				target,
+				os.O_WRONLY|os.O_CREATE|os.O_EXCL,
+				os.FileMode(header.Mode),
+			)
+			if err != nil {
+				return err
+			}
+
+			_, copyErr := io.Copy(file, tarReader)
+			closeErr := file.Close()
+
+			if copyErr != nil {
+				return copyErr
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+
+		default:
+			return fmt.Errorf("unsupported tar entry type %d", header.Typeflag)
+		}
+	}
 }
