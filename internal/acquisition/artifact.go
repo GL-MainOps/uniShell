@@ -10,6 +10,7 @@ var (
 	ErrInvalidArtifact         = errors.New("invalid artifact")
 	ErrInvalidSource           = errors.New("invalid source")
 	ErrInvalidResolvedArtifact = errors.New("invalid resolved artifact")
+	ErrUnsupportedArchiveType  = errors.New("unsupported archive type")
 )
 
 type Platform string

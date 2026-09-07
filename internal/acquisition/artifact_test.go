@@ -115,6 +115,26 @@ func TestArtifactBinaryName(t *testing.T) {
 	}
 }
 
+func TestArtifactDirectArtifact(t *testing.T) {
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "",
+		BinaryName:   "example",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	if err := artifact.Validate(); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+
+	if artifact.ArchiveType != "" {
+		t.Fatalf("ArchiveType = %q, want empty direct-artifact type", artifact.ArchiveType)
+	}
+}
+
 func TestResolvedArtifactValidate(t *testing.T) {
 	valid := ResolvedArtifact{
 		Version:      "1.0.0",
