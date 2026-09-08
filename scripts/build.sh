@@ -18,6 +18,10 @@ BUNDLE_OUTPUT="$TMP_DIR/runtime.bundle"
 BUNDLE_SOURCE="$ROOT_DIR/internal/bundle/generated_bundle.go"
 UNISHELL_BINARY="$OUTPUT_DIR/unishell"
 
+BUILD_COMMIT="$(git rev-parse --short=7 HEAD)"
+BUILD_DATE="$(date -u +%Y%m%d)"
+BUILD_VERSION="${BUILD_COMMIT}-${BUILD_DATE}"
+
 SKIP_FETCH=false
 
 while [[ $# -gt 0 ]]; do
@@ -95,11 +99,10 @@ if [[ ! -s "$BUNDLE_SOURCE" ]]; then
 fi
 
 echo "==> Building unishell"
-
 go build \
     -trimpath \
     -tags unishell_bundle \
-    -ldflags "-s -w" \
+    -ldflags "-s -w -X main.version=$BUILD_VERSION -X main.commit=$BUILD_COMMIT" \
     -o "$UNISHELL_BINARY" \
     ./cmd/unishell
 
