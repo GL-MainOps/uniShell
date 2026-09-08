@@ -52,9 +52,15 @@ func CreateArchive(sourceDir string) ([]byte, error) {
 		}
 
 		relative = filepath.ToSlash(relative)
-
 		if relative == "." {
 			relative = archiveRoot
+		}
+
+		if relative == "assets/tools" || strings.HasPrefix(relative, "assets/tools/") {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 
 		if err := validateArchivePath(relative); err != nil {
