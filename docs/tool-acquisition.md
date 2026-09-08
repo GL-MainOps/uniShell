@@ -465,9 +465,34 @@ musl = true
 
 the artifact is expected to satisfy uniShell's musl validation contract.
 
-Musl-specific validation is introduced by a later acquisition-framework
-stage. Do not treat the filename or download URL containing `musl` as proof
-that the artifact satisfies this requirement.
+The musl validation stage is intentionally non-restrictive with respect to
+ELF metadata that cannot reliably identify the libc implementation.
+
+The validator MUST NOT reject an artifact merely because:
+
+- the ELF file is stripped;
+- musl-specific symbols are absent;
+- the ELF file contains a `PT_DYNAMIC` segment;
+- the ELF file does not expose an unambiguous libc identity;
+- the artifact filename or download URL does not contain `musl`.
+
+The validator currently verifies that the staged artifact is a valid executable
+ELF of a supported type. It does not claim to prove the libc implementation.
+
+The validator MUST NOT treat the absence of a detectable musl marker as proof
+that the artifact is not musl.
+
+The current validator does not reject an artifact solely because musl identity
+cannot be established from the ELF metadata available to the validator.
+
+The `musl` requirement therefore acts as a validation boundary without making
+fragile ELF fingerprints a release blocker.
+
+Manual validation of newly introduced tools across the project's supported
+Linux environments remains part of the contributor acceptance process.
+
+Do not treat the filename or download URL containing `musl` as proof that the
+artifact satisfies this requirement.
 
 ### `executable`
 

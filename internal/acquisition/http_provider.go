@@ -19,7 +19,7 @@ var (
 const defaultGitHubAPIBaseURL = "https://api.github.com"
 
 type HTTPProvider struct {
-	Client         *http.Client
+	Client           *http.Client
 	GitHubAPIBaseURL string
 }
 
@@ -49,11 +49,11 @@ func (p HTTPProvider) Resolve(
 	switch source := artifact.Source.(type) {
 	case DirectURLSource:
 		return ResolvedArtifact{
-			Version:       artifact.Version,
-			Platform:      artifact.Platform,
-			Architecture:  artifact.Architecture,
-			URL:           source.URL,
-			Checksum:      artifact.Checksum,
+			Version:      artifact.Version,
+			Platform:     artifact.Platform,
+			Architecture: artifact.Architecture,
+			URL:          source.URL,
+			Checksum:     artifact.Checksum,
 		}, nil
 
 	case GitHubFileSource:
@@ -66,12 +66,12 @@ func (p HTTPProvider) Resolve(
 		)
 
 		return ResolvedArtifact{
-			Version:       artifact.Version,
-			Platform:      artifact.Platform,
-			Architecture:  artifact.Architecture,
-			URL:           rawURL,
-			Revision:      source.Ref,
-			Checksum:      artifact.Checksum,
+			Version:      artifact.Version,
+			Platform:     artifact.Platform,
+			Architecture: artifact.Architecture,
+			URL:          rawURL,
+			Revision:     source.Ref,
+			Checksum:     artifact.Checksum,
 		}, nil
 
 	case GitHubReleaseSource:
@@ -223,12 +223,12 @@ func (p HTTPProvider) resolveGitHubRelease(
 		}
 
 		return ResolvedArtifact{
-			Version:       artifact.Version,
-			Platform:      artifact.Platform,
-			Architecture:  artifact.Architecture,
-			URL:            asset.BrowserDownloadURL,
-			Revision:      release.TagName,
-			Checksum:      artifact.Checksum,
+			Version:      artifact.Version,
+			Platform:     artifact.Platform,
+			Architecture: artifact.Architecture,
+			URL:          asset.BrowserDownloadURL,
+			Revision:     release.TagName,
+			Checksum:     artifact.Checksum,
 		}, nil
 	}
 

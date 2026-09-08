@@ -87,7 +87,7 @@ func TestHTTPProviderResolvesGitHubRelease(t *testing.T) {
 			"tag_name": "v1.2.3",
 			"assets": []map[string]string{
 				{
-					"name": "example-linux-amd64.tar.gz",
+					"name":                 "example-linux-amd64.tar.gz",
 					"browser_download_url": "https://example.invalid/example-linux-amd64.tar.gz",
 				},
 			},

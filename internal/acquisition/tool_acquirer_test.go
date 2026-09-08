@@ -44,12 +44,12 @@ func (p *toolAcquirerTestProvider) Headers(
 }
 
 type toolAcquirerTestPipeline struct {
-	staged      StagedArtifact
-	err         error
-	artifact    Artifact
-	resolved    ResolvedArtifact
-	headers     map[string]string
-	callCount   int
+	staged    StagedArtifact
+	err       error
+	artifact  Artifact
+	resolved  ResolvedArtifact
+	headers   map[string]string
+	callCount int
 }
 
 func (p *toolAcquirerTestPipeline) AcquireAndStage(

@@ -20,6 +20,8 @@ tmp/
 *.swo
 *.bundle
 .DS_Store
+kate.project*
+*.bak~
 
 # Generated encrypted runtime bundle
 internal/bundle/generated_bundle.go

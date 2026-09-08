@@ -102,7 +102,10 @@ func run(
 		cache,
 	)
 	stager := acquisition.NewFilesystemStager(stagingDir)
-	validator := acquisition.StaticELFValidator{}
+	validator := acquisition.NewCompositeValidator(
+		acquisition.StaticELFValidator{},
+		acquisition.MuslValidator{},
+	)
 
 	pipeline := acquisition.NewPipeline(
 		acquirer,

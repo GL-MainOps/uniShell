@@ -42,7 +42,7 @@ binary_path = "example-1.0.0-linux-amd64/example"
 binary_name = "example"
 
 # Expected SHA-256 digest of the resolved artifact.
-checksum = "sha256:replace-with-64-hexadecimal-characters"
+checksum = "replace-with-64-hexadecimal-characters"
 
 [tools.artifacts.validation]
 static_elf = true
@@ -74,3 +74,32 @@ asset = "example-1.0.0-linux-amd64.tar.gz"
 #
 # Do not place production tool definitions in docs/examples/.
 # docs/examples/ contains documentation and copyable blueprints only.
+
+
+########################################################################
+###
+### DIRECR URL EXAMPLE
+###
+######################
+[[tools]]
+name = "example-tool"
+
+[[tools.artifacts]]
+version = "1.2.3"
+platform = "linux"
+architecture = "amd64"
+archive_type = ""
+binary_path = "example-tool"
+binary_name = "example-tool"
+checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[tools.artifacts.validation]
+static_elf = true
+musl = true
+executable = true
+
+[tools.artifacts.source]
+kind = "url"
+
+[tools.artifacts.source.url]
+url = "https://example.com/downloads/tool-linux-amd64"

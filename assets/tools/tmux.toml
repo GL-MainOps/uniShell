@@ -1,0 +1,24 @@
+[[tools]]
+name = "tmux"
+
+[[tools.artifacts]]
+version = "3.7c"
+platform = "linux"
+architecture = "amd64"
+archive_type = ""
+binary_path = "tmux"
+binary_name = "tmux"
+checksum = "35b1f7cb48a93d9c8868b327ea66380cd95e9c13e55de5acf374fbb96373af24"
+
+[tools.artifacts.validation]
+static_elf = true
+executable = true
+
+[tools.artifacts.source]
+kind = "github-file"
+
+[tools.artifacts.source.github_file]
+owner = "mosajjal"
+repository = "binary-tools"
+path = "x64/tmux"
+ref = "af06199efd0a09d06d2b1f28ce576a22ad5e3dee"
