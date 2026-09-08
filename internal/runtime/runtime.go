@@ -5,11 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
-
-	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
 const sessionIDBytes = 16
@@ -26,6 +26,7 @@ type Session struct {
 	Paths Paths
 	ID    string
 	Mode  SessionMode
+	Name  string
 }
 
 // NewSession creates a new isolated runtime session.
@@ -47,6 +48,16 @@ func NewSession(paths Paths) (*Session, error) {
 		ID:    id,
 		Mode:  SessionModeNormal,
 	}, nil
+}
+
+func (s *Session) SetName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("runtime session name cannot be empty")
+	}
+
+	s.Name = name
+	return nil
 }
 
 // Prepare creates the private directories and session metadata required by
@@ -107,6 +118,7 @@ func (s *Session) Prepare() error {
 		CreatedAt:         time.Now().UTC(),
 		Version:           filepath.Base(filepath.Dir(s.Paths.Runtime)),
 		Mode:              sessionmeta.Mode(s.Mode),
+		Name:              s.Name,
 	}
 
 	if metadata.ProcessStartTicks == 0 {

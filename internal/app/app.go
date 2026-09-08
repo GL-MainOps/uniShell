@@ -177,7 +177,12 @@ func (a *App) StartSession() (*runtime.Session, error) {
 			err,
 		)
 	}
-
+	if err := session.SetName(a.SessionName); err != nil {
+		return nil, fmt.Errorf(
+			"set runtime session name: %w",
+			err,
+		)
+	}
 	if err := session.Prepare(); err != nil {
 		return nil, fmt.Errorf(
 			"prepare runtime session: %w",

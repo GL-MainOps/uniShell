@@ -961,3 +961,39 @@ func TestNewUsesExplicitMultiplexerOptionsOverEnvironment(
 		)
 	}
 }
+
+func TestStartSessionUsesApplicationSessionName(t *testing.T) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-fixture-token")
+
+	application, err := New(Options{
+		Version:     "1.0.0",
+		Commit:      "test",
+		Root:        t.TempDir(),
+		Bundle:      testBundleSource(t),
+		SessionName: "direct-shell",
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	session, err := application.StartSession()
+	if err != nil {
+		t.Fatalf("StartSession() returned error: %v", err)
+	}
+	defer session.Cleanup()
+
+	metadata, err := sessionmeta.ReadMetadata(
+		session.Paths.Runtime,
+	)
+	if err != nil {
+		t.Fatalf("ReadMetadata() returned error: %v", err)
+	}
+
+	if metadata.Name != "direct-shell" {
+		t.Fatalf(
+			"metadata name = %q, want %q",
+			metadata.Name,
+			"direct-shell",
+		)
+	}
+}
