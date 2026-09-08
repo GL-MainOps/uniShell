@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"debug/elf"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -209,6 +210,134 @@ func TestPipelineValidatesStagedArtifact(t *testing.T) {
 			"validator requirements = %+v, want %+v",
 			validator.requirements,
 			artifact.Validation,
+		)
+	}
+}
+
+func TestPipelineRunsCompositeValidator(t *testing.T) {
+	baseDir := t.TempDir()
+	sourcePath := filepath.Join(baseDir, "tool")
+	writeELF64Fixture(
+		t,
+		sourcePath,
+		uint16(elf.ET_EXEC),
+	)
+
+	data, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	content := string(data)
+	resolved := pipelineResolvedArtifact(content)
+
+	artifact := pipelineArtifact()
+	artifact.Validation = ValidationRequirements{
+		StaticELF: true,
+		Musl:      true,
+	}
+
+	stagingDir := filepath.Join(baseDir, "stage")
+
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	pipeline := NewPipeline(
+		NewAcquirer(
+			&fakeDownloader{
+				content: content,
+			},
+			&fakeCache{
+				getErr: ErrCacheMiss,
+			},
+		),
+		NewFilesystemStager(stagingDir),
+		NewCompositeValidator(
+			StaticELFValidator{},
+			MuslValidator{},
+		),
+	)
+
+	staged, err := pipeline.AcquireAndStage(
+		context.Background(),
+		artifact,
+		resolved,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("AcquireAndStage() error = %v", err)
+	}
+	defer os.RemoveAll(staged.RootPath)
+
+	if staged.BinaryName != "tool" {
+		t.Fatalf(
+			"staged BinaryName = %q, want %q",
+			staged.BinaryName,
+			"tool",
+		)
+	}
+
+	if staged.BinaryPath == "" {
+		t.Fatal("staged BinaryPath is empty")
+	}
+}
+
+func TestPipelineRejectsInvalidArtifactWithCompositeValidator(t *testing.T) {
+	baseDir := t.TempDir()
+
+	artifact := pipelineArtifact()
+	artifact.Validation = ValidationRequirements{
+		StaticELF: true,
+		Musl:      true,
+	}
+
+	content := "not an ELF"
+	resolved := pipelineResolvedArtifact(content)
+
+	stagingDir := filepath.Join(baseDir, "stage")
+
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	stager := NewFilesystemStager(stagingDir)
+
+	pipeline := NewPipeline(
+		NewAcquirer(
+			&fakeDownloader{
+				content: content,
+			},
+			&fakeCache{
+				getErr: ErrCacheMiss,
+			},
+		),
+		stager,
+		NewCompositeValidator(
+			StaticELFValidator{},
+			MuslValidator{},
+		),
+	)
+
+	_, err := pipeline.AcquireAndStage(
+		context.Background(),
+		artifact,
+		resolved,
+		nil,
+	)
+	if err == nil {
+		t.Fatal(
+			"AcquireAndStage() error = nil, want validation failure",
+		)
+	}
+
+	if !strings.Contains(
+		err.Error(),
+		"validate staged artifact",
+	) {
+		t.Fatalf(
+			"AcquireAndStage() error = %v, want validation error",
+			err,
 		)
 	}
 }
