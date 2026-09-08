@@ -18,7 +18,7 @@ func TestInstallBinary(t *testing.T) {
 	if err := os.WriteFile(
 		source,
 		[]byte("binary"),
-		0755,
+		0644,
 	); err != nil {
 		t.Fatalf("write source: %v", err)
 	}

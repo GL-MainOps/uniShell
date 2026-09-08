@@ -20,6 +20,23 @@ type pipelineStager struct {
 	err      error
 }
 
+type pipelineValidator struct {
+	calls        int
+	requirements ValidationRequirements
+	err          error
+}
+
+func (v *pipelineValidator) Validate(
+	_ context.Context,
+	_ StagedArtifact,
+	requirements ValidationRequirements,
+) error {
+	v.calls++
+	v.requirements = requirements
+
+	return v.err
+}
+
 func (s *pipelineStager) Stage(
 	_ context.Context,
 	artifact Artifact,
@@ -84,6 +101,7 @@ func TestPipelineAcquireAndStage(t *testing.T) {
 	pipeline := NewPipeline(
 		NewAcquirer(downloader, cache),
 		stager,
+		StaticELFValidator{},
 	)
 
 	artifact := pipelineArtifact()
@@ -142,6 +160,110 @@ func TestPipelineAcquireAndStage(t *testing.T) {
 	}
 }
 
+func TestPipelineValidatesStagedArtifact(t *testing.T) {
+	content := "downloaded artifact"
+
+	downloader := &fakeDownloader{
+		content: content,
+	}
+	cache := &fakeCache{
+		getErr: ErrCacheMiss,
+	}
+	stager := &pipelineStager{}
+	validator := &pipelineValidator{}
+
+	pipeline := NewPipeline(
+		NewAcquirer(downloader, cache),
+		stager,
+		validator,
+	)
+
+	artifact := pipelineArtifact()
+	artifact.Validation = ValidationRequirements{
+		StaticELF:  true,
+		Musl:       true,
+		Executable: true,
+	}
+
+	resolved := pipelineResolvedArtifact(content)
+
+	_, err := pipeline.AcquireAndStage(
+		context.Background(),
+		artifact,
+		resolved,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("AcquireAndStage() error = %v", err)
+	}
+
+	if validator.calls != 1 {
+		t.Fatalf(
+			"validator calls = %d, want 1",
+			validator.calls,
+		)
+	}
+
+	if validator.requirements != artifact.Validation {
+		t.Fatalf(
+			"validator requirements = %+v, want %+v",
+			validator.requirements,
+			artifact.Validation,
+		)
+	}
+}
+
+func TestPipelineRejectsValidationFailure(t *testing.T) {
+	content := "downloaded artifact"
+	validationErr := errors.New("static ELF validation failure")
+
+	downloader := &fakeDownloader{
+		content: content,
+	}
+	cache := &fakeCache{
+		getErr: ErrCacheMiss,
+	}
+	stager := &pipelineStager{}
+	validator := &pipelineValidator{
+		err: validationErr,
+	}
+
+	pipeline := NewPipeline(
+		NewAcquirer(downloader, cache),
+		stager,
+		validator,
+	)
+
+	artifact := pipelineArtifact()
+	artifact.Validation = ValidationRequirements{
+		StaticELF: true,
+	}
+
+	_, err := pipeline.AcquireAndStage(
+		context.Background(),
+		artifact,
+		pipelineResolvedArtifact(content),
+		nil,
+	)
+	if err == nil {
+		t.Fatal("AcquireAndStage() error = nil, want validation failure")
+	}
+
+	if !errors.Is(err, validationErr) {
+		t.Fatalf(
+			"AcquireAndStage() error = %v, want validation failure",
+			err,
+		)
+	}
+
+	if validator.calls != 1 {
+		t.Fatalf(
+			"validator calls = %d, want 1",
+			validator.calls,
+		)
+	}
+}
+
 func TestPipelineUsesCachedArtifact(t *testing.T) {
 	content := "cached artifact"
 
@@ -162,6 +284,7 @@ func TestPipelineUsesCachedArtifact(t *testing.T) {
 	pipeline := NewPipeline(
 		NewAcquirer(downloader, cache),
 		stager,
+		StaticELFValidator{},
 	)
 
 	_, err := pipeline.AcquireAndStage(
@@ -211,6 +334,7 @@ func TestPipelineDoesNotStageAfterAcquisitionFailure(t *testing.T) {
 	pipeline := NewPipeline(
 		NewAcquirer(downloader, cache),
 		stager,
+		StaticELFValidator{},
 	)
 
 	_, err := pipeline.AcquireAndStage(
@@ -254,6 +378,7 @@ func TestPipelinePropagatesStagingFailure(t *testing.T) {
 	pipeline := NewPipeline(
 		NewAcquirer(downloader, cache),
 		stager,
+		StaticELFValidator{},
 	)
 
 	_, err := pipeline.AcquireAndStage(
@@ -285,6 +410,7 @@ func TestPipelineRejectsNilStager(t *testing.T) {
 	pipeline := NewPipeline(
 		NewAcquirer(downloader, cache),
 		nil,
+		StaticELFValidator{},
 	)
 
 	_, err := pipeline.AcquireAndStage(
@@ -330,6 +456,7 @@ func TestPipelineRejectsCanceledContextBeforeAcquisition(t *testing.T) {
 	pipeline := NewPipeline(
 		NewAcquirer(downloader, cache),
 		stager,
+		StaticELFValidator{},
 	)
 
 	_, err := pipeline.AcquireAndStage(
@@ -381,6 +508,7 @@ func TestPipelineStagesRealFilesystemArtifact(t *testing.T) {
 			},
 		),
 		stager,
+		StaticELFValidator{},
 	)
 
 	staged, err := pipeline.AcquireAndStage(

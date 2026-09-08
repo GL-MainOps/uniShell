@@ -6,14 +6,20 @@ import (
 )
 
 type Pipeline struct {
-	Acquirer Acquirer
-	Stager   Stager
+	Acquirer  Acquirer
+	Stager    Stager
+	Validator ArtifactValidator
 }
 
-func NewPipeline(acquirer Acquirer, stager Stager) Pipeline {
+func NewPipeline(
+	acquirer Acquirer,
+	stager Stager,
+	validator ArtifactValidator,
+) Pipeline {
 	return Pipeline{
-		Acquirer: acquirer,
-		Stager:   stager,
+		Acquirer:  acquirer,
+		Stager:    stager,
+		Validator: validator,
 	}
 }
 
@@ -48,6 +54,23 @@ func (p Pipeline) AcquireAndStage(
 	if err != nil {
 		return StagedArtifact{}, fmt.Errorf(
 			"stage acquired artifact: %w",
+			err,
+		)
+	}
+
+	if p.Validator == nil {
+		return StagedArtifact{}, fmt.Errorf(
+			"validate staged artifact: validator is nil",
+		)
+	}
+
+	if err := p.Validator.Validate(
+		ctx,
+		staged,
+		artifact.Validation,
+	); err != nil {
+		return StagedArtifact{}, fmt.Errorf(
+			"validate staged artifact: %w",
 			err,
 		)
 	}

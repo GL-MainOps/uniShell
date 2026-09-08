@@ -102,9 +102,12 @@ func run(
 		cache,
 	)
 	stager := acquisition.NewFilesystemStager(stagingDir)
+	validator := acquisition.StaticELFValidator{}
+
 	pipeline := acquisition.NewPipeline(
 		acquirer,
 		stager,
+		validator,
 	)
 
 	providers := map[acquisition.SourceKind]acquisition.Provider{
@@ -211,11 +214,11 @@ func installBinary(sourcePath, destinationPath string) error {
 		_ = os.Remove(tempPath)
 	}
 
-	if err := tempFile.Chmod(info.Mode().Perm()); err != nil {
+	if err := tempFile.Chmod(0755); err != nil {
 		cleanup()
 
 		return fmt.Errorf(
-			"set permissions for temporary binary: %w",
+			"set executable permissions for temporary binary: %w",
 			err,
 		)
 	}
