@@ -164,6 +164,21 @@ func TestResolvedArtifactValidate(t *testing.T) {
 		t.Fatalf("unexpected validation error: %v", err)
 	}
 
+	missingChecksum := ResolvedArtifact{
+		Version:      "1.0.0",
+		Platform:     "linux",
+		Architecture: "amd64",
+		URL:          "https://example.com/tool",
+		Revision:     "abcdef1234567890",
+	}
+
+	if err := missingChecksum.Validate(); err != nil {
+		t.Fatalf(
+			"unexpected validation error without checksum: %v",
+			err,
+		)
+	}
+
 	tests := []ResolvedArtifact{
 		{
 			Platform:     "linux",
@@ -179,11 +194,6 @@ func TestResolvedArtifactValidate(t *testing.T) {
 			URL:      "https://example.com/tool",
 			Platform: "linux",
 			Checksum: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		},
-		{
-			URL:          "https://example.com/tool",
-			Platform:     "linux",
-			Architecture: "amd64",
 		},
 		{
 			URL:          "https://example.com/tool",

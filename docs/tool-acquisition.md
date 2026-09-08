@@ -377,9 +377,9 @@ binary_name = "fd"
 
 ## 12. Checksum
 
-Every production artifact must provide its expected SHA-256 checksum.
+Every production artifact may provide an expected SHA-256 checksum.
 
-Current format:
+When a checksum is provided, it must use the following format:
 
 ```toml
 checksum = "<64-hexadecimal-characters>"
@@ -391,27 +391,39 @@ Example shape:
 checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 ```
 
-The checksum must represent the downloaded artifact itself.
+The checksum, when provided, must represent the downloaded artifact itself.
 
-Do not calculate the checksum from an extracted executable when the  
+Do not calculate the checksum from an extracted executable when the
 acquisition system is verifying the downloaded archive.
 
 Do not copy a checksum from an unrelated release.
 
-The checksum is a supply-chain verification boundary:
+Checksum behavior is:
 
 ```text
-download
-   |
-   v
+checksum present
+       |
+       v
 checksum verification
-   |
-   +-- failure --> reject artifact
-   |
-   +-- success --> continue acquisition
+       |
+       +-- failure --> reject artifact
+       |
+       +-- success --> continue acquisition
+
+checksum absent
+       |
+       v
+skip checksum verification
+       |
+       v
+continue acquisition
 ```
 
-Never intentionally bypass checksum verification for a production tool.
+An absent checksum is valid and does not produce a warning or otherwise
+change the acquisition behavior.
+
+When a checksum is present, invalid checksum encoding or length remains an
+artifact validation error, and a checksum mismatch rejects the artifact.
 
 ## 13. Validation Requirements
 
@@ -902,7 +914,7 @@ release = "latest"
 asset = "example-1.0.0-linux-amd64.tar.gz"
 ```
 
-This example is a template. Do not copy its placeholder values into a  
+This example is a template. Do not copy its placeholder values into a
 production tool definition.
 
 ## 17. Adding a New Tool: Contributor Procedure
@@ -964,16 +976,20 @@ Normally this should be the command users expect to execute.
 
 ### Step 5 — Obtain the artifact checksum
 
-Calculate or obtain the authoritative SHA-256 checksum for the exact
-downloaded artifact.
-
-Set:
+If an authoritative SHA-256 checksum is available for the exact downloaded
+artifact, set:
 
 ```toml
 checksum = "<64-hexadecimal-characters>"
 ```
 
 Do not substitute a checksum from another version, architecture, or asset.
+
+If an authoritative checksum is not available, omit the `checksum` field.
+
+When the field is present, uniShell verifies the downloaded artifact against
+the declared checksum. When the field is absent, checksum verification is
+skipped.
 
 ### Step 6 — Declare validation requirements
 

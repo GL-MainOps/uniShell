@@ -86,18 +86,14 @@ func TestVerifyChecksumRejectsNilReader(t *testing.T) {
 	}
 }
 
-func TestVerifyChecksumRejectsMissingChecksum(t *testing.T) {
+func TestVerifyChecksumAcceptsMissingChecksum(t *testing.T) {
 	err := VerifyChecksum(
 		strings.NewReader("content"),
 		"",
 	)
-	if err == nil {
-		t.Fatal("VerifyChecksum() error = nil, want missing checksum error")
-	}
-
-	if !errors.Is(err, ErrInvalidResolvedArtifact) {
+	if err != nil {
 		t.Fatalf(
-			"VerifyChecksum() error = %v, want ErrInvalidResolvedArtifact",
+			"VerifyChecksum() error = %v, want nil",
 			err,
 		)
 	}
@@ -108,6 +104,23 @@ func TestValidateChecksumAcceptsSHA256(t *testing.T) {
 
 	if _, err := validateChecksum(checksum); err != nil {
 		t.Fatalf("validateChecksum() error = %v", err)
+	}
+}
+
+func TestValidateChecksumAcceptsMissingChecksum(t *testing.T) {
+	checksum, err := validateChecksum("")
+	if err != nil {
+		t.Fatalf(
+			"validateChecksum() error = %v, want nil",
+			err,
+		)
+	}
+
+	if checksum != nil {
+		t.Fatalf(
+			"validateChecksum() result = %v, want nil",
+			checksum,
+		)
 	}
 }
 

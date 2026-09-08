@@ -14,7 +14,7 @@ var ErrChecksumMismatch = errors.New("checksum mismatch")
 func validateChecksum(expected string) ([]byte, error) {
 	expected = strings.TrimSpace(expected)
 	if expected == "" {
-		return nil, fmt.Errorf("%w: checksum is required", ErrInvalidResolvedArtifact)
+		return nil, nil
 	}
 
 	expectedBytes, err := hex.DecodeString(expected)
@@ -41,6 +41,9 @@ func VerifyChecksum(reader io.Reader, expected string) error {
 	expectedBytes, err := validateChecksum(expected)
 	if err != nil {
 		return err
+	}
+	if len(expectedBytes) == 0 {
+		return nil
 	}
 
 	hash := sha256.New()
