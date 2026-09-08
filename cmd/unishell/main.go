@@ -627,9 +627,11 @@ func selectCleanSession(
 		fmt.Printf(
 			"%d) %s\n",
 			index+1,
-			session.Metadata.Name,
+			formatCleanSessionLabel(session.Metadata),
 		)
 	}
+
+	fmt.Println("q) quit")
 
 	reader := bufio.NewReader(os.Stdin)
 

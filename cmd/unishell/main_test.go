@@ -1106,6 +1106,63 @@ func TestRunDetachRejectsArguments(t *testing.T) {
 	}
 }
 
+func TestFormatCleanSessionLabel(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata sessionmeta.Metadata
+		want     string
+	}{
+		{
+			name: "direct shell",
+			metadata: sessionmeta.Metadata{
+				Mode: sessionmeta.ModeNormal,
+				Name: "default",
+			},
+			want: "direct-shell: default",
+		},
+		{
+			name: "tmux",
+			metadata: sessionmeta.Metadata{
+				Mode:        sessionmeta.ModeMultiplexer,
+				Multiplexer: "tmux",
+				Name:        "default",
+			},
+			want: "Multiplexer-tmux: default",
+		},
+		{
+			name: "zellij",
+			metadata: sessionmeta.Metadata{
+				Mode:        sessionmeta.ModeMultiplexer,
+				Multiplexer: "zellij",
+				Name:        "default",
+			},
+			want: "Multiplexer-zellij: default",
+		},
+		{
+			name: "future multiplexer",
+			metadata: sessionmeta.Metadata{
+				Mode:        sessionmeta.ModeMultiplexer,
+				Multiplexer: "herder",
+				Name:        "default",
+			},
+			want: "Multiplexer-herder: default",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := formatCleanSessionLabel(test.metadata)
+			if got != test.want {
+				t.Fatalf(
+					"formatCleanSessionLabel() = %q, want %q",
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
 func TestSelectCleanSessionUsesNumericIndex(t *testing.T) {
 	sessions := []*app.CleanSession{
 		{
@@ -1282,6 +1339,7 @@ func TestRunCleanSelectsSingleSession(t *testing.T) {
 		discoverCleanSessions: []*app.CleanSession{
 			{
 				Metadata: sessionmeta.Metadata{
+					Mode: sessionmeta.ModeNormal,
 					Name: "default",
 				},
 			},
@@ -1327,7 +1385,8 @@ func TestRunCleanSelectsSingleSession(t *testing.T) {
 
 	wantOutput := `Managed uniShell sessions:
 
-1) default
+1) direct-shell: default
+q) quit
 
 Enter session number: Are you sure you want to clean session "default"? [y/N]: `
 
@@ -1345,16 +1404,19 @@ func TestRunCleanSelectsMultipleSessions(t *testing.T) {
 		discoverCleanSessions: []*app.CleanSession{
 			{
 				Metadata: sessionmeta.Metadata{
+					Mode: sessionmeta.ModeNormal,
 					Name: "development",
 				},
 			},
 			{
 				Metadata: sessionmeta.Metadata{
+					Mode: sessionmeta.ModeNormal,
 					Name: "production",
 				},
 			},
 			{
 				Metadata: sessionmeta.Metadata{
+					Mode: sessionmeta.ModeNormal,
 					Name: "testing",
 				},
 			},
@@ -1400,9 +1462,10 @@ func TestRunCleanSelectsMultipleSessions(t *testing.T) {
 
 	wantOutput := `Managed uniShell sessions:
 
-1) development
-2) production
-3) testing
+1) direct-shell: development
+2) direct-shell: production
+3) direct-shell: testing
+q) quit
 
 Enter session number: Are you sure you want to clean session "production"? [y/N]: `
 
@@ -1420,11 +1483,13 @@ func TestRunCleanCanCancelSessionSelection(t *testing.T) {
 		discoverCleanSessions: []*app.CleanSession{
 			{
 				Metadata: sessionmeta.Metadata{
+					Mode: sessionmeta.ModeNormal,
 					Name: "development",
 				},
 			},
 			{
 				Metadata: sessionmeta.Metadata{
+					Mode: sessionmeta.ModeNormal,
 					Name: "production",
 				},
 			},
@@ -1470,8 +1535,9 @@ func TestRunCleanCanCancelSessionSelection(t *testing.T) {
 
 	wantOutput := `Managed uniShell sessions:
 
-1) development
-2) production
+1) direct-shell: development
+2) direct-shell: production
+q) quit
 
 Enter session number: `
 
