@@ -431,6 +431,20 @@ func TestTerminateNormalSessionKillsMatchingProcess(
 		)
 	}
 
+	runtimeDir := filepath.Join(
+		t.TempDir(),
+		"normal-session",
+	)
+	if err := os.MkdirAll(runtimeDir, 0700); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+
+		t.Fatalf(
+			"create runtime directory: %v",
+			err,
+		)
+	}
+
 	cleanSession := &CleanSession{
 		Metadata: sessionmeta.Metadata{
 			ID:                "test-session",
@@ -441,6 +455,7 @@ func TestTerminateNormalSessionKillsMatchingProcess(
 			Mode:              sessionmeta.ModeNormal,
 			Name:              "development",
 		},
+		RuntimeDir: runtimeDir,
 	}
 
 	application := &App{}
@@ -493,6 +508,13 @@ func TestTerminateNormalSessionKillsMatchingProcess(
 			syscall.SIGKILL,
 		)
 	}
+
+	if _, err := os.Stat(runtimeDir); !os.IsNotExist(err) {
+		t.Fatalf(
+			"runtime directory still exists, stat error = %v",
+			err,
+		)
+	}
 }
 
 func TestTerminateNormalSessionRejectsMultiplexerSession(
@@ -526,6 +548,40 @@ func TestTerminateNormalSessionRejectsMultiplexerSession(
 	) {
 		t.Fatalf(
 			"TerminateNormalSession() error = %q, want normal-session error",
+			err.Error(),
+		)
+	}
+}
+
+func TestTerminateNormalSessionRejectsEmptyRuntimePath(
+	t *testing.T,
+) {
+	err := (&App{}).TerminateNormalSession(
+		&CleanSession{
+			Metadata: sessionmeta.Metadata{
+				ID:                "test-session",
+				PID:               999999,
+				ProcessStartTicks: 1,
+				CreatedAt:         time.Now().UTC(),
+				Version:           "development",
+				Mode:              sessionmeta.ModeNormal,
+				Name:              "development",
+			},
+		},
+	)
+
+	if err == nil {
+		t.Fatal(
+			"TerminateNormalSession() returned nil error for empty runtime path",
+		)
+	}
+
+	if !strings.Contains(
+		err.Error(),
+		"runtime path is empty",
+	) {
+		t.Fatalf(
+			"TerminateNormalSession() error = %q, want runtime-path error",
 			err.Error(),
 		)
 	}
@@ -611,6 +667,17 @@ func TestTerminateNormalSessionRejectsMismatchedIdentity(
 func TestTerminateNormalSessionTreatsMissingProcessAsComplete(
 	t *testing.T,
 ) {
+	runtimeDir := filepath.Join(
+		t.TempDir(),
+		"normal-session",
+	)
+	if err := os.MkdirAll(runtimeDir, 0700); err != nil {
+		t.Fatalf(
+			"create runtime directory: %v",
+			err,
+		)
+	}
+
 	err := (&App{}).TerminateNormalSession(
 		&CleanSession{
 			Metadata: sessionmeta.Metadata{
@@ -622,12 +689,20 @@ func TestTerminateNormalSessionTreatsMissingProcessAsComplete(
 				Mode:              sessionmeta.ModeNormal,
 				Name:              "development",
 			},
+			RuntimeDir: runtimeDir,
 		},
 	)
 
 	if err != nil {
 		t.Fatalf(
 			"TerminateNormalSession() returned error: %v",
+			err,
+		)
+	}
+
+	if _, err := os.Stat(runtimeDir); !os.IsNotExist(err) {
+		t.Fatalf(
+			"runtime directory still exists, stat error = %v",
 			err,
 		)
 	}

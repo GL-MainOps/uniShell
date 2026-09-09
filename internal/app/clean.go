@@ -84,13 +84,25 @@ func (a *App) TerminateNormalSession(
 		cleanSession.Metadata.ProcessStartTicks,
 	)
 
-	if errors.Is(err, os.ErrProcessDone) {
-		return nil
-	}
-
-	if err != nil {
+	if err != nil && !errors.Is(err, os.ErrProcessDone) {
 		return fmt.Errorf(
 			"terminate normal session %q: %w",
+			cleanSession.Metadata.Name,
+			err,
+		)
+	}
+
+	runtimePath := cleanSession.RuntimeDir
+	if runtimePath == "" {
+		return fmt.Errorf(
+			"normal session %q runtime path is empty",
+			cleanSession.Metadata.Name,
+		)
+	}
+
+	if err := os.RemoveAll(runtimePath); err != nil {
+		return fmt.Errorf(
+			"cleanup normal session %q: %w",
 			cleanSession.Metadata.Name,
 			err,
 		)
