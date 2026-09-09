@@ -1,22 +1,28 @@
+//go:build unishell_bundle
+
 package bundle
 
-import "errors"
+import (
+	_ "embed"
+	"errors"
+)
 
 var ErrEmbeddedBundleUnavailable = errors.New(
 	"embedded runtime bundle is unavailable",
 )
 
-// Embedded returns a copy of the encrypted runtime bundle generated
+//go:embed runtime.bundle
+var embeddedBundle []byte
+
+// Embedded returns a copy of the encrypted runtime bundle embedded
 // during the build process.
 func Embedded() ([]byte, error) {
-	data := generatedBundle()
-
-	if len(data) == 0 {
+	if len(embeddedBundle) == 0 {
 		return nil, ErrEmbeddedBundleUnavailable
 	}
 
-	result := make([]byte, len(data))
-	copy(result, data)
+	result := make([]byte, len(embeddedBundle))
+	copy(result, embeddedBundle)
 
 	return result, nil
 }

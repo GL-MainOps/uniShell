@@ -8,6 +8,8 @@ RUNTIME_DIR="$TMP_DIR/runtime"
 
 cleanup() {
     rm -rf "$RUNTIME_DIR"
+    rm -f "$BUNDLE_OUTPUT"
+    rm -f "$BUNDLE_ASSET"
 }
 
 trap cleanup EXIT
@@ -15,7 +17,7 @@ trap cleanup EXIT
 BUNDLE_BUILDER="$OUTPUT_DIR/bundle-builder"
 TOOL_FETCHER="$OUTPUT_DIR/tool-fetch"
 BUNDLE_OUTPUT="$TMP_DIR/runtime.bundle"
-BUNDLE_SOURCE="$ROOT_DIR/internal/bundle/generated_bundle.go"
+BUNDLE_ASSET="$ROOT_DIR/internal/bundle/runtime.bundle"
 UNISHELL_BINARY="$OUTPUT_DIR/unishell"
 ASSET_EXCLUDES=(
     "tools/"
@@ -124,17 +126,19 @@ echo "==> Generating runtime bundle"
 "$BUNDLE_BUILDER" \
     -input "$RUNTIME_DIR" \
     -output "$BUNDLE_OUTPUT" \
-    -generate "$BUNDLE_SOURCE"
 
-if [[ ! -s "$BUNDLE_OUTPUT" ]]; then
-    echo "error: bundle builder did not create $BUNDLE_OUTPUT" >&2
-    exit 1
-fi
+    if [[ ! -s "$BUNDLE_OUTPUT" ]]; then
+        echo "error: bundle builder did not create $BUNDLE_OUTPUT" >&2
+        exit 1
+    fi
 
-if [[ ! -s "$BUNDLE_SOURCE" ]]; then
-    echo "error: bundle builder did not generate $BUNDLE_SOURCE" >&2
-    exit 1
-fi
+    rm -f "$BUNDLE_ASSET"
+    cp "$BUNDLE_OUTPUT" "$BUNDLE_ASSET"
+
+    if [[ ! -s "$BUNDLE_ASSET" ]]; then
+        echo "error: failed to prepare embedded bundle $BUNDLE_ASSET" >&2
+        exit 1
+    fi
 
 echo "==> Building unishell"
 go build \
