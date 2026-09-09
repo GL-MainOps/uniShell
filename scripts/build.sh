@@ -17,6 +17,9 @@ TOOL_FETCHER="$OUTPUT_DIR/tool-fetch"
 BUNDLE_OUTPUT="$TMP_DIR/runtime.bundle"
 BUNDLE_SOURCE="$ROOT_DIR/internal/bundle/generated_bundle.go"
 UNISHELL_BINARY="$OUTPUT_DIR/unishell"
+ASSET_EXCLUDES=(
+    "tools/"
+)
 
 BUILD_COMMIT="$(git rev-parse --short=7 HEAD)"
 BUILD_DATE="$(date -u +%Y%m%d)"
@@ -74,12 +77,47 @@ go build \
     -o "$BUNDLE_BUILDER" \
     ./cmd/bundle-builder
 
+stage_runtime_assets() {
+    local source="$ROOT_DIR/assets"
+    local destination="$RUNTIME_DIR"
+    local entry relative excluded
+
+    while IFS= read -r -d '' entry; do
+        relative="${entry#"$source"/}"
+        excluded=false
+
+        for pattern in "${ASSET_EXCLUDES[@]}"; do
+            if [[ "$pattern" == */ ]]; then
+                if [[ "$relative" == "${pattern%/}" || "$relative" == "${pattern%/}"/* ]]; then
+                    excluded=true
+                    break
+                fi
+            elif [[ "$relative" == "$pattern" ]]; then
+                excluded=true
+                break
+            fi
+        done
+
+        if [[ "$excluded" == true ]]; then
+            continue
+        fi
+
+        if [[ -d "$entry" ]]; then
+            mkdir -p "$destination/$relative"
+            continue
+        fi
+
+        mkdir -p "$destination/$(dirname "$relative")"
+        cp -a "$entry" "$destination/$relative"
+    done < <(find "$source" -mindepth 1 -print0)
+}
+
 echo "==> Preparing runtime assets"
 
 rm -rf "$RUNTIME_DIR"
 mkdir -p "$RUNTIME_DIR"
 
-cp -a "$ROOT_DIR/assets/." "$RUNTIME_DIR/"
+stage_runtime_assets
 
 echo "==> Generating runtime bundle"
 
