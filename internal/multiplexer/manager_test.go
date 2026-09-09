@@ -706,6 +706,59 @@ func TestManagerDiscoverRejectsDifferentSessionName(t *testing.T) {
 	}
 }
 
+func TestManagerDiscoverRejectsNormalSession(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	prepareManagerTestRuntime(t, runtimePath)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	metadata := sessionmeta.Metadata{
+		PID:               os.Getpid(),
+		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+		CreatedAt:         time.Now().UTC(),
+		Version:           "development",
+		Mode:              sessionmeta.ModeNormal,
+		ID:                "direct-session",
+		Name:              "default",
+	}
+
+	if err := sessionmeta.WriteMetadata(
+		runtimePath,
+		metadata,
+	); err != nil {
+		t.Fatalf(
+			"sessionmeta.WriteMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	_, err := manager.Discover(
+		runtimePath,
+		"default",
+	)
+
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf(
+			"Discover() error = %v, want %v",
+			err,
+			ErrSessionNotFound,
+		)
+	}
+}
+
 func TestManagerDiscoverRejectsStaleMetadata(t *testing.T) {
 	runtimePath := filepath.Join(
 		t.TempDir(),

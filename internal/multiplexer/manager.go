@@ -282,6 +282,10 @@ func (m *Manager) Discover(
 		return nil, err
 	}
 
+	if metadata.Mode != sessionmeta.ModeMultiplexer {
+		return nil, ErrSessionNotFound
+	}
+
 	if metadata.Name != sessionName {
 		return nil, ErrSessionNotFound
 	}
