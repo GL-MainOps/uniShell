@@ -618,8 +618,13 @@ var errCleanSelectionCancelled = errors.New(
 	"clean session selection cancelled",
 )
 
+var errCleanSelectionAll = errors.New(
+	"all clean sessions selected",
+)
+
 func selectCleanSession(
 	sessions []*app.CleanSession,
+	reader *bufio.Reader,
 ) (*app.CleanSession, error) {
 	fmt.Println("Managed uniShell sessions:")
 	fmt.Println()
@@ -632,9 +637,11 @@ func selectCleanSession(
 		)
 	}
 
-	fmt.Println("q) quit")
+	if len(sessions) > 1 {
+		fmt.Println("a) ALL")
+	}
 
-	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("q) quit")
 
 	for {
 		fmt.Fprint(
@@ -657,6 +664,11 @@ func selectCleanSession(
 			return nil, errCleanSelectionCancelled
 		}
 
+		if len(sessions) > 1 &&
+			strings.EqualFold(value, "a") {
+			return nil, errCleanSelectionAll
+		}
+
 		index, err := strconv.Atoi(value)
 		if err != nil ||
 			index < 1 ||
@@ -668,13 +680,35 @@ func selectCleanSession(
 	}
 }
 
-func confirmCleanSession(name string) (bool, error) {
+func confirmCleanSession(
+	name string,
+	reader *bufio.Reader,
+) (bool, error) {
 	fmt.Printf(
 		"Are you sure you want to clean session %q? [y/N]: ",
 		name,
 	)
 
-	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	response = strings.ToLower(strings.TrimSpace(response))
+
+	return response == "y" || response == "yes", nil
+}
+
+func confirmCleanAllSessions(
+	reader *bufio.Reader,
+) (bool, error) {
+	fmt.Print(
+		"Are you sure you want to clean ALL managed uniShell sessions? [y/N]: ",
+	)
 
 	response, err := reader.ReadString('\n')
 	if err != nil {
@@ -694,6 +728,8 @@ func runClean(
 	application cleanApplication,
 	args []string,
 ) error {
+	reader := bufio.NewReader(os.Stdin)
+
 	options, err := parseCleanArgs(args)
 	if err != nil {
 		return err
@@ -712,102 +748,170 @@ func runClean(
 		return nil
 	}
 
-	var target *app.CleanSession
+	var targets []*app.CleanSession
+	allSelected := false
 
 	if options.Target != "" {
 		for _, candidate := range sessions {
 			if candidate.Metadata.Name == options.Target {
-				target = candidate
+				targets = []*app.CleanSession{
+					candidate,
+				}
 				break
 			}
 		}
 
-		if target == nil {
+		if len(targets) == 0 {
 			return fmt.Errorf(
 				"managed session %q not found",
 				options.Target,
 			)
 		}
 	} else {
-		target, err = selectCleanSession(sessions)
-		if err != nil {
-			if errors.Is(err, errCleanSelectionCancelled) {
+		target, selectionErr := selectCleanSession(
+			sessions,
+			reader,
+		)
+		if selectionErr != nil {
+			if errors.Is(
+				selectionErr,
+				errCleanSelectionCancelled,
+			) {
 				return nil
 			}
 
-			return fmt.Errorf(
-				"select clean session: %w",
-				err,
-			)
+			if errors.Is(
+				selectionErr,
+				errCleanSelectionAll,
+			) {
+				targets = sessions
+				allSelected = true
+			} else {
+				return fmt.Errorf(
+					"select clean session: %w",
+					selectionErr,
+				)
+			}
+		} else {
+			targets = []*app.CleanSession{
+				target,
+			}
 		}
 	}
 
-	confirmed, err := confirmCleanSession(target.Metadata.Name)
-	if err != nil {
-		return fmt.Errorf(
-			"read clean confirmation: %w",
-			err,
-		)
-	}
+	if allSelected {
+		confirmed, err := confirmCleanAllSessions(reader)
+		if err != nil {
+			return fmt.Errorf(
+				"read clean confirmation: %w",
+				err,
+			)
+		}
 
-	if !confirmed {
-		return nil
+		if !confirmed {
+			return nil
+		}
+	} else {
+		confirmed, err := confirmCleanSession(
+			targets[0].Metadata.Name,
+			reader,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"read clean confirmation: %w",
+				err,
+			)
+		}
+
+		if !confirmed {
+			return nil
+		}
 	}
 
 	revalidatedSessions, err := application.DiscoverCleanSessions()
 	if err != nil {
 		return fmt.Errorf(
-			"revalidate clean session: %w",
+			"revalidate clean sessions: %w",
 			err,
 		)
 	}
 
-	var revalidatedTarget *app.CleanSession
+	revalidatedTargets := make(
+		[]*app.CleanSession,
+		0,
+		len(targets),
+	)
 
-	for _, candidate := range revalidatedSessions {
-		if candidate.Metadata.ID == target.Metadata.ID &&
-			candidate.RuntimeDir == target.RuntimeDir {
-			revalidatedTarget = candidate
-			break
+	for _, target := range targets {
+		var revalidatedTarget *app.CleanSession
+
+		for _, candidate := range revalidatedSessions {
+			if candidate.Metadata.ID == target.Metadata.ID &&
+				candidate.RuntimeDir == target.RuntimeDir {
+				revalidatedTarget = candidate
+				break
+			}
 		}
-	}
 
-	if revalidatedTarget == nil {
-		return fmt.Errorf(
-			"managed session %q no longer exists",
-			target.Metadata.Name,
-		)
-	}
-
-	switch revalidatedTarget.Metadata.Mode {
-	case sessionmeta.ModeNormal:
-		if err := application.TerminateNormalSession(
-			revalidatedTarget,
-		); err != nil {
+		if revalidatedTarget == nil {
 			return fmt.Errorf(
-				"terminate clean session %q: %w",
-				revalidatedTarget.Metadata.Name,
-				err,
+				"managed session %q no longer exists",
+				target.Metadata.Name,
 			)
 		}
 
-	case sessionmeta.ModeMultiplexer:
-		if err := application.CleanupMultiplexerSession(
+		revalidatedTargets = append(
+			revalidatedTargets,
 			revalidatedTarget,
-		); err != nil {
-			return fmt.Errorf(
-				"cleanup multiplexer session %q: %w",
-				revalidatedTarget.Metadata.Name,
-				err,
+		)
+	}
+
+	var cleanupErrors []error
+
+	for _, target := range revalidatedTargets {
+		switch target.Metadata.Mode {
+		case sessionmeta.ModeNormal:
+			if err := application.TerminateNormalSession(
+				target,
+			); err != nil {
+				cleanupErrors = append(
+					cleanupErrors,
+					fmt.Errorf(
+						"terminate clean session %q: %w",
+						target.Metadata.Name,
+						err,
+					),
+				)
+			}
+
+		case sessionmeta.ModeMultiplexer:
+			if err := application.CleanupMultiplexerSession(
+				target,
+			); err != nil {
+				cleanupErrors = append(
+					cleanupErrors,
+					fmt.Errorf(
+						"cleanup multiplexer session %q: %w",
+						target.Metadata.Name,
+						err,
+					),
+				)
+			}
+
+		default:
+			cleanupErrors = append(
+				cleanupErrors,
+				fmt.Errorf(
+					"clean session %q uses unsupported termination mode %q",
+					target.Metadata.Name,
+					target.Metadata.Mode,
+				),
 			)
 		}
+	}
 
-	default:
-		return fmt.Errorf(
-			"clean session %q uses unsupported termination mode %q",
-			revalidatedTarget.Metadata.Name,
-			revalidatedTarget.Metadata.Mode,
-		)
+	if len(cleanupErrors) > 0 {
+		return errors.Join(cleanupErrors...)
 	}
 
 	return nil

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"io"
@@ -212,7 +213,9 @@ type shellTestApplication struct {
 	discoverCleanSessionResult   [][]*app.CleanSession
 	terminateNormalSessionErr    error
 	terminatedCleanSession       *app.CleanSession
+	terminatedCleanSessions      []*app.CleanSession
 	cleanedMultiplexerSession    *app.CleanSession
+	cleanedMultiplexerSessions   []*app.CleanSession
 	cleanupMultiplexerSessionErr error
 	discoverErr                  error
 	startSession                 *app.Session
@@ -333,6 +336,11 @@ func (a *shellTestApplication) TerminateNormalSession(
 	session *app.CleanSession,
 ) error {
 	a.terminatedCleanSession = session
+	a.terminatedCleanSessions = append(
+		a.terminatedCleanSessions,
+		session,
+	)
+
 	return a.terminateNormalSessionErr
 }
 
@@ -340,6 +348,11 @@ func (a *shellTestApplication) CleanupMultiplexerSession(
 	session *app.CleanSession,
 ) error {
 	a.cleanedMultiplexerSession = session
+	a.cleanedMultiplexerSessions = append(
+		a.cleanedMultiplexerSessions,
+		session,
+	)
+
 	return a.cleanupMultiplexerSessionErr
 }
 
@@ -535,6 +548,309 @@ func cleanLifecycleProcessIdentity(
 		PID:               cmd.Process.Pid,
 		ProcessStartTicks: startTicks,
 		ProcessGroupID:    processGroupID,
+	}
+}
+
+func TestRunCleanSelectsAllSessionsWhenRequested(
+	t *testing.T,
+) {
+	first := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:   "first-id",
+			Name: "first",
+			Mode: sessionmeta.ModeNormal,
+		},
+		RuntimeDir: "/tmp/first",
+	}
+
+	second := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:   "second-id",
+			Name: "second",
+			Mode: sessionmeta.ModeNormal,
+		},
+		RuntimeDir: "/tmp/second",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			first,
+			second,
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+	defer reader.Close()
+
+	if _, err := writer.WriteString("a\ny\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	if err := runClean(application, nil); err != nil {
+		t.Fatalf(
+			"runClean() returned error: %v",
+			err,
+		)
+	}
+
+	if len(application.terminatedCleanSessions) != 2 {
+		t.Fatalf(
+			"terminated clean sessions = %d, want 2",
+			len(application.terminatedCleanSessions),
+		)
+	}
+
+	if application.terminatedCleanSessions[0] != first {
+		t.Fatal(
+			"runClean() did not clean the first selected session",
+		)
+	}
+
+	if application.terminatedCleanSessions[1] != second {
+		t.Fatal(
+			"runClean() did not clean the second selected session",
+		)
+	}
+}
+
+func TestRunCleanDoesNotAcceptAllSelectionForSingleSession(
+	t *testing.T,
+) {
+	target := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:   "development-id",
+			Name: "development",
+			Mode: sessionmeta.ModeNormal,
+		},
+		RuntimeDir: "/tmp/development",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			target,
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+	defer reader.Close()
+
+	if _, err := writer.WriteString("a\nq\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	if err := runClean(application, nil); err != nil {
+		t.Fatalf(
+			"runClean() returned error: %v",
+			err,
+		)
+	}
+
+	if len(application.terminatedCleanSessions) != 0 {
+		t.Fatalf(
+			"terminated clean sessions = %d, want 0",
+			len(application.terminatedCleanSessions),
+		)
+	}
+}
+
+func TestRunCleanRevalidatesAllSessionsBeforeCleanup(
+	t *testing.T,
+) {
+	first := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:   "first-id",
+			Name: "first",
+			Mode: sessionmeta.ModeNormal,
+		},
+		RuntimeDir: "/tmp/first",
+	}
+
+	second := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:   "second-id",
+			Name: "second",
+			Mode: sessionmeta.ModeNormal,
+		},
+		RuntimeDir: "/tmp/second",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			first,
+			second,
+		},
+		discoverCleanSessionResult: [][]*app.CleanSession{
+			{
+				first,
+				second,
+			},
+			{
+				first,
+			},
+		},
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+	defer reader.Close()
+
+	if _, err := writer.WriteString("a\ny\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	if err := runClean(application, nil); err == nil {
+		t.Fatal(
+			"runClean() returned nil after all-session revalidation failure",
+		)
+	}
+
+	if len(application.terminatedCleanSessions) != 0 {
+		t.Fatalf(
+			"cleanup began before all sessions were revalidated: %d sessions",
+			len(application.terminatedCleanSessions),
+		)
+	}
+}
+
+func TestRunCleanContinuesAfterAllSessionCleanupFailure(
+	t *testing.T,
+) {
+	first := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:   "first-id",
+			Name: "first",
+			Mode: sessionmeta.ModeNormal,
+		},
+		RuntimeDir: "/tmp/first",
+	}
+
+	second := &app.CleanSession{
+		Metadata: sessionmeta.Metadata{
+			ID:   "second-id",
+			Name: "second",
+			Mode: sessionmeta.ModeNormal,
+		},
+		RuntimeDir: "/tmp/second",
+	}
+
+	application := &shellTestApplication{
+		discoverCleanSessions: []*app.CleanSession{
+			first,
+			second,
+		},
+		terminateNormalSessionErr: errors.New(
+			"normal cleanup failed",
+		),
+	}
+
+	originalStdin := os.Stdin
+	defer func() {
+		os.Stdin = originalStdin
+	}()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() returned error: %v", err)
+	}
+	defer reader.Close()
+
+	if _, err := writer.WriteString("a\ny\n"); err != nil {
+		t.Fatalf(
+			"writer.WriteString() returned error: %v",
+			err,
+		)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf(
+			"writer.Close() returned error: %v",
+			err,
+		)
+	}
+
+	os.Stdin = reader
+
+	runErr := runClean(application, nil)
+	if runErr == nil {
+		t.Fatal(
+			"runClean() returned nil after cleanup failure",
+		)
+	}
+
+	if len(application.terminatedCleanSessions) != 2 {
+		t.Fatalf(
+			"terminated clean sessions = %d, want 2",
+			len(application.terminatedCleanSessions),
+		)
+	}
+
+	if !strings.Contains(
+		runErr.Error(),
+		"normal cleanup failed",
+	) {
+		t.Fatalf(
+			"runClean() error = %q, want cleanup failure",
+			runErr,
+		)
 	}
 }
 
@@ -1210,7 +1526,10 @@ func TestSelectCleanSessionUsesNumericIndex(t *testing.T) {
 
 	os.Stdin = reader
 
-	session, err := selectCleanSession(sessions)
+	session, err := selectCleanSession(
+		sessions,
+		bufio.NewReader(os.Stdin),
+	)
 	if err != nil {
 		t.Fatalf(
 			"selectCleanSession() returned error: %v",
@@ -1269,7 +1588,10 @@ func TestSelectCleanSessionRepromptsAfterInvalidSelection(t *testing.T) {
 
 	os.Stdin = reader
 
-	session, err := selectCleanSession(sessions)
+	session, err := selectCleanSession(
+		sessions,
+		bufio.NewReader(os.Stdin),
+	)
 	if err != nil {
 		t.Fatalf(
 			"selectCleanSession() returned error: %v",
@@ -1323,7 +1645,10 @@ func TestSelectCleanSessionCanCancel(t *testing.T) {
 
 	os.Stdin = reader
 
-	_, err = selectCleanSession(sessions)
+	_, err = selectCleanSession(
+		sessions,
+		bufio.NewReader(os.Stdin),
+	)
 
 	if !errors.Is(err, errCleanSelectionCancelled) {
 		t.Fatalf(
@@ -1465,6 +1790,7 @@ func TestRunCleanSelectsMultipleSessions(t *testing.T) {
 1) direct-shell: development
 2) direct-shell: production
 3) direct-shell: testing
+a) ALL
 q) quit
 
 Enter session number: Are you sure you want to clean session "production"? [y/N]: `
@@ -1537,6 +1863,7 @@ func TestRunCleanCanCancelSessionSelection(t *testing.T) {
 
 1) direct-shell: development
 2) direct-shell: production
+a) ALL
 q) quit
 
 Enter session number: `
