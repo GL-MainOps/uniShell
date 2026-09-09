@@ -589,13 +589,14 @@ func TestStartMultiplexerSessionCreatesManagedSession(t *testing.T) {
 	)
 
 	application, err := New(Options{
-		Version:         "1.0.0",
-		Commit:          "test",
-		Root:            root,
-		Bundle:          testBundleSource(t),
-		Multiplexer:     manager,
-		MultiplexerName: "test",
-		SessionName:     "default",
+		Version:              "1.0.0",
+		Commit:               "test",
+		Root:                 root,
+		Bundle:               testBundleSource(t),
+		Multiplexer:          manager,
+		MultiplexerName:      "test",
+		SessionName:          "default",
+		SessionNameSpecified: true,
 	})
 	if err != nil {
 		t.Fatalf("New() returned error: %v", err)
@@ -629,11 +630,12 @@ func TestStartMultiplexerSessionCreatesManagedSession(t *testing.T) {
 		)
 	}
 
-	if session.Multiplexer.Metadata.Name != "default" {
+	wantSessionName := "default@" + session.Runtime.ID[:7]
+	if session.Multiplexer.Metadata.Name != wantSessionName {
 		t.Fatalf(
 			"multiplexer session name = %q, want %q",
 			session.Multiplexer.Metadata.Name,
-			"default",
+			wantSessionName,
 		)
 	}
 
@@ -962,15 +964,16 @@ func TestNewUsesExplicitMultiplexerOptionsOverEnvironment(
 	}
 }
 
-func TestStartSessionUsesApplicationSessionName(t *testing.T) {
+func TestStartSessionUsesGeneratedSessionName(t *testing.T) {
 	t.Setenv("UNISHELL_AUTH_TOKEN", "test-fixture-token")
 
 	application, err := New(Options{
-		Version:     "1.0.0",
-		Commit:      "test",
-		Root:        t.TempDir(),
-		Bundle:      testBundleSource(t),
-		SessionName: "direct-shell",
+		Version:              "1.0.0",
+		Commit:               "test",
+		Root:                 t.TempDir(),
+		Bundle:               testBundleSource(t),
+		SessionName:          "direct-shell",
+		SessionNameSpecified: true,
 	})
 	if err != nil {
 		t.Fatalf("New() returned error: %v", err)
@@ -989,11 +992,120 @@ func TestStartSessionUsesApplicationSessionName(t *testing.T) {
 		t.Fatalf("ReadMetadata() returned error: %v", err)
 	}
 
-	if metadata.Name != "direct-shell" {
+	wantPrefix := "direct-shell@"
+	if !strings.HasPrefix(metadata.Name, wantPrefix) {
+		t.Fatalf(
+			"metadata name = %q, want prefix %q",
+			metadata.Name,
+			wantPrefix,
+		)
+	}
+
+	wantSuffix := session.ID[:7]
+	if metadata.Name != "direct-shell@"+wantSuffix {
 		t.Fatalf(
 			"metadata name = %q, want %q",
 			metadata.Name,
-			"direct-shell",
+			"direct-shell@"+wantSuffix,
 		)
+	}
+
+	if metadata.ID != session.ID {
+		t.Fatalf(
+			"metadata ID = %q, want %q",
+			metadata.ID,
+			session.ID,
+		)
+	}
+}
+
+func TestStartSessionUsesUnnamedGeneratedSessionName(t *testing.T) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-fixture-token")
+
+	application, err := New(Options{
+		Version: "1.0.0",
+		Commit:  "test",
+		Root:    t.TempDir(),
+		Bundle:  testBundleSource(t),
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	session, err := application.StartSession()
+	if err != nil {
+		t.Fatalf("StartSession() returned error: %v", err)
+	}
+	defer session.Cleanup()
+
+	metadata, err := sessionmeta.ReadMetadata(
+		session.Paths.Runtime,
+	)
+	if err != nil {
+		t.Fatalf("ReadMetadata() returned error: %v", err)
+	}
+
+	want := "unnamed@" + session.ID[:7]
+	if metadata.Name != want {
+		t.Fatalf(
+			"metadata name = %q, want %q",
+			metadata.Name,
+			want,
+		)
+	}
+}
+
+func TestSessionNameForRuntime(t *testing.T) {
+	runtimeSession := &runtime.Session{
+		ID: "81cac8cbf90a225223b66c0898c8d54f",
+	}
+
+	tests := []struct {
+		name          string
+		specifiedName string
+		specified     bool
+		want          string
+	}{
+		{
+			name:      "unspecified",
+			specified: false,
+			want:      "unnamed@81cac8c",
+		},
+		{
+			name:          "specified",
+			specifiedName: "unishell_dev_session",
+			specified:     true,
+			want:          "unishell_dev_session@81cac8c",
+		},
+		{
+			name:          "specified without explicit flag for compatibility",
+			specifiedName: "default",
+			specified:     false,
+			want:          "unnamed@81cac8c",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := sessionNameForRuntime(
+				runtimeSession,
+				test.specifiedName,
+				test.specified,
+			)
+			if err != nil {
+				t.Fatalf(
+					"sessionNameForRuntime() returned error: %v",
+					err,
+				)
+			}
+
+			if got != test.want {
+				t.Fatalf(
+					"sessionNameForRuntime() = %q, want %q",
+					got,
+					test.want,
+				)
+			}
+		})
 	}
 }

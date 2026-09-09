@@ -20,6 +20,7 @@ type cliOptions struct {
 	NoSharedRC             bool
 	Multiplexer            string
 	SessionName            string
+	SessionNameSpecified   bool
 	MultiplexerSessionName string
 }
 
@@ -34,6 +35,7 @@ func parseCLIArgs(args []string) (cliOptions, []string, error) {
 	options.SessionName = strings.TrimSpace(
 		os.Getenv(sessionEnvName),
 	)
+	options.SessionNameSpecified = options.SessionName != ""
 
 	options.MultiplexerSessionName = strings.TrimSpace(
 		os.Getenv(multiplexerSessionEnvName),
@@ -137,6 +139,7 @@ func parseCLIArgs(args []string) (cliOptions, []string, error) {
 			}
 
 			options.SessionName = value
+			options.SessionNameSpecified = true
 			i++
 
 		case strings.HasPrefix(arg, "--session="):
@@ -151,6 +154,7 @@ func parseCLIArgs(args []string) (cliOptions, []string, error) {
 			}
 
 			options.SessionName = value
+			options.SessionNameSpecified = true
 		case arg == "--multiplexer":
 			if i+1 >= len(args) {
 				return cliOptions{}, nil, fmt.Errorf(

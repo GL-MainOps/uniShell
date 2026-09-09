@@ -24,6 +24,7 @@ type Options struct {
 	Multiplexer            *multiplexer.Manager
 	MultiplexerName        string
 	SessionName            string
+	SessionNameSpecified   bool
 	MultiplexerSessionName string
 	MultiplexerOptions     api.Options
 	Shell                  string
@@ -40,6 +41,7 @@ type App struct {
 	Multiplexer            *multiplexer.Manager
 	MultiplexerName        string
 	SessionName            string
+	SessionNameSpecified   bool
 	MultiplexerSessionName string
 	MultiplexerOptions     api.Options
 	Shell                  string
@@ -88,10 +90,9 @@ func New(options Options) (*App, error) {
 
 	multiplexerName := options.MultiplexerName
 
-	sessionName := options.SessionName
-	if sessionName == "" {
-		sessionName = "default"
-	}
+	sessionName := strings.TrimSpace(options.SessionName)
+	sessionNameSpecified := options.SessionNameSpecified ||
+		sessionName != ""
 
 	multiplexerOptions := options.MultiplexerOptions
 
@@ -116,6 +117,7 @@ func New(options Options) (*App, error) {
 		Multiplexer:            manager,
 		MultiplexerName:        multiplexerName,
 		SessionName:            sessionName,
+		SessionNameSpecified:   sessionNameSpecified,
 		MultiplexerSessionName: options.MultiplexerSessionName,
 		MultiplexerOptions:     multiplexerOptions,
 		Shell:                  options.Shell,
@@ -177,7 +179,19 @@ func (a *App) StartSession() (*runtime.Session, error) {
 			err,
 		)
 	}
-	if err := session.SetName(a.SessionName); err != nil {
+	sessionName, err := sessionNameForRuntime(
+		session,
+		a.SessionName,
+		a.SessionNameSpecified,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"generate runtime session name: %w",
+			err,
+		)
+	}
+
+	if err := session.SetName(sessionName); err != nil {
 		return nil, fmt.Errorf(
 			"set runtime session name: %w",
 			err,
@@ -262,6 +276,25 @@ func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf(
 			"create multiplexer runtime session: %w",
+			err,
+		)
+	}
+
+	sessionName, err := sessionNameForRuntime(
+		runtimeSession,
+		a.SessionName,
+		a.SessionNameSpecified,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"generate runtime session name: %w",
+			err,
+		)
+	}
+
+	if err := runtimeSession.SetName(sessionName); err != nil {
+		return nil, fmt.Errorf(
+			"set multiplexer runtime session name: %w",
 			err,
 		)
 	}
@@ -413,7 +446,7 @@ func (a *App) CreateMultiplexerSession(
 
 	managedSession, err := a.Multiplexer.Create(
 		multiplexerName,
-		a.SessionName,
+		runtimeSession.Name,
 		a.MultiplexerSessionName,
 		runtimeSession.Paths.Runtime,
 		endpoint,

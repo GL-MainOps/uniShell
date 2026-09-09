@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
@@ -271,7 +272,7 @@ func generateSessionID() (string, error) {
 
 func (m *Manager) Discover(
 	runtimePath string,
-	sessionName string,
+	sessionID string,
 ) (*ManagedSession, error) {
 	metadata, err := sessionmeta.ReadMetadata(runtimePath)
 	if err != nil {
@@ -286,7 +287,7 @@ func (m *Manager) Discover(
 		return nil, ErrSessionNotFound
 	}
 
-	if metadata.Name != sessionName {
+	if metadata.ID != sessionID {
 		return nil, ErrSessionNotFound
 	}
 
@@ -329,6 +330,50 @@ func (m *Manager) Discover(
 	}, nil
 }
 
+func (m *Manager) DiscoverByID(
+	versionRuntime string,
+	sessionID string,
+) (*ManagedSession, error) {
+	entries, err := os.ReadDir(versionRuntime)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrSessionNotFound
+		}
+
+		return nil, fmt.Errorf(
+			"inspect runtime sessions: %w",
+			err,
+		)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		runtimePath := filepath.Join(
+			versionRuntime,
+			entry.Name(),
+		)
+
+		session, err := m.Discover(
+			runtimePath,
+			sessionID,
+		)
+		if err == nil {
+			return session, nil
+		}
+
+		if errors.Is(err, ErrSessionNotFound) {
+			continue
+		}
+
+		return nil, err
+	}
+
+	return nil, ErrSessionNotFound
+}
+
 func (m *Manager) DiscoverByName(
 	versionRuntime string,
 	sessionName string,
@@ -355,19 +400,35 @@ func (m *Manager) DiscoverByName(
 			entry.Name(),
 		)
 
-		session, err := m.Discover(
-			runtimePath,
-			sessionName,
-		)
-		if err == nil {
-			return session, nil
+		metadata, err := sessionmeta.ReadMetadata(runtimePath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+
+			return nil, err
 		}
 
-		if errors.Is(err, ErrSessionNotFound) {
+		if metadata.Mode != sessionmeta.ModeMultiplexer {
 			continue
 		}
 
-		return nil, err
+		baseName := strings.TrimSpace(sessionName)
+		if baseName == "" {
+			baseName = "unnamed"
+		}
+
+		if !strings.HasPrefix(
+			metadata.Name,
+			baseName+"@",
+		) {
+			continue
+		}
+
+		return m.DiscoverByID(
+			versionRuntime,
+			metadata.ID,
+		)
 	}
 
 	return nil, ErrSessionNotFound

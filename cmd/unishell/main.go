@@ -36,6 +36,7 @@ func newApplication(options cliOptions) (*app.App, error) {
 		NoSharedRC:             options.NoSharedRC,
 		MultiplexerName:        options.Multiplexer,
 		SessionName:            options.SessionName,
+		SessionNameSpecified:   options.SessionNameSpecified,
 		MultiplexerSessionName: options.MultiplexerSessionName,
 	})
 }

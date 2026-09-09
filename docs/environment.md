@@ -85,13 +85,33 @@ Pressing `Ctrl+C` or selecting `quit` cancels startup safely.
 
 ### `UNISHELL_SESSION`
 
-Selects the uniShell logical session name.
+Selects the base name of the uniShell logical session.
 
-Default:
+If neither `UNISHELL_SESSION` nor `--session` is specified, uniShell
+generates the session name as:
 
 ```text
-default
+unnamed@<first-7-characters-of-runtime-session-id>
 ```
+
+When a name is specified, uniShell generates the session name as:
+
+```text
+<specified-name>@<first-7-characters-of-runtime-session-id>
+```
+
+The runtime session ID is generated once for the session and is also the
+identifier used by the runtime session directory and session metadata.
+
+Examples:
+
+```text
+unnamed@81cac8c
+development@81cac8c
+```
+
+This is uniShell's logical session identity and is independent from the
+multiplexer's native session naming.
 
 Equivalent flag:
 
