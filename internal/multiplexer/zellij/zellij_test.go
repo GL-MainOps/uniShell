@@ -522,6 +522,7 @@ func TestDestroyUsesSessionName(t *testing.T) {
 
 	wantArgs := []string{
 		"delete-session",
+		"--force",
 		"work",
 	}
 

@@ -383,7 +383,10 @@ func (b *Backend) IsAlive(session api.Session) bool {
 }
 
 func (b *Backend) Destroy(session api.Session) error {
-	args := []string{"delete-session"}
+	args := []string{
+		"delete-session",
+		"--force",
+	}
 
 	if session.NativeName != "" {
 		args = append(
