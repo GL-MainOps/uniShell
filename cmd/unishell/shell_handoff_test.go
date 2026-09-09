@@ -31,6 +31,12 @@ func (b *shellHandoffBackend) Available() bool {
 	return true
 }
 
+func (b *shellHandoffBackend) AvailableForSession(
+	multiplexer.Session,
+) bool {
+	return true
+}
+
 func (b *shellHandoffBackend) Create(multiplexer.Session) error {
 	b.created = true
 	return nil
@@ -184,6 +190,12 @@ func (b *shellHandoffBackendWithError) Capabilities() map[multiplexer.Capability
 }
 
 func (b *shellHandoffBackendWithError) Available() bool {
+	return true
+}
+
+func (b *shellHandoffBackendWithError) AvailableForSession(
+	multiplexer.Session,
+) bool {
 	return true
 }
 

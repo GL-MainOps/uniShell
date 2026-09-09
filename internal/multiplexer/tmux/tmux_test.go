@@ -11,6 +11,67 @@ import (
 	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
+func TestBinaryPathUsesSessionRuntime(t *testing.T) {
+	runtime := t.TempDir()
+	backend := &Backend{Binary: "fake-tmux"}
+
+	got := backend.binaryPath(api.Session{Runtime: runtime})
+	want := filepath.Join(runtime, "bin", "fake-tmux")
+
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestBinaryPathFallsBackToConfiguredBinaryWithoutRuntime(t *testing.T) {
+	backend := &Backend{Binary: "fake-tmux"}
+
+	got := backend.binaryPath(api.Session{})
+	want := "fake-tmux"
+
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestAvailableForSessionAcceptsBundledRuntimeBinary(
+	t *testing.T,
+) {
+	runtimeDir := t.TempDir()
+	binDir := filepath.Join(runtimeDir, "bin")
+
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	binary := filepath.Join(binDir, "tmux")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	backend := New()
+
+	if !backend.AvailableForSession(api.Session{
+		Runtime: runtimeDir,
+	}) {
+		t.Fatal("expected bundled runtime binary to be available")
+	}
+}
+
+func TestAvailableForSessionRejectsMissingRuntimeBinary(
+	t *testing.T,
+) {
+	runtimeDir := t.TempDir()
+
+	backend := New()
+
+	if backend.AvailableForSession(api.Session{
+		Runtime: runtimeDir,
+	}) {
+		t.Fatal("expected missing runtime binary to be unavailable")
+	}
+}
+
 func TestCreateUsesSessionEndpointAndName(t *testing.T) {
 	var gotArgs [][]string
 

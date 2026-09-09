@@ -547,6 +547,12 @@ func (appTestBackend) Available() bool {
 	return true
 }
 
+func (appTestBackend) AvailableForSession(
+	multiplexer.Session,
+) bool {
+	return true
+}
+
 func (b *appTestBackend) Create(multiplexer.Session) error {
 	b.created = true
 	return nil

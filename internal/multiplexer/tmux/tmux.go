@@ -64,8 +64,36 @@ func (b *Backend) Capabilities() map[api.Capability]bool {
 	}
 }
 
+func (b *Backend) binaryPath(session api.Session) string {
+	if session.Runtime == "" {
+		return b.Binary
+	}
+
+	return filepath.Join(
+		session.Runtime,
+		"bin",
+		b.Binary,
+	)
+}
+
 func (b *Backend) Available() bool {
 	_, err := exec.LookPath(b.Binary)
+	return err == nil
+}
+
+func (b *Backend) AvailableForSession(
+	session api.Session,
+) bool {
+	binary := b.binaryPath(session)
+
+	if filepath.IsAbs(binary) {
+		info, err := os.Stat(binary)
+		return err == nil &&
+			!info.IsDir() &&
+			info.Mode()&0111 != 0
+	}
+
+	_, err := exec.LookPath(binary)
 	return err == nil
 }
 
@@ -140,7 +168,7 @@ func (b *Backend) Create(session api.Session) error {
 		session.ShellArgs...,
 	)
 
-	return b.Run(b.Binary, args...)
+	return b.Run(b.binaryPath(session), args...)
 }
 
 func (b *Backend) Attach(session api.Session) error {
@@ -160,7 +188,7 @@ func (b *Backend) Attach(session api.Session) error {
 		)
 	}
 
-	return b.Run(b.Binary, args...)
+	return b.Run(b.binaryPath(session), args...)
 }
 
 func (b *Backend) Detach(session api.Session) error {
@@ -180,7 +208,7 @@ func (b *Backend) Detach(session api.Session) error {
 		)
 	}
 
-	return b.Run(b.Binary, args...)
+	return b.Run(b.binaryPath(session), args...)
 }
 
 func (b *Backend) ProcessIdentity(
@@ -207,7 +235,7 @@ func (b *Backend) ProcessIdentity(
 		}
 	}
 
-	output, err := runner(b.Binary, args...)
+	output, err := runner(b.binaryPath(session), args...)
 	if err != nil {
 		return sessionmeta.ProcessIdentity{}, fmt.Errorf(
 			"query tmux server process: %w",
@@ -280,7 +308,7 @@ func (b *Backend) IsAlive(session api.Session) bool {
 		}
 	}
 
-	return runner(b.Binary, args...) == nil
+	return runner(b.binaryPath(session), args...) == nil
 }
 
 func (b *Backend) Destroy(session api.Session) error {
@@ -300,7 +328,7 @@ func (b *Backend) Destroy(session api.Session) error {
 		)
 	}
 
-	return b.Run(b.Binary, args...)
+	return b.Run(b.binaryPath(session), args...)
 }
 
 func (b *Backend) commandArgs(

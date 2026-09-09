@@ -27,6 +27,7 @@ type Backend interface {
 	Name() string
 	Capabilities() map[Capability]bool
 	Available() bool
+	AvailableForSession(Session) bool
 
 	Create(Session) error
 	Attach(Session) error

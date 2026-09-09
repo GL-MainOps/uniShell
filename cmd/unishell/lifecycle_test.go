@@ -256,6 +256,12 @@ func (b *lifecycleTestBackend) Available() bool {
 	return true
 }
 
+func (b *lifecycleTestBackend) AvailableForSession(
+	multiplexer.Session,
+) bool {
+	return true
+}
+
 func (b *lifecycleTestBackend) Create(
 	session multiplexer.Session,
 ) error {

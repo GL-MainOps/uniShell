@@ -36,6 +36,12 @@ func (b *cleanTestBackend) Available() bool {
 	return true
 }
 
+func (b *cleanTestBackend) AvailableForSession(
+	multiplexer.Session,
+) bool {
+	return true
+}
+
 func (b *cleanTestBackend) Create(multiplexer.Session) error {
 	b.alive = true
 	return nil

@@ -22,6 +22,10 @@ func (b testBackend) Available() bool {
 	return b.available
 }
 
+func (b testBackend) AvailableForSession(Session) bool {
+	return b.available
+}
+
 func (b testBackend) Create(Session) error {
 	return nil
 }

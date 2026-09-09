@@ -51,14 +51,6 @@ func (m *Manager) Create(
 		)
 	}
 
-	if !backend.Available() {
-		return nil, fmt.Errorf(
-			"multiplexer %q: %w",
-			backendName,
-			ErrUnavailable,
-		)
-	}
-
 	id, err := generateSessionID()
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -77,6 +69,14 @@ func (m *Manager) Create(
 		ShellArgs:  append([]string(nil), shellArgs...),
 		Env:        append([]string(nil), env...),
 		Options:    options,
+	}
+
+	if !backend.AvailableForSession(session) {
+		return nil, fmt.Errorf(
+			"multiplexer %q: %w",
+			backendName,
+			ErrUnavailable,
+		)
 	}
 
 	var createdNativeName = nativeName
@@ -302,14 +302,6 @@ func (m *Manager) Discover(
 		)
 	}
 
-	if !backend.Available() {
-		return nil, fmt.Errorf(
-			"multiplexer %q: %w",
-			metadata.Multiplexer,
-			ErrUnavailable,
-		)
-	}
-
 	session := Session{
 		Name:       metadata.Name,
 		NativeName: metadata.NativeName,
@@ -317,6 +309,14 @@ func (m *Manager) Discover(
 		Endpoint:   metadata.Endpoint,
 		ShellName:  metadata.ShellName,
 		ShellPath:  metadata.ShellPath,
+	}
+
+	if !backend.AvailableForSession(session) {
+		return nil, fmt.Errorf(
+			"multiplexer %q: %w",
+			metadata.Multiplexer,
+			ErrUnavailable,
+		)
 	}
 
 	if !backend.IsAlive(session) {
@@ -479,10 +479,6 @@ func (m *Manager) Reconcile(
 			continue
 		}
 
-		if !backend.Available() {
-			continue
-		}
-
 		session := Session{
 			Name:       metadata.Name,
 			NativeName: metadata.NativeName,
@@ -490,6 +486,10 @@ func (m *Manager) Reconcile(
 			Endpoint:   metadata.Endpoint,
 			ShellName:  metadata.ShellName,
 			ShellPath:  metadata.ShellPath,
+		}
+
+		if !backend.AvailableForSession(session) {
+			continue
 		}
 
 		if backend.IsAlive(session) {
@@ -537,14 +537,6 @@ func (m *Manager) ReconcileSession(
 		)
 	}
 
-	if !backend.Available() {
-		return fmt.Errorf(
-			"multiplexer %q: %w",
-			metadata.Multiplexer,
-			ErrUnavailable,
-		)
-	}
-
 	session := Session{
 		Name:       metadata.Name,
 		NativeName: metadata.NativeName,
@@ -552,6 +544,14 @@ func (m *Manager) ReconcileSession(
 		Endpoint:   metadata.Endpoint,
 		ShellName:  metadata.ShellName,
 		ShellPath:  metadata.ShellPath,
+	}
+
+	if !backend.AvailableForSession(session) {
+		return fmt.Errorf(
+			"multiplexer %q: %w",
+			metadata.Multiplexer,
+			ErrUnavailable,
+		)
 	}
 
 	if backend.IsAlive(session) {
@@ -604,14 +604,6 @@ func (m *Manager) Cleanup(
 		)
 	}
 
-	if !backend.Available() {
-		return fmt.Errorf(
-			"multiplexer %q: %w",
-			metadata.Multiplexer,
-			ErrUnavailable,
-		)
-	}
-
 	session := Session{
 		Name:       metadata.Name,
 		NativeName: metadata.NativeName,
@@ -619,6 +611,14 @@ func (m *Manager) Cleanup(
 		Endpoint:   metadata.Endpoint,
 		ShellName:  metadata.ShellName,
 		ShellPath:  metadata.ShellPath,
+	}
+
+	if !backend.AvailableForSession(session) {
+		return fmt.Errorf(
+			"multiplexer %q: %w",
+			metadata.Multiplexer,
+			ErrUnavailable,
+		)
 	}
 
 	if backend.IsAlive(session) {

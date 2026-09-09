@@ -382,6 +382,12 @@ func (b *shellTestBackend) Available() bool {
 	return true
 }
 
+func (b *shellTestBackend) AvailableForSession(
+	multiplexer.Session,
+) bool {
+	return true
+}
+
 func (b *shellTestBackend) Create(multiplexer.Session) error {
 	return nil
 }
@@ -433,6 +439,12 @@ func (b *cleanLifecycleBackend) Capabilities() map[multiplexer.Capability]bool {
 }
 
 func (b *cleanLifecycleBackend) Available() bool {
+	return true
+}
+
+func (b *cleanLifecycleBackend) AvailableForSession(
+	multiplexer.Session,
+) bool {
 	return true
 }
 

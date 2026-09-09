@@ -48,6 +48,12 @@ func (b *managerTestBackend) Available() bool {
 	return b.available
 }
 
+func (b *managerTestBackend) AvailableForSession(
+	Session,
+) bool {
+	return b.available
+}
+
 func (b *managerTestBackend) Create(session Session) error {
 	b.created = true
 	b.createdSession = session
