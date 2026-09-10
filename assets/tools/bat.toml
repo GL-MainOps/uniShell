@@ -1,13 +1,13 @@
 [[tools]]
-name = "zellij"
+name = "bat"
 
 [[tools.artifacts]]
-version = "0.45.1"
+version = "0.26.1"
 platform = "linux"
 architecture = "amd64"
 archive_type = "tar.gz"
-binary_path = "zellij"
-binary_name = "zellij"
+binary_path = "bat-v0.26.1-x86_64-unknown-linux-musl/bat"
+binary_name = "bat"
 checksum = ""
 
 [tools.artifacts.validation]
@@ -19,7 +19,7 @@ executable = true
 kind = "github-release"
 
 [tools.artifacts.source.github_release]
-owner = "zellij-org"
-repository = "zellij"
-release = "v0.45.1"
-asset = "zellij-x86_64-unknown-linux-musl.tar.gz"
+owner = "sharkdp"
+repository = "bat"
+release = "v0.26.1"
+asset = "bat-v0.26.1-x86_64-unknown-linux-musl.tar.gz"

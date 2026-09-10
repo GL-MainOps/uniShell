@@ -10,7 +10,7 @@ type zstdCompressor struct {
 func newZstdCompressor() (*zstdCompressor, error) {
 	encoder, err := zstd.NewWriter(
 		nil,
-		zstd.WithEncoderLevel(zstd.SpeedDefault),
+		zstd.WithEncoderLevel(zstd.SpeedBestCompression),
 	)
 	if err != nil {
 		return nil, err

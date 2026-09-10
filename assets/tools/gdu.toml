@@ -1,13 +1,13 @@
 [[tools]]
-name = "zellij"
+name = "gdu"
 
 [[tools.artifacts]]
-version = "0.45.1"
+version = "5.37.0"
 platform = "linux"
 architecture = "amd64"
-archive_type = "tar.gz"
-binary_path = "zellij"
-binary_name = "zellij"
+archive_type = "tgz"
+binary_path = "gdu_linux_amd64_static"
+binary_name = "gdu"
 checksum = ""
 
 [tools.artifacts.validation]
@@ -19,7 +19,7 @@ executable = true
 kind = "github-release"
 
 [tools.artifacts.source.github_release]
-owner = "zellij-org"
-repository = "zellij"
-release = "v0.45.1"
-asset = "zellij-x86_64-unknown-linux-musl.tar.gz"
+owner = "dundee"
+repository = "gdu"
+release = "v5.37.0"
+asset = "gdu_linux_amd64_static.tgz"

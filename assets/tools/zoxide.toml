@@ -1,13 +1,13 @@
 [[tools]]
-name = "zellij"
+name = "zoxide"
 
 [[tools.artifacts]]
-version = "0.45.1"
+version = "0.10.0"
 platform = "linux"
 architecture = "amd64"
 archive_type = "tar.gz"
-binary_path = "zellij"
-binary_name = "zellij"
+binary_path = "zoxide"
+binary_name = "zoxide"
 checksum = ""
 
 [tools.artifacts.validation]
@@ -19,7 +19,7 @@ executable = true
 kind = "github-release"
 
 [tools.artifacts.source.github_release]
-owner = "zellij-org"
-repository = "zellij"
-release = "v0.45.1"
-asset = "zellij-x86_64-unknown-linux-musl.tar.gz"
+owner = "ajeetdsouza"
+repository = "zoxide"
+release = "v0.10.0"
+asset = "zoxide-0.10.0-x86_64-unknown-linux-musl.tar.gz"

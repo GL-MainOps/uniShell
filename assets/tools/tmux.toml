@@ -8,7 +8,7 @@ architecture = "amd64"
 archive_type = ""
 binary_path = "tmux"
 binary_name = "tmux"
-checksum = "35b1f7cb48a93d9c8868b327ea66380cd95e9c13e55de5acf374fbb96373af24"
+checksum = ""
 
 [tools.artifacts.validation]
 static_elf = true

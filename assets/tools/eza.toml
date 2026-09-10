@@ -1,13 +1,13 @@
 [[tools]]
-name = "zellij"
+name = "eza"
 
 [[tools.artifacts]]
-version = "0.45.1"
+version = "0.23.5"
 platform = "linux"
 architecture = "amd64"
 archive_type = "tar.gz"
-binary_path = "zellij"
-binary_name = "zellij"
+binary_path = "eza"
+binary_name = "eza"
 checksum = ""
 
 [tools.artifacts.validation]
@@ -19,7 +19,7 @@ executable = true
 kind = "github-release"
 
 [tools.artifacts.source.github_release]
-owner = "zellij-org"
-repository = "zellij"
-release = "v0.45.1"
-asset = "zellij-x86_64-unknown-linux-musl.tar.gz"
+owner = "eza-community"
+repository = "eza"
+release = "v0.23.5"
+asset = "eza_x86_64-unknown-linux-musl.tar.gz"
