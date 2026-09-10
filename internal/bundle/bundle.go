@@ -1,7 +1,9 @@
 package bundle
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 
 	"gitlab.com/mainops/uniShell/internal/crypto"
 )
@@ -60,6 +62,30 @@ func DecompressAuthenticated(data []byte) ([]byte, error) {
 	}
 
 	return archive, nil
+}
+
+// DecompressAuthenticatedReader creates a streaming reader over an
+// authenticated bundle payload.
+//
+// The payload must have already been authenticated by OpenAuthenticated.
+func DecompressAuthenticatedReader(
+	data []byte,
+) (io.ReadCloser, error) {
+	if !defaultCompressor.Matches(data) {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}
+
+	reader, err := defaultCompressor.DecompressReader(
+		bytes.NewReader(data),
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"decompress runtime bundle: %w",
+			err,
+		)
+	}
+
+	return reader, nil
 }
 
 // Open authenticates and decrypts an encrypted uniShell runtime bundle,

@@ -102,7 +102,10 @@ func TestCreateAndOpen(t *testing.T) {
 
 	destination := filepath.Join(t.TempDir(), "runtime")
 
-	if err := ExtractArchive(archive, destination); err != nil {
+	if err := ExtractArchive(
+		bytes.NewReader(archive),
+		destination,
+	); err != nil {
 		t.Fatalf("ExtractArchive() returned error: %v", err)
 	}
 

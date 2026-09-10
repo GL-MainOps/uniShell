@@ -1,6 +1,10 @@
 package bundle
 
-import "github.com/klauspost/compress/zstd"
+import (
+	"io"
+
+	"github.com/klauspost/compress/zstd"
+)
 
 type zstdCompressor struct {
 	encoder *zstd.Encoder
@@ -39,6 +43,17 @@ func (c *zstdCompressor) Decompress(data []byte) ([]byte, error) {
 	}
 
 	return result, nil
+}
+
+func (c *zstdCompressor) DecompressReader(
+	reader io.Reader,
+) (io.ReadCloser, error) {
+	decoder, err := zstd.NewReader(reader)
+	if err != nil {
+		return nil, ErrInvalidCompressedBundle
+	}
+
+	return decoder.IOReadCloser(), nil
 }
 
 func (c *zstdCompressor) Matches(data []byte) bool {

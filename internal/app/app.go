@@ -245,7 +245,7 @@ func (a *App) StartSession() (*runtime.Session, error) {
 		return cleanupOnError(err)
 	}
 
-	archive, err := bundle.DecompressAuthenticated(
+	archiveReader, err := bundle.DecompressAuthenticatedReader(
 		authenticated,
 	)
 	if err != nil {
@@ -256,9 +256,10 @@ func (a *App) StartSession() (*runtime.Session, error) {
 			),
 		)
 	}
+	defer archiveReader.Close()
 
 	if err := bundle.ExtractArchive(
-		archive,
+		archiveReader,
 		session.Paths.Runtime,
 	); err != nil {
 		return cleanupOnError(
@@ -341,7 +342,7 @@ func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
 		return cleanupOnError(err)
 	}
 
-	archive, err := bundle.DecompressAuthenticated(
+	archiveReader, err := bundle.DecompressAuthenticatedReader(
 		authenticated,
 	)
 	if err != nil {
@@ -352,9 +353,10 @@ func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
 			),
 		)
 	}
+	defer archiveReader.Close()
 
 	if err := bundle.ExtractArchive(
-		archive,
+		archiveReader,
 		runtimeSession.Paths.Runtime,
 	); err != nil {
 		return cleanupOnError(
