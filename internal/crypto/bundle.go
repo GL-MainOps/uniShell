@@ -24,15 +24,12 @@ const (
 	keySize = 32
 
 	argonTime    uint32 = 1
-	argonMemory  uint32 = 8 * 1024
-	argonThreads uint8  = 1
+	argonMemory  uint32 = 64 * 1024
+	argonThreads uint8  = 4
 
-	minArgonTime    uint32 = 1
-	maxArgonTime    uint32 = 1
-	minArgonMemory  uint32 = 8 * 1024
-	maxArgonMemory  uint32 = 8 * 1024
-	minArgonThreads uint8  = 1
-	maxArgonThreads uint8  = 1
+	legacyArgonTime    uint32 = 1
+	legacyArgonMemory  uint32 = 8 * 1024
+	legacyArgonThreads uint8  = 1
 )
 
 var (
@@ -183,12 +180,12 @@ func zero(data []byte) {
 }
 
 func validParameters(time uint32, memory uint32, threads uint8) bool {
-	return time >= minArgonTime &&
-		time <= maxArgonTime &&
-		memory >= minArgonMemory &&
-		memory <= maxArgonMemory &&
-		threads >= minArgonThreads &&
-		threads <= maxArgonThreads
+	return time == argonTime &&
+		memory == argonMemory &&
+		threads == argonThreads ||
+		time == legacyArgonTime &&
+			memory == legacyArgonMemory &&
+			threads == legacyArgonThreads
 }
 
 func encodeHeader(bundle Bundle) ([]byte, error) {
