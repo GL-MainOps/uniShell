@@ -38,6 +38,7 @@ type App struct {
 	AuthToken              string
 	Paths                  runtime.Paths
 	Bundle                 BundleSource
+	AuthenticatedBundle    []byte
 	Multiplexer            *multiplexer.Manager
 	MultiplexerName        string
 	SessionName            string
@@ -151,17 +152,47 @@ func (a *App) ValidateAuthentication() error {
 		)
 	}
 
-	if _, err := bundle.Open(
+	authenticated, err := bundle.OpenAuthenticated(
 		data,
 		a.AuthToken,
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf(
 			"authenticate runtime bundle: %w",
 			err,
 		)
 	}
 
+	a.AuthenticatedBundle = authenticated
+
 	return nil
+}
+
+func (a *App) authenticatedBundle() ([]byte, error) {
+	if len(a.AuthenticatedBundle) > 0 {
+		return a.AuthenticatedBundle, nil
+	}
+
+	data, err := a.Bundle()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"load embedded runtime bundle: %w",
+			err,
+		)
+	}
+
+	authenticated, err := bundle.OpenAuthenticated(
+		data,
+		a.AuthToken,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"authenticate runtime bundle: %w",
+			err,
+		)
+	}
+
+	return authenticated, nil
 }
 
 func (a *App) StartSession() (*runtime.Session, error) {
@@ -209,24 +240,18 @@ func (a *App) StartSession() (*runtime.Session, error) {
 		return nil, err
 	}
 
-	data, err := a.Bundle()
+	authenticated, err := a.authenticatedBundle()
 	if err != nil {
-		return cleanupOnError(
-			fmt.Errorf(
-				"load embedded runtime bundle: %w",
-				err,
-			),
-		)
+		return cleanupOnError(err)
 	}
 
-	archive, err := bundle.Open(
-		data,
-		a.AuthToken,
+	archive, err := bundle.DecompressAuthenticated(
+		authenticated,
 	)
 	if err != nil {
 		return cleanupOnError(
 			fmt.Errorf(
-				"open runtime bundle: %w",
+				"decompress runtime bundle: %w",
 				err,
 			),
 		)
@@ -311,24 +336,18 @@ func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
 		return nil, err
 	}
 
-	data, err := a.Bundle()
+	authenticated, err := a.authenticatedBundle()
 	if err != nil {
-		return cleanupOnError(
-			fmt.Errorf(
-				"load embedded runtime bundle: %w",
-				err,
-			),
-		)
+		return cleanupOnError(err)
 	}
 
-	archive, err := bundle.Open(
-		data,
-		a.AuthToken,
+	archive, err := bundle.DecompressAuthenticated(
+		authenticated,
 	)
 	if err != nil {
 		return cleanupOnError(
 			fmt.Errorf(
-				"open runtime bundle: %w",
+				"decompress runtime bundle: %w",
 				err,
 			),
 		)

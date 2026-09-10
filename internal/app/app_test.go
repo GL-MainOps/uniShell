@@ -1115,3 +1115,32 @@ func TestSessionNameForRuntime(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateAuthenticationCachesAuthenticatedBundle(t *testing.T) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-fixture-token")
+
+	application, err := New(Options{
+		Version: "1.0.0",
+		Commit:  "test",
+		Root:    t.TempDir(),
+		Bundle:  testBundleSource(t),
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	if len(application.AuthenticatedBundle) != 0 {
+		t.Fatal("authenticated bundle is populated before validation")
+	}
+
+	if err := application.ValidateAuthentication(); err != nil {
+		t.Fatalf(
+			"ValidateAuthentication() returned error: %v",
+			err,
+		)
+	}
+
+	if len(application.AuthenticatedBundle) == 0 {
+		t.Fatal("authenticated bundle is empty after validation")
+	}
+}

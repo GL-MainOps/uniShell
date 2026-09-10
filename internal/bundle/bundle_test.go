@@ -11,6 +11,59 @@ import (
 	"gitlab.com/mainops/uniShell/internal/crypto"
 )
 
+func TestOpenAuthenticatedReturnsCompressedPayload(t *testing.T) {
+	sourceDir := t.TempDir()
+
+	payload := bytes.Repeat([]byte("runtime payload\n"), 1024)
+
+	if err := os.WriteFile(
+		filepath.Join(sourceDir, "runtime"),
+		payload,
+		0o755,
+	); err != nil {
+		t.Fatalf("write runtime payload: %v", err)
+	}
+
+	bundleData, err := Create(sourceDir, "test-password")
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	authenticated, err := OpenAuthenticated(
+		bundleData,
+		"test-password",
+	)
+	if err != nil {
+		t.Fatalf(
+			"OpenAuthenticated() returned error: %v",
+			err,
+		)
+	}
+
+	if !defaultCompressor.Matches(authenticated) {
+		t.Fatal("authenticated payload is not compressed")
+	}
+
+	archive, err := DecompressAuthenticated(authenticated)
+	if err != nil {
+		t.Fatalf(
+			"DecompressAuthenticated() returned error: %v",
+			err,
+		)
+	}
+
+	opened, err := Open(bundleData, "test-password")
+	if err != nil {
+		t.Fatalf("Open() returned error: %v", err)
+	}
+
+	if !bytes.Equal(archive, opened) {
+		t.Fatal(
+			"OpenAuthenticated() and Open() produced different archives",
+		)
+	}
+}
+
 func TestCreateAndOpen(t *testing.T) {
 	source := t.TempDir()
 
