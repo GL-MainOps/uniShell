@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"gitlab.com/mainops/uniShell/internal/credentials"
+	"gitlab.com/mainops/uniShell/internal/crypto"
 )
 
 func TestCreateAndOpen(t *testing.T) {
@@ -64,6 +65,39 @@ func TestCreateAndOpen(t *testing.T) {
 	}
 }
 
+func TestCreateCompressesRuntimeArchive(t *testing.T) {
+	source := t.TempDir()
+
+	payload := bytes.Repeat(
+		[]byte("uniShell runtime compression integration test\n"),
+		10000,
+	)
+
+	if err := os.WriteFile(
+		filepath.Join(source, "test"),
+		payload,
+		0600,
+	); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	password := "test-password"
+
+	bundle, err := Create(source, password)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	decrypted, err := crypto.Decrypt(bundle, password)
+	if err != nil {
+		t.Fatalf("decrypt created bundle: %v", err)
+	}
+
+	if !defaultCompressor.Matches(decrypted) {
+		t.Fatal("created bundle payload is not Zstandard-compressed")
+	}
+}
+
 func TestOpenRejectsWrongPassword(t *testing.T) {
 	source := t.TempDir()
 
@@ -115,6 +149,41 @@ func TestOpenRejectsModifiedBundle(t *testing.T) {
 			"Open() error = %v, want authentication failure",
 			err,
 		)
+	}
+}
+
+func TestOpenSupportsLegacyUncompressedBundle(t *testing.T) {
+	source := t.TempDir()
+
+	payload := []byte("legacy runtime payload")
+
+	if err := os.WriteFile(
+		filepath.Join(source, "test"),
+		payload,
+		0600,
+	); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	archive, err := CreateArchive(source)
+	if err != nil {
+		t.Fatalf("CreateArchive() returned error: %v", err)
+	}
+
+	password := "test-password"
+
+	encrypted, err := crypto.Encrypt(archive, password)
+	if err != nil {
+		t.Fatalf("Encrypt() returned error: %v", err)
+	}
+
+	opened, err := Open(encrypted, password)
+	if err != nil {
+		t.Fatalf("Open() returned error: %v", err)
+	}
+
+	if !bytes.Equal(opened, archive) {
+		t.Fatal("legacy uncompressed bundle was changed while opening")
 	}
 }
 
