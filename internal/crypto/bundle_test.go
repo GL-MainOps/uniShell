@@ -65,6 +65,112 @@ func TestModifiedBundleFailsAuthentication(t *testing.T) {
 	}
 }
 
+func TestModifiedHeaderFailsAuthentication(t *testing.T) {
+	encrypted, err := Encrypt(
+		[]byte("uniShell test payload"),
+		"test-password",
+	)
+	if err != nil {
+		t.Fatalf("Encrypt() returned error: %v", err)
+	}
+
+	encrypted[14] ^= 0xff
+
+	_, err = Decrypt(encrypted, "test-password")
+	if err != credentials.ErrAuthenticationFailed {
+		t.Fatalf(
+			"Decrypt() error = %v, want %v",
+			err,
+			credentials.ErrAuthenticationFailed,
+		)
+	}
+}
+
+func TestUnsupportedVersionFails(t *testing.T) {
+	encrypted, err := Encrypt(
+		[]byte("uniShell test payload"),
+		"test-password",
+	)
+	if err != nil {
+		t.Fatalf("Encrypt() returned error: %v", err)
+	}
+
+	encrypted[4] = 1
+
+	_, err = Decrypt(encrypted, "test-password")
+	if err != ErrInvalidBundle {
+		t.Fatalf(
+			"Decrypt() error = %v, want %v",
+			err,
+			ErrInvalidBundle,
+		)
+	}
+}
+
+func TestInvalidKDFParametersFail(t *testing.T) {
+	encrypted, err := Encrypt(
+		[]byte("uniShell test payload"),
+		"test-password",
+	)
+	if err != nil {
+		t.Fatalf("Encrypt() returned error: %v", err)
+	}
+
+	// The Argon2 memory field occupies bytes 9-12.
+	// Change 8192 KiB to 8193 KiB.
+	encrypted[12] = 1
+
+	_, err = Decrypt(encrypted, "test-password")
+	if err != ErrInvalidBundle {
+		t.Fatalf(
+			"Decrypt() error = %v, want %v",
+			err,
+			ErrInvalidBundle,
+		)
+	}
+}
+
+func TestValidParametersAcceptVersionTwoParameters(t *testing.T) {
+	if !validParameters(
+		argonTime,
+		argonMemory,
+		argonThreads,
+	) {
+		t.Fatal("v2 Argon2 parameters were rejected")
+	}
+}
+
+func TestBundleUsesVersionTwoParameters(t *testing.T) {
+	encrypted, err := Encrypt(
+		[]byte("uniShell test payload"),
+		"test-password",
+	)
+	if err != nil {
+		t.Fatalf("Encrypt() returned error: %v", err)
+	}
+
+	bundle, err := decodeBundle(encrypted)
+	if err != nil {
+		t.Fatalf("decodeBundle() returned error: %v", err)
+	}
+
+	if bundle.Version != 2 {
+		t.Fatalf("Version = %d, want 2", bundle.Version)
+	}
+
+	if bundle.Time != 1 {
+		t.Fatalf("Time = %d, want 1", bundle.Time)
+	}
+
+	if bundle.Memory != 8*1024 {
+		t.Fatalf("Memory = %d, want %d", bundle.Memory, 8*1024)
+	}
+
+	if bundle.Threads != 1 {
+		t.Fatalf("Threads = %d, want 1", bundle.Threads)
+	}
+}
+
 func TestInvalidBundleFails(t *testing.T) {
 	_, err := Decrypt(
 		[]byte("not a uniShell bundle"),

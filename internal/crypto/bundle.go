@@ -17,15 +17,22 @@ import (
 const (
 	magic = "UNSB"
 
-	formatVersion byte = 1
+	formatVersion byte = 2
 
 	saltSize = 16
 
 	keySize = 32
 
-	argonTime    uint32 = 3
-	argonMemory  uint32 = 64 * 1024
-	argonThreads uint8  = 4
+	argonTime    uint32 = 1
+	argonMemory  uint32 = 8 * 1024
+	argonThreads uint8  = 1
+
+	minArgonTime    uint32 = 1
+	maxArgonTime    uint32 = 1
+	minArgonMemory  uint32 = 8 * 1024
+	maxArgonMemory  uint32 = 8 * 1024
+	minArgonThreads uint8  = 1
+	maxArgonThreads uint8  = 1
 )
 
 var (
@@ -78,18 +85,26 @@ func Encrypt(plaintext []byte, password string) ([]byte, error) {
 		return nil, fmt.Errorf("generate encryption nonce: %w", err)
 	}
 
-	ciphertext := aead.Seal(nil, nonce, plaintext, nil)
+	bundle := Bundle{
+		Version: formatVersion,
+		Time:    argonTime,
+		Memory:  argonMemory,
+		Threads: argonThreads,
+		Salt:    salt,
+	}
+
+	header, err := encodeHeader(bundle)
+	if err != nil {
+		return nil, err
+	}
+
+	ciphertext := aead.Seal(nil, nonce, plaintext, header)
 
 	payload := append(nonce, ciphertext...)
 
-	return encodeBundle(Bundle{
-		Version:    formatVersion,
-		Time:       argonTime,
-		Memory:     argonMemory,
-		Threads:    argonThreads,
-		Salt:       salt,
-		Ciphertext: payload,
-	})
+	bundle.Ciphertext = payload
+
+	return encodeBundle(bundle)
 }
 
 func Decrypt(data []byte, password string) ([]byte, error) {
@@ -129,7 +144,14 @@ func Decrypt(data []byte, password string) ([]byte, error) {
 	nonce := bundle.Ciphertext[:aead.NonceSize()]
 	ciphertext := bundle.Ciphertext[aead.NonceSize():]
 
-	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
+	header := data[:bundleHeaderSize]
+
+	plaintext, err := aead.Open(
+		nil,
+		nonce,
+		ciphertext,
+		header,
+	)
 	if err != nil {
 		return nil, credentials.ErrAuthenticationFailed
 	}
@@ -160,48 +182,80 @@ func zero(data []byte) {
 	}
 }
 
-func encodeBundle(bundle Bundle) ([]byte, error) {
+func validParameters(time uint32, memory uint32, threads uint8) bool {
+	return time >= minArgonTime &&
+		time <= maxArgonTime &&
+		memory >= minArgonMemory &&
+		memory <= maxArgonMemory &&
+		threads >= minArgonThreads &&
+		threads <= maxArgonThreads
+}
+
+func encodeHeader(bundle Bundle) ([]byte, error) {
+	if bundle.Version != formatVersion {
+		return nil, ErrInvalidBundle
+	}
+
+	if !validParameters(
+		bundle.Time,
+		bundle.Memory,
+		bundle.Threads,
+	) {
+		return nil, ErrInvalidBundle
+	}
+
 	if len(bundle.Salt) != saltSize {
 		return nil, ErrInvalidBundle
+	}
+
+	const headerSize = 4 + 1 + 4 + 4 + 1 + saltSize
+
+	header := make([]byte, headerSize)
+
+	offset := 0
+
+	copy(header[offset:], magic)
+	offset += 4
+
+	header[offset] = bundle.Version
+	offset++
+
+	binary.BigEndian.PutUint32(header[offset:], bundle.Time)
+	offset += 4
+
+	binary.BigEndian.PutUint32(header[offset:], bundle.Memory)
+	offset += 4
+
+	header[offset] = bundle.Threads
+	offset++
+
+	copy(header[offset:], bundle.Salt)
+
+	return header, nil
+}
+
+func encodeBundle(bundle Bundle) ([]byte, error) {
+	header, err := encodeHeader(bundle)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(bundle.Ciphertext) == 0 {
 		return nil, ErrInvalidBundle
 	}
 
-	headerSize := 4 + 1 + 4 + 4 + 1 + saltSize
+	result := make([]byte, len(header)+len(bundle.Ciphertext))
 
-	result := make([]byte, headerSize+len(bundle.Ciphertext))
-
-	offset := 0
-
-	copy(result[offset:], magic)
-	offset += 4
-
-	result[offset] = bundle.Version
-	offset++
-
-	binary.BigEndian.PutUint32(result[offset:], bundle.Time)
-	offset += 4
-
-	binary.BigEndian.PutUint32(result[offset:], bundle.Memory)
-	offset += 4
-
-	result[offset] = bundle.Threads
-	offset++
-
-	copy(result[offset:], bundle.Salt)
-	offset += saltSize
-
-	copy(result[offset:], bundle.Ciphertext)
+	copy(result, header)
+	copy(result[len(header):], bundle.Ciphertext)
 
 	return result, nil
 }
 
-func decodeBundle(data []byte) (Bundle, error) {
-	const headerSize = 4 + 1 + 4 + 4 + 1 + saltSize
+const bundleHeaderSize = 4 + 1 + 4 + 4 + 1 + saltSize
 
-	if len(data) < headerSize {
+func decodeBundle(data []byte) (Bundle, error) {
+	if len(data) < bundleHeaderSize {
 		return Bundle{}, ErrInvalidBundle
 	}
 
@@ -229,7 +283,7 @@ func decodeBundle(data []byte) (Bundle, error) {
 	threads := data[offset]
 	offset++
 
-	if time == 0 || memory == 0 || threads == 0 {
+	if !validParameters(time, memory, threads) {
 		return Bundle{}, ErrInvalidBundle
 	}
 
