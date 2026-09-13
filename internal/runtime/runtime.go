@@ -247,8 +247,10 @@ func IsWithinRoot(paths Paths, target string) bool {
 	}
 
 	return relative != ".." &&
-		len(relative) >= 3 &&
-		relative[:3] != ".."+string(filepath.Separator)
+		!strings.HasPrefix(
+			relative,
+			".."+string(filepath.Separator),
+		)
 }
 
 func newSessionID() (string, error) {

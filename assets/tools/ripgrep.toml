@@ -1,0 +1,25 @@
+[[tools]]
+name = "ripgrep"
+
+[[tools.artifacts]]
+version = "15.2.0"
+platform = "linux"
+architecture = "amd64"
+archive_type = "tar.gz"
+binary_path = "ripgrep-15.2.0-x86_64-unknown-linux-musl/rg"
+binary_name = "rg"
+checksum = ""
+
+[tools.artifacts.validation]
+static_elf = true
+musl = true
+executable = true
+
+[tools.artifacts.source]
+kind = "github-release"
+
+[tools.artifacts.source.github_release]
+owner = "BurntSushi"
+repository = "ripgrep"
+release = "15.2.0"
+asset = "ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz"
