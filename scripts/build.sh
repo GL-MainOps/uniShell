@@ -133,6 +133,9 @@ stage_runtime_assets() {
 split_profiles() {
     local value="$1"
     local profile
+    local existing
+    local -a profiles=()
+    local -a seen=()
 
     IFS=',' read -r -a profiles <<< "$value"
 
@@ -150,6 +153,14 @@ split_profiles() {
             return 1
         fi
 
+        for existing in "${seen[@]}"; do
+            if [[ "$existing" == "$profile" ]]; then
+                echo "error: profile \"$profile\" is specified more than once" >&2
+                return 1
+            fi
+        done
+
+        seen+=("$profile")
         printf '%s\n' "$profile"
     done
 }
