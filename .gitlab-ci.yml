@@ -1,5 +1,6 @@
 stages:
   - validate
+  - build
 
 default:
   image: golang:1.25
@@ -13,3 +14,27 @@ validate:
   stage: validate
   script:
     - scripts/ci/validate.sh
+
+build:
+  stage: build
+
+  cache:
+    key: "unishell-acquisition-$CI_COMMIT_REF_SLUG"
+    paths:
+      - tmp/
+    policy: pull-push
+
+  variables:
+    UNISHELL_PROFILE: "full"
+
+  script:
+    - ./scripts/build.sh --profile "$UNISHELL_PROFILE"
+
+  artifacts:
+    name: "unishell-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - bin/unishell-full
+    expire_in: 7 days
+
+  before_script:
+    - test -n "$UNISHELL_AUTH_TOKEN"
