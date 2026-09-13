@@ -1,6 +1,9 @@
 [[tools]]
 name = "tmux"
-profiles = ["common"]
+profiles = [
+    "full",
+    "common"
+]
 
 [[tools.artifacts]]
 version = "3.7c"

@@ -1,6 +1,9 @@
 [[tools]]
 name = "dblab"
-profiles = ["common"]
+profiles = [
+    "full",
+    "common"
+]
 
 [[tools.artifacts]]
 version = "0.50.0"
@@ -8,7 +11,7 @@ platform = "linux"
 architecture = "amd64"
 archive_type = "tar.gz"
 binary_path = "dblab"
-binary_name = "dblab"
+binary_name = "db"
 checksum = ""
 
 [tools.artifacts.validation]

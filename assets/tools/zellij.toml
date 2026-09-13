@@ -1,6 +1,9 @@
 [[tools]]
 name = "zellij"
-profiles = ["common"]
+profiles = [
+    "full",
+    "common"
+]
 
 [[tools.artifacts]]
 version = "0.45.1"

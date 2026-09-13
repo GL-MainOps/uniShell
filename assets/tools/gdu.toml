@@ -1,6 +1,9 @@
 [[tools]]
 name = "gdu"
-profiles = ["common"]
+profiles = [
+    "full",
+    "common"
+]
 
 [[tools.artifacts]]
 version = "5.37.0"

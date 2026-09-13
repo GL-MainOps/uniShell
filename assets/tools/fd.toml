@@ -1,6 +1,9 @@
 [[tools]]
 name = "fd"
-profiles = ["common"]
+profiles = [
+    "full",
+    "common"
+]
 
 [[tools.artifacts]]
 version = "10.5.0"

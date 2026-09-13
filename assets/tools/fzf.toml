@@ -1,6 +1,9 @@
 [[tools]]
 name = "fzf"
-profiles = ["common"]
+profiles = [
+    "full",
+    "common"
+]
 
 [[tools.artifacts]]
 version = "0.74.3"
