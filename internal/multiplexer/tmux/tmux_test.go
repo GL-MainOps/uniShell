@@ -83,7 +83,11 @@ func TestCreateUsesSessionEndpointAndName(t *testing.T) {
 
 	backend := &Backend{
 		Binary: "fake-tmux",
-		Run: func(_ string, args ...string) error {
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
 			gotArgs = append(
 				gotArgs,
 				append([]string(nil), args...),
@@ -129,7 +133,11 @@ func TestCreateSetsShellForSession(t *testing.T) {
 
 	backend := &Backend{
 		Binary: "fake-tmux",
-		Run: func(_ string, args ...string) error {
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
 			gotArgs = append(
 				gotArgs,
 				append([]string(nil), args...),
@@ -173,7 +181,11 @@ func TestCreateSetsShellForSession(t *testing.T) {
 func TestCreateRejectsEmptyShellPath(t *testing.T) {
 	backend := &Backend{
 		Binary: "fake-tmux",
-		Run: func(_ string, _ ...string) error {
+		Run: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) error {
 			t.Fatal("Run() must not be called")
 			return nil
 		},
@@ -192,6 +204,7 @@ func TestCreateRejectsEmptyShellPath(t *testing.T) {
 
 func TestCreateUsesSessionEnvironment(t *testing.T) {
 	var gotArgs []string
+	var gotEnv []string
 
 	endpoint := filepath.Join(
 		t.TempDir(),
@@ -201,8 +214,13 @@ func TestCreateUsesSessionEnvironment(t *testing.T) {
 
 	backend := &Backend{
 		Binary: "fake-tmux",
-		Run: func(_ string, args ...string) error {
+		Run: func(
+			_ string,
+			args []string,
+			env []string,
+		) error {
 			gotArgs = append([]string(nil), args...)
+			gotEnv = append([]string(nil), env...)
 			return nil
 		},
 	}
@@ -237,12 +255,25 @@ func TestCreateUsesSessionEnvironment(t *testing.T) {
 	if !reflect.DeepEqual(gotArgs, want) {
 		t.Fatalf("args = %#v, want %#v", gotArgs, want)
 	}
+
+	wantEnv := []string{
+		"PATH=/runtime/work/bin:/usr/bin",
+		"SHELL=/bin/bash",
+	}
+
+	if !reflect.DeepEqual(gotEnv, wantEnv) {
+		t.Fatalf("env = %#v, want %#v", gotEnv, wantEnv)
+	}
 }
 
 func TestCreateRejectsMissingEndpoint(t *testing.T) {
 	backend := &Backend{
 		Binary: "fake-tmux",
-		Run: func(_ string, _ ...string) error {
+		Run: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) error {
 			return nil
 		},
 	}
@@ -261,7 +292,11 @@ func TestAttachUsesSessionEndpointAndName(t *testing.T) {
 
 	backend := &Backend{
 		Binary: "fake-tmux",
-		Run: func(_ string, args ...string) error {
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
 			gotArgs = append([]string(nil), args...)
 			return nil
 		},
@@ -293,7 +328,11 @@ func TestDetachUsesSessionEndpointAndName(t *testing.T) {
 
 	backend := &Backend{
 		Binary: "fake-tmux",
-		Run: func(_ string, args ...string) error {
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
 			gotArgs = append([]string(nil), args...)
 			return nil
 		},
@@ -325,11 +364,19 @@ func TestIsAliveUsesSessionEndpointAndName(t *testing.T) {
 
 	backend := &Backend{
 		Binary: "fake-tmux",
-		Run: func(_ string, args ...string) error {
+		Run: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) error {
 			t.Fatal("IsAlive() must not use Run")
 			return nil
 		},
-		RunQuiet: func(_ string, args ...string) error {
+		RunQuiet: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
 			gotArgs = append([]string(nil), args...)
 			return nil
 		},
@@ -360,7 +407,11 @@ func TestIsAliveReturnsFalseWhenSessionDoesNotExist(t *testing.T) {
 
 	backend := &Backend{
 		Binary: "fake-tmux",
-		RunQuiet: func(_ string, args ...string) error {
+		RunQuiet: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
 			gotArgs = append([]string(nil), args...)
 			return fmt.Errorf("no server running")
 		},
@@ -391,7 +442,11 @@ func TestDestroyUsesSessionEndpointAndName(t *testing.T) {
 
 	backend := &Backend{
 		Binary: "fake-tmux",
-		Run: func(_ string, args ...string) error {
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
 			gotArgs = append([]string(nil), args...)
 			return nil
 		},
@@ -433,7 +488,11 @@ func TestProcessIdentityUsesSessionEndpointAndServerPID(t *testing.T) {
 
 	backend := &Backend{
 		Binary: "fake-tmux",
-		RunOutput: func(_ string, args ...string) ([]byte, error) {
+		RunOutput: func(
+			_ string,
+			args []string,
+			_ []string,
+		) ([]byte, error) {
 			gotArgs = append([]string(nil), args...)
 			return []byte(fmt.Sprintf("%d\n", pid)), nil
 		},
@@ -481,7 +540,11 @@ func TestProcessIdentityUsesSessionEndpointAndServerPID(t *testing.T) {
 func TestProcessIdentityRejectsInvalidServerPID(t *testing.T) {
 	backend := &Backend{
 		Binary: "fake-tmux",
-		RunOutput: func(_ string, _ ...string) ([]byte, error) {
+		RunOutput: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) ([]byte, error) {
 			return []byte("not-a-pid\n"), nil
 		},
 	}
@@ -498,7 +561,11 @@ func TestProcessIdentityRejectsInvalidServerPID(t *testing.T) {
 func TestProcessIdentityPropagatesCommandFailure(t *testing.T) {
 	backend := &Backend{
 		Binary: "fake-tmux",
-		RunOutput: func(_ string, _ ...string) ([]byte, error) {
+		RunOutput: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) ([]byte, error) {
 			return nil, fmt.Errorf("tmux unavailable")
 		},
 	}
@@ -523,7 +590,11 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 
 	backend := &Backend{
 		Binary: "fake-tmux",
-		Run: func(_ string, args ...string) error {
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
 			gotArgs = append(
 				gotArgs,
 				append([]string(nil), args...),
@@ -599,7 +670,11 @@ func TestCreateUsesBundledConfig(t *testing.T) {
 
 	backend := &Backend{
 		Binary: "fake-tmux",
-		Run: func(_ string, args ...string) error {
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
 			gotArgs = append(
 				gotArgs,
 				append([]string(nil), args...),
@@ -658,7 +733,11 @@ func TestCreateRejectsLifecycleOptions(t *testing.T) {
 		t.Run(option, func(t *testing.T) {
 			backend := &Backend{
 				Binary: "fake-tmux",
-				Run: func(_ string, _ ...string) error {
+				Run: func(
+					_ string,
+					_ []string,
+					_ []string,
+				) error {
 					t.Fatal("Run() must not be called")
 					return nil
 				},
@@ -695,7 +774,11 @@ func TestCreatePreparesSocketDirectory(t *testing.T) {
 
 	backend := &Backend{
 		Binary: "fake-tmux",
-		Run: func(_ string, _ ...string) error {
+		Run: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) error {
 			return nil
 		},
 	}

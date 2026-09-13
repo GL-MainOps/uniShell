@@ -13,11 +13,16 @@ import (
 	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
-type CommandRunner func(name string, args ...string) error
+type CommandRunner func(
+	name string,
+	args []string,
+	env []string,
+) error
 
 type OutputCommandRunner func(
 	name string,
-	args ...string,
+	args []string,
+	env []string,
 ) ([]byte, error)
 
 type Backend struct {
@@ -32,20 +37,37 @@ func New() *Backend {
 	return &Backend{
 		Binary:         "tmux",
 		ConfigResolver: config.NewResolver(),
-		Run: func(name string, args ...string) error {
+		Run: func(
+			name string,
+			args []string,
+			env []string,
+		) error {
 			cmd := exec.Command(name, args...)
 			cmd.Stdin = os.Stdin
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
+			cmd.Env = env
 
 			return cmd.Run()
 		},
-		RunQuiet: func(name string, args ...string) error {
+		RunQuiet: func(
+			name string,
+			args []string,
+			env []string,
+		) error {
 			cmd := exec.Command(name, args...)
+			cmd.Env = env
+
 			return cmd.Run()
 		},
-		RunOutput: func(name string, args ...string) ([]byte, error) {
+		RunOutput: func(
+			name string,
+			args []string,
+			env []string,
+		) ([]byte, error) {
 			cmd := exec.Command(name, args...)
+			cmd.Env = env
+
 			return cmd.Output()
 		},
 	}
@@ -168,7 +190,11 @@ func (b *Backend) Create(session api.Session) error {
 		session.ShellArgs...,
 	)
 
-	return b.Run(b.binaryPath(session), args...)
+	return b.Run(
+		b.binaryPath(session),
+		args,
+		session.Env,
+	)
 }
 
 func (b *Backend) Attach(session api.Session) error {
@@ -188,7 +214,11 @@ func (b *Backend) Attach(session api.Session) error {
 		)
 	}
 
-	return b.Run(b.binaryPath(session), args...)
+	return b.Run(
+		b.binaryPath(session),
+		args,
+		nil,
+	)
 }
 
 func (b *Backend) Detach(session api.Session) error {
@@ -208,7 +238,11 @@ func (b *Backend) Detach(session api.Session) error {
 		)
 	}
 
-	return b.Run(b.binaryPath(session), args...)
+	return b.Run(
+		b.binaryPath(session),
+		args,
+		nil,
+	)
 }
 
 func (b *Backend) ProcessIdentity(
@@ -228,14 +262,21 @@ func (b *Backend) ProcessIdentity(
 	if runner == nil {
 		runner = func(
 			name string,
-			args ...string,
+			args []string,
+			env []string,
 		) ([]byte, error) {
 			cmd := exec.Command(name, args...)
+			cmd.Env = env
+
 			return cmd.Output()
 		}
 	}
 
-	output, err := runner(b.binaryPath(session), args...)
+	output, err := runner(
+		b.binaryPath(session),
+		args,
+		nil,
+	)
 	if err != nil {
 		return sessionmeta.ProcessIdentity{}, fmt.Errorf(
 			"query tmux server process: %w",
@@ -302,13 +343,23 @@ func (b *Backend) IsAlive(session api.Session) bool {
 
 	runner := b.RunQuiet
 	if runner == nil {
-		runner = func(name string, args ...string) error {
+		runner = func(
+			name string,
+			args []string,
+			env []string,
+		) error {
 			cmd := exec.Command(name, args...)
+			cmd.Env = env
+
 			return cmd.Run()
 		}
 	}
 
-	return runner(b.binaryPath(session), args...) == nil
+	return runner(
+		b.binaryPath(session),
+		args,
+		nil,
+	) == nil
 }
 
 func (b *Backend) Destroy(session api.Session) error {
@@ -328,7 +379,11 @@ func (b *Backend) Destroy(session api.Session) error {
 		)
 	}
 
-	return b.Run(b.binaryPath(session), args...)
+	return b.Run(
+		b.binaryPath(session),
+		args,
+		nil,
+	)
 }
 
 func (b *Backend) commandArgs(
