@@ -1,5 +1,6 @@
 [[tools]]
 name = "superfile"
+profiles = ["common"]
 
 [[tools.artifacts]]
 version = "1.6.0"

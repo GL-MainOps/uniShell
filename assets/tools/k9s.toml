@@ -1,5 +1,6 @@
 [[tools]]
 name = "k9s"
+profiles = ["k8s"]
 
 [[tools.artifacts]]
 version = "0.51.0"

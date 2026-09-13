@@ -1,5 +1,6 @@
 [[tools]]
 name = "zoxide"
+profiles = ["common"]
 
 [[tools.artifacts]]
 version = "0.10.0"

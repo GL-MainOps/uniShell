@@ -1,5 +1,6 @@
 [[tools]]
 name = "bat"
+profiles = ["common"]
 
 [[tools.artifacts]]
 version = "0.26.1"

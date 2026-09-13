@@ -1,5 +1,6 @@
 [[tools]]
 name = "lsd"
+profiles = ["common"]
 
 [[tools.artifacts]]
 version = "1.2.0"

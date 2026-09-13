@@ -31,6 +31,7 @@ func writeToolMetadata(
 const validToolMetadata = `
 [[tools]]
 name = "example"
+profiles = ["common", "k8s"]
 
 [[tools.artifacts]]
 version = "1.0.0"

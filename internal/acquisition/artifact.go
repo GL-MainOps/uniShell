@@ -27,6 +27,7 @@ const (
 
 type Tool struct {
 	Name      string
+	Profiles  []string
 	Artifacts []Artifact
 }
 

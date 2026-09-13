@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gitlab.com/mainops/uniShell/internal/acquisition"
 )
@@ -24,6 +25,11 @@ func main() {
 			"assets/bin",
 			"directory where acquired executables are installed",
 		)
+		sourceDir = flag.String(
+			"source-dir",
+			"",
+			"directory containing already acquired executables",
+		)
 		cacheDir = flag.String(
 			"cache-dir",
 			"tmp/acquisition-cache",
@@ -39,17 +45,36 @@ func main() {
 			"amd64",
 			"target architecture",
 		)
+		profile = flag.String(
+			"profile",
+			"",
+			"profile name to acquire",
+		)
+		cached = flag.Bool(
+			"cached",
+			false,
+			"use already acquired executables without downloading",
+		)
 	)
 
 	flag.Parse()
+
+	profileName, err := resolveProfile(*profile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 
 	if err := run(
 		context.Background(),
 		*toolsDir,
 		*outputDir,
+		*sourceDir,
 		*cacheDir,
 		acquisition.Platform(*platform),
 		acquisition.Architecture(*architecture),
+		profileName,
+		*cached,
 		http.DefaultClient,
 	); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -57,18 +82,57 @@ func main() {
 	}
 }
 
+func resolveProfile(value string) (string, error) {
+	profile := strings.TrimSpace(value)
+
+	if strings.Contains(profile, ",") {
+		return "", fmt.Errorf(
+			"--profile accepts exactly one profile name",
+		)
+	}
+
+	return profile, nil
+}
+
 func run(
 	ctx context.Context,
 	toolsDir string,
 	outputDir string,
+	sourceDir string,
 	cacheDir string,
 	platform acquisition.Platform,
 	architecture acquisition.Architecture,
+	profile string,
+	cached bool,
 	client *http.Client,
 ) error {
 	tools, err := acquisition.LoadTools(toolsDir)
 	if err != nil {
 		return err
+	}
+
+	if profile != "" {
+		tools, err = acquisition.SelectToolsForProfile(
+			tools,
+			profile,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	if cached {
+		if sourceDir == "" {
+			return fmt.Errorf(
+				"source directory is required in cached mode",
+			)
+		}
+
+		return materializeCachedTools(
+			tools,
+			sourceDir,
+			outputDir,
+		)
 	}
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -166,6 +230,129 @@ func run(
 				err,
 			)
 		}
+	}
+
+	return nil
+}
+
+func materializeCachedTools(
+	tools []acquisition.Tool,
+	sourceDir string,
+	outputDir string,
+) error {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf(
+			"create output directory %q: %w",
+			outputDir,
+			err,
+		)
+	}
+
+	for _, tool := range tools {
+		for _, artifact := range tool.Artifacts {
+			sourcePath := filepath.Join(
+				sourceDir,
+				artifact.BinaryName,
+			)
+			destinationPath := filepath.Join(
+				outputDir,
+				artifact.BinaryName,
+			)
+
+			if err := copyCachedBinary(
+				sourcePath,
+				destinationPath,
+			); err != nil {
+				return fmt.Errorf(
+					"materialize cached tool %q: %w",
+					tool.Name,
+					err,
+				)
+			}
+
+			break
+		}
+	}
+
+	return nil
+}
+
+func copyCachedBinary(
+	sourcePath string,
+	destinationPath string,
+) error {
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		return fmt.Errorf(
+			"stat cached binary %q: %w",
+			sourcePath,
+			err,
+		)
+	}
+
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf(
+			"cached binary %q is not a regular file",
+			sourcePath,
+		)
+	}
+
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return fmt.Errorf(
+			"open cached binary %q: %w",
+			sourcePath,
+			err,
+		)
+	}
+	defer source.Close()
+
+	if err := os.MkdirAll(
+		filepath.Dir(destinationPath),
+		0755,
+	); err != nil {
+		return fmt.Errorf(
+			"create destination directory: %w",
+			err,
+		)
+	}
+
+	destination, err := os.Create(destinationPath)
+	if err != nil {
+		return fmt.Errorf(
+			"create destination binary %q: %w",
+			destinationPath,
+			err,
+		)
+	}
+
+	if _, err := io.Copy(destination, source); err != nil {
+		_ = destination.Close()
+		_ = os.Remove(destinationPath)
+
+		return fmt.Errorf(
+			"copy cached binary: %w",
+			err,
+		)
+	}
+
+	if err := destination.Chmod(0755); err != nil {
+		_ = destination.Close()
+		_ = os.Remove(destinationPath)
+
+		return fmt.Errorf(
+			"set executable permissions: %w",
+			err,
+		)
+	}
+
+	if err := destination.Close(); err != nil {
+		_ = os.Remove(destinationPath)
+
+		return fmt.Errorf(
+			"close destination binary: %w",
+			err,
+		)
 	}
 
 	return nil

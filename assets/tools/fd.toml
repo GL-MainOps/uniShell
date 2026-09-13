@@ -1,5 +1,6 @@
 [[tools]]
 name = "fd"
+profiles = ["common"]
 
 [[tools.artifacts]]
 version = "10.5.0"

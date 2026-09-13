@@ -1,5 +1,6 @@
 [[tools]]
 name = "ripgrep"
+profiles = ["common"]
 
 [[tools.artifacts]]
 version = "15.2.0"
