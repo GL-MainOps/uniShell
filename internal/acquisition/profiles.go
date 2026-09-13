@@ -21,6 +21,10 @@ func SelectToolsForProfile(tools []Tool, profile string) ([]Tool, error) {
 		)
 	}
 
+	if !hasProfileInTools(tools, profile) {
+		return nil, fmt.Errorf("unknown profile %q", profile)
+	}
+
 	selected := make([]Tool, 0, len(tools))
 
 	for _, tool := range tools {
@@ -31,6 +35,16 @@ func SelectToolsForProfile(tools []Tool, profile string) ([]Tool, error) {
 	}
 
 	return selected, nil
+}
+
+func hasProfileInTools(tools []Tool, profile string) bool {
+	for _, tool := range tools {
+		if hasProfile(tool.Profiles, profile) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func hasProfile(profiles []string, profile string) bool {

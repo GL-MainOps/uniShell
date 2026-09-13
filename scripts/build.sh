@@ -138,6 +138,10 @@ split_profiles() {
     local -a seen=()
 
     IFS=',' read -r -a profiles <<< "$value"
+    if [[ "$value" == *, ]]; then
+        echo "error: profile list contains an empty profile name" >&2
+        return 1
+    fi
 
     for profile in "${profiles[@]}"; do
         profile="${profile#"${profile%%[![:space:]]*}"}"
@@ -235,7 +239,8 @@ build_profile() {
 }
 
 if [[ -n "$PROFILE_LIST" ]]; then
-    mapfile -t profiles < <(split_profiles "$PROFILE_LIST")
+    profiles_output="$(split_profiles "$PROFILE_LIST")"
+    mapfile -t profiles <<< "$profiles_output"
 
     for profile in "${profiles[@]}"; do
         build_profile "$profile"

@@ -170,3 +170,33 @@ func TestSelectToolsForProfileRejectsCommonProfile(t *testing.T) {
 		t.Fatal("SelectToolsForProfile() error = nil, want reserved-profile error")
 	}
 }
+
+func TestSelectToolsForProfileRejectsUnknownProfile(t *testing.T) {
+	tools := []Tool{
+		{
+			Name:     "common-tool",
+			Profiles: []string{CommonProfile},
+		},
+		{
+			Name:     "k8s-tool",
+			Profiles: []string{"k8s"},
+		},
+		{
+			Name:     "security-tool",
+			Profiles: []string{"security"},
+		},
+	}
+
+	_, err := SelectToolsForProfile(tools, "nonexistent")
+	if err == nil {
+		t.Fatal("SelectToolsForProfile() error = nil, want unknown-profile error")
+	}
+
+	if err.Error() != `unknown profile "nonexistent"` {
+		t.Fatalf(
+			"SelectToolsForProfile() error = %q, want %q",
+			err,
+			`unknown profile "nonexistent"`,
+		)
+	}
+}
