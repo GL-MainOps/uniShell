@@ -13,6 +13,7 @@
 
 [[tools]]
 name = "example"
+profiles = ["common", "full"]
 
 [[tools.artifacts]]
 version = "1.0.0"
@@ -83,6 +84,7 @@ asset = "example-1.0.0-linux-amd64.tar.gz"
 ######################
 [[tools]]
 name = "example-tool"
+profiles = ["common", "security"]
 
 [[tools.artifacts]]
 version = "1.2.3"

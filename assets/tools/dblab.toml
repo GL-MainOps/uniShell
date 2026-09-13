@@ -1,17 +1,17 @@
 [[tools]]
-name = "zellij"
+name = "dblab"
 profiles = [
     "full",
     "common"
 ]
 
 [[tools.artifacts]]
-version = "0.45.1"
+version = "0.50.0"
 platform = "linux"
 architecture = "amd64"
 archive_type = "tar.gz"
-binary_path = "zellij"
-binary_name = "zellij"
+binary_path = "dblab"
+binary_name = "db"
 checksum = ""
 
 [tools.artifacts.validation]
@@ -23,7 +23,7 @@ executable = true
 kind = "github-release"
 
 [tools.artifacts.source.github_release]
-owner = "zellij-org"
-repository = "zellij"
-release = "v0.45.1"
-asset = "zellij-x86_64-unknown-linux-musl.tar.gz"
+owner = "danvergara"
+repository = "dblab"
+release = "v0.50.0"
+asset = "dblab_0.50.0_linux_amd64.tar.gz"

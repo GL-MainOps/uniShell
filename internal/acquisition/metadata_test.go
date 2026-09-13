@@ -9,6 +9,7 @@ func TestLoadManifest(t *testing.T) {
 	const document = `
 [[tools]]
 name = "zellij"
+profiles = ["common", "k8s"]
 
 [[tools.artifacts]]
 version = "latest"
@@ -56,6 +57,29 @@ asset = "zellij-x86_64-unknown-linux-musl.tar.gz"
 
 	if tool.Name != "zellij" {
 		t.Fatalf("expected tool name %q, got %q", "zellij", tool.Name)
+	}
+
+	if len(tool.Profiles) != 2 {
+		t.Fatalf(
+			"expected 2 profiles, got %d",
+			len(tool.Profiles),
+		)
+	}
+
+	if tool.Profiles[0] != CommonProfile {
+		t.Fatalf(
+			"expected first profile %q, got %q",
+			CommonProfile,
+			tool.Profiles[0],
+		)
+	}
+
+	if tool.Profiles[1] != "k8s" {
+		t.Fatalf(
+			"expected second profile %q, got %q",
+			"k8s",
+			tool.Profiles[1],
+		)
 	}
 
 	if len(tool.Artifacts) != 1 {

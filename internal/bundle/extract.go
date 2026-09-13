@@ -2,7 +2,6 @@ package bundle
 
 import (
 	"archive/tar"
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -22,7 +21,7 @@ var ErrUnsupportedEntry = errors.New("unsupported archive entry")
 // Every archive path is validated before it is used. Extraction is
 // restricted to destination and cannot escape it through absolute paths
 // or path traversal.
-func ExtractArchive(data []byte, destination string) error {
+func ExtractArchive(reader io.Reader, destination string) error {
 	destination, err := filepath.Abs(destination)
 	if err != nil {
 		return fmt.Errorf("resolve extraction destination: %w", err)
@@ -44,10 +43,10 @@ func ExtractArchive(data []byte, destination string) error {
 		)
 	}
 
-	reader := tar.NewReader(bytes.NewReader(data))
+	tarReader := tar.NewReader(reader)
 
 	for {
-		header, err := reader.Next()
+		header, err := tarReader.Next()
 		if err == io.EOF {
 			break
 		}
@@ -65,7 +64,7 @@ func ExtractArchive(data []byte, destination string) error {
 			return fmt.Errorf("archive entry %q: %w", header.Name, err)
 		}
 
-		if err := extractEntry(reader, header, target); err != nil {
+		if err := extractEntry(tarReader, header, target); err != nil {
 			return fmt.Errorf(
 				"extract archive entry %q: %w",
 				header.Name,

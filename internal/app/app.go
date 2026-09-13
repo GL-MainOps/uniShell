@@ -24,6 +24,7 @@ type Options struct {
 	Multiplexer            *multiplexer.Manager
 	MultiplexerName        string
 	SessionName            string
+	SessionNameSpecified   bool
 	MultiplexerSessionName string
 	MultiplexerOptions     api.Options
 	Shell                  string
@@ -37,9 +38,11 @@ type App struct {
 	AuthToken              string
 	Paths                  runtime.Paths
 	Bundle                 BundleSource
+	AuthenticatedBundle    []byte
 	Multiplexer            *multiplexer.Manager
 	MultiplexerName        string
 	SessionName            string
+	SessionNameSpecified   bool
 	MultiplexerSessionName string
 	MultiplexerOptions     api.Options
 	Shell                  string
@@ -88,10 +91,9 @@ func New(options Options) (*App, error) {
 
 	multiplexerName := options.MultiplexerName
 
-	sessionName := options.SessionName
-	if sessionName == "" {
-		sessionName = "default"
-	}
+	sessionName := strings.TrimSpace(options.SessionName)
+	sessionNameSpecified := options.SessionNameSpecified ||
+		sessionName != ""
 
 	multiplexerOptions := options.MultiplexerOptions
 
@@ -116,6 +118,7 @@ func New(options Options) (*App, error) {
 		Multiplexer:            manager,
 		MultiplexerName:        multiplexerName,
 		SessionName:            sessionName,
+		SessionNameSpecified:   sessionNameSpecified,
 		MultiplexerSessionName: options.MultiplexerSessionName,
 		MultiplexerOptions:     multiplexerOptions,
 		Shell:                  options.Shell,
@@ -149,17 +152,47 @@ func (a *App) ValidateAuthentication() error {
 		)
 	}
 
-	if _, err := bundle.Open(
+	authenticated, err := bundle.OpenAuthenticated(
 		data,
 		a.AuthToken,
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf(
 			"authenticate runtime bundle: %w",
 			err,
 		)
 	}
 
+	a.AuthenticatedBundle = authenticated
+
 	return nil
+}
+
+func (a *App) authenticatedBundle() ([]byte, error) {
+	if len(a.AuthenticatedBundle) > 0 {
+		return a.AuthenticatedBundle, nil
+	}
+
+	data, err := a.Bundle()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"load embedded runtime bundle: %w",
+			err,
+		)
+	}
+
+	authenticated, err := bundle.OpenAuthenticated(
+		data,
+		a.AuthToken,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"authenticate runtime bundle: %w",
+			err,
+		)
+	}
+
+	return authenticated, nil
 }
 
 func (a *App) StartSession() (*runtime.Session, error) {
@@ -177,7 +210,24 @@ func (a *App) StartSession() (*runtime.Session, error) {
 			err,
 		)
 	}
+	sessionName, err := sessionNameForRuntime(
+		session,
+		a.SessionName,
+		a.SessionNameSpecified,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"generate runtime session name: %w",
+			err,
+		)
+	}
 
+	if err := session.SetName(sessionName); err != nil {
+		return nil, fmt.Errorf(
+			"set runtime session name: %w",
+			err,
+		)
+	}
 	if err := session.Prepare(); err != nil {
 		return nil, fmt.Errorf(
 			"prepare runtime session: %w",
@@ -190,31 +240,26 @@ func (a *App) StartSession() (*runtime.Session, error) {
 		return nil, err
 	}
 
-	data, err := a.Bundle()
+	authenticated, err := a.authenticatedBundle()
 	if err != nil {
-		return cleanupOnError(
-			fmt.Errorf(
-				"load embedded runtime bundle: %w",
-				err,
-			),
-		)
+		return cleanupOnError(err)
 	}
 
-	archive, err := bundle.Open(
-		data,
-		a.AuthToken,
+	archiveReader, err := bundle.DecompressAuthenticatedReader(
+		authenticated,
 	)
 	if err != nil {
 		return cleanupOnError(
 			fmt.Errorf(
-				"open runtime bundle: %w",
+				"decompress runtime bundle: %w",
 				err,
 			),
 		)
 	}
+	defer archiveReader.Close()
 
 	if err := bundle.ExtractArchive(
-		archive,
+		archiveReader,
 		session.Paths.Runtime,
 	); err != nil {
 		return cleanupOnError(
@@ -261,6 +306,25 @@ func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
 		)
 	}
 
+	sessionName, err := sessionNameForRuntime(
+		runtimeSession,
+		a.SessionName,
+		a.SessionNameSpecified,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"generate runtime session name: %w",
+			err,
+		)
+	}
+
+	if err := runtimeSession.SetName(sessionName); err != nil {
+		return nil, fmt.Errorf(
+			"set multiplexer runtime session name: %w",
+			err,
+		)
+	}
+
 	if err := runtimeSession.Prepare(); err != nil {
 		return nil, fmt.Errorf(
 			"prepare multiplexer runtime session: %w",
@@ -273,31 +337,26 @@ func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
 		return nil, err
 	}
 
-	data, err := a.Bundle()
+	authenticated, err := a.authenticatedBundle()
 	if err != nil {
-		return cleanupOnError(
-			fmt.Errorf(
-				"load embedded runtime bundle: %w",
-				err,
-			),
-		)
+		return cleanupOnError(err)
 	}
 
-	archive, err := bundle.Open(
-		data,
-		a.AuthToken,
+	archiveReader, err := bundle.DecompressAuthenticatedReader(
+		authenticated,
 	)
 	if err != nil {
 		return cleanupOnError(
 			fmt.Errorf(
-				"open runtime bundle: %w",
+				"decompress runtime bundle: %w",
 				err,
 			),
 		)
 	}
+	defer archiveReader.Close()
 
 	if err := bundle.ExtractArchive(
-		archive,
+		archiveReader,
 		runtimeSession.Paths.Runtime,
 	); err != nil {
 		return cleanupOnError(
@@ -408,7 +467,7 @@ func (a *App) CreateMultiplexerSession(
 
 	managedSession, err := a.Multiplexer.Create(
 		multiplexerName,
-		a.SessionName,
+		runtimeSession.Name,
 		a.MultiplexerSessionName,
 		runtimeSession.Paths.Runtime,
 		endpoint,

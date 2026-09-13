@@ -65,6 +65,44 @@ func assertSessionMetadata(
 	return metadata
 }
 
+func TestSessionPrepareWritesSessionName(t *testing.T) {
+	root := t.TempDir()
+
+	paths := Paths{
+		Root:    root,
+		Runtime: filepath.Join(root, "runtime"),
+	}
+
+	session, err := NewSession(paths)
+	if err != nil {
+		t.Fatalf("NewSession() returned error: %v", err)
+	}
+
+	if err := session.SetName("direct-shell"); err != nil {
+		t.Fatalf("SetName() returned error: %v", err)
+	}
+
+	if err := session.Prepare(); err != nil {
+		t.Fatalf("Prepare() returned error: %v", err)
+	}
+	defer session.Cleanup()
+
+	metadata, err := sessionmeta.ReadMetadata(
+		session.Paths.Runtime,
+	)
+	if err != nil {
+		t.Fatalf("ReadMetadata() returned error: %v", err)
+	}
+
+	if metadata.Name != "direct-shell" {
+		t.Fatalf(
+			"metadata name = %q, want %q",
+			metadata.Name,
+			"direct-shell",
+		)
+	}
+}
+
 func TestPrepareCreatesIsolatedRuntimeDirectories(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "unishell")
 

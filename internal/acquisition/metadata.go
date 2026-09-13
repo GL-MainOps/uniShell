@@ -19,6 +19,7 @@ type Manifest struct {
 
 type ToolMetadata struct {
 	Name      string             `toml:"name"`
+	Profiles  []string           `toml:"profiles"`
 	Artifacts []ArtifactMetadata `toml:"artifacts"`
 }
 
@@ -185,7 +186,8 @@ func (t ToolMetadata) Tool() (Tool, error) {
 	}
 
 	tool := Tool{
-		Name: t.Name,
+		Name:     t.Name,
+		Profiles: append([]string(nil), t.Profiles...),
 	}
 
 	for _, metadata := range t.Artifacts {

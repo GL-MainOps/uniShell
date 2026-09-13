@@ -1,17 +1,17 @@
 [[tools]]
-name = "zellij"
+name = "superfile"
 profiles = [
     "full",
     "common"
 ]
 
 [[tools.artifacts]]
-version = "0.45.1"
+version = "1.6.0"
 platform = "linux"
 architecture = "amd64"
 archive_type = "tar.gz"
-binary_path = "zellij"
-binary_name = "zellij"
+binary_path = "dist/superfile-linux-v1.6.0-amd64/spf"
+binary_name = "sf"
 checksum = ""
 
 [tools.artifacts.validation]
@@ -23,7 +23,7 @@ executable = true
 kind = "github-release"
 
 [tools.artifacts.source.github_release]
-owner = "zellij-org"
-repository = "zellij"
-release = "v0.45.1"
-asset = "zellij-x86_64-unknown-linux-musl.tar.gz"
+owner = "yorukot"
+repository = "superfile"
+release = "v1.6.0"
+asset = "superfile-linux-v1.6.0-amd64.tar.gz"

@@ -1,17 +1,17 @@
 [[tools]]
-name = "zellij"
+name = "k9s"
 profiles = [
     "full",
-    "common"
+    "k8s"
 ]
 
 [[tools.artifacts]]
-version = "0.45.1"
+version = "0.51.0"
 platform = "linux"
 architecture = "amd64"
 archive_type = "tar.gz"
-binary_path = "zellij"
-binary_name = "zellij"
+binary_path = "k9s"
+binary_name = "ks"
 checksum = ""
 
 [tools.artifacts.validation]
@@ -23,7 +23,7 @@ executable = true
 kind = "github-release"
 
 [tools.artifacts.source.github_release]
-owner = "zellij-org"
-repository = "zellij"
-release = "v0.45.1"
-asset = "zellij-x86_64-unknown-linux-musl.tar.gz"
+owner = "derailed"
+repository = "k9s"
+release = "v0.51.0"
+asset = "k9s_Linux_amd64.tar.gz"

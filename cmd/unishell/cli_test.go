@@ -393,6 +393,66 @@ func TestParseCLIArgsUsesMultiplexerSessionEnvironment(t *testing.T) {
 	}
 }
 
+func TestParseCLIArgsSessionNameSpecified(t *testing.T) {
+	t.Setenv("UNISHELL_SESSION", "")
+
+	options, _, err := parseCLIArgs(nil)
+	if err != nil {
+		t.Fatalf("parseCLIArgs() returned error: %v", err)
+	}
+
+	if options.SessionName != "" {
+		t.Fatalf(
+			"SessionName = %q, want empty",
+			options.SessionName,
+		)
+	}
+
+	if options.SessionNameSpecified {
+		t.Fatal("SessionNameSpecified = true, want false")
+	}
+
+	options, _, err = parseCLIArgs(
+		[]string{"--session", "development"},
+	)
+	if err != nil {
+		t.Fatalf("parseCLIArgs() returned error: %v", err)
+	}
+
+	if options.SessionName != "development" {
+		t.Fatalf(
+			"SessionName = %q, want %q",
+			options.SessionName,
+			"development",
+		)
+	}
+
+	if !options.SessionNameSpecified {
+		t.Fatal("SessionNameSpecified = false, want true")
+	}
+}
+
+func TestParseCLIArgsSessionEnvironmentIsSpecified(t *testing.T) {
+	t.Setenv("UNISHELL_SESSION", "development")
+
+	options, _, err := parseCLIArgs(nil)
+	if err != nil {
+		t.Fatalf("parseCLIArgs() returned error: %v", err)
+	}
+
+	if options.SessionName != "development" {
+		t.Fatalf(
+			"SessionName = %q, want %q",
+			options.SessionName,
+			"development",
+		)
+	}
+
+	if !options.SessionNameSpecified {
+		t.Fatal("SessionNameSpecified = false, want true")
+	}
+}
+
 func TestParseCLIArgsExplicitSessionOverridesEnvironment(t *testing.T) {
 	t.Setenv(sessionEnvName, "environment")
 

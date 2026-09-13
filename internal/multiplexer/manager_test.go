@@ -48,6 +48,12 @@ func (b *managerTestBackend) Available() bool {
 	return b.available
 }
 
+func (b *managerTestBackend) AvailableForSession(
+	Session,
+) bool {
+	return b.available
+}
+
 func (b *managerTestBackend) Create(session Session) error {
 	b.created = true
 	b.createdSession = session
@@ -109,6 +115,46 @@ func prepareManagerTestRuntime(
 			err,
 		)
 	}
+}
+
+func setManagerTestGeneratedSessionName(
+	t *testing.T,
+	runtimePath string,
+	baseName string,
+) sessionmeta.Metadata {
+	t.Helper()
+
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
+	if err != nil {
+		t.Fatalf(
+			"sessionmeta.ReadMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	const sessionNameIDLength = 7
+
+	if len(metadata.ID) < sessionNameIDLength {
+		t.Fatalf(
+			"session ID %q is shorter than %d characters",
+			metadata.ID,
+			sessionNameIDLength,
+		)
+	}
+
+	metadata.Name = baseName + "@" + metadata.ID[:sessionNameIDLength]
+
+	if err := sessionmeta.WriteMetadata(
+		runtimePath,
+		metadata,
+	); err != nil {
+		t.Fatalf(
+			"sessionmeta.WriteMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	return metadata
 }
 
 func startManagerProcessGroupHelper(t *testing.T) *exec.Cmd {
@@ -611,8 +657,9 @@ func TestManagerDiscoverFindsLiveSession(t *testing.T) {
 
 	discovered, err := manager.Discover(
 		runtimePath,
-		"default",
+		created.Metadata.ID,
 	)
+
 	if err != nil {
 		t.Fatalf("Discover() returned error: %v", err)
 	}
@@ -658,7 +705,57 @@ func TestManagerDiscoverFindsLiveSession(t *testing.T) {
 	}
 }
 
-func TestManagerDiscoverRejectsDifferentSessionName(t *testing.T) {
+func TestManagerDiscoverRejectsMatchingNameWithDifferentID(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	prepareManagerTestRuntime(t, runtimePath)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	created, err := manager.Create(
+		"test",
+		"default",
+		"native-default",
+		runtimePath,
+		endpoint,
+		"",
+		"",
+		nil,
+		nil,
+		api.Options{},
+	)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	_, err = manager.Discover(
+		runtimePath,
+		created.Metadata.ID+"-different",
+	)
+
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf(
+			"Discover() error = %v, want %v",
+			err,
+			ErrSessionNotFound,
+		)
+	}
+}
+
+func TestManagerDiscoverRejectsDifferentSessionID(t *testing.T) {
 	runtimePath := filepath.Join(
 		t.TempDir(),
 		"runtime",
@@ -694,7 +791,60 @@ func TestManagerDiscoverRejectsDifferentSessionName(t *testing.T) {
 
 	_, err := manager.Discover(
 		runtimePath,
-		"work",
+		"different-session-id",
+	)
+
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf(
+			"Discover() error = %v, want %v",
+			err,
+			ErrSessionNotFound,
+		)
+	}
+}
+
+func TestManagerDiscoverRejectsNormalSession(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	prepareManagerTestRuntime(t, runtimePath)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	metadata := sessionmeta.Metadata{
+		PID:               os.Getpid(),
+		ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+		ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+		CreatedAt:         time.Now().UTC(),
+		Version:           "development",
+		Mode:              sessionmeta.ModeNormal,
+		ID:                "direct-session",
+		Name:              "default",
+	}
+
+	if err := sessionmeta.WriteMetadata(
+		runtimePath,
+		metadata,
+	); err != nil {
+		t.Fatalf(
+			"sessionmeta.WriteMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	_, err := manager.Discover(
+		runtimePath,
+		metadata.ID,
 	)
 
 	if !errors.Is(err, ErrSessionNotFound) {
@@ -744,7 +894,7 @@ func TestManagerDiscoverRejectsStaleMetadata(t *testing.T) {
 
 	_, err := manager.Discover(
 		runtimePath,
-		"default",
+		metadata.ID,
 	)
 
 	if !errors.Is(err, ErrSessionNotFound) {
@@ -794,7 +944,7 @@ func TestManagerDiscoverRejectsUnavailableBackend(t *testing.T) {
 
 	_, err := manager.Discover(
 		runtimePath,
-		"default",
+		metadata.ID,
 	)
 
 	if !errors.Is(err, ErrUnavailable) {
@@ -843,6 +993,12 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 		t.Fatalf("Create(first) returned error: %v", err)
 	}
 
+	setManagerTestGeneratedSessionName(
+		t,
+		firstRuntime,
+		"other",
+	)
+
 	if _, err := manager.Create(
 		"test",
 		"default",
@@ -857,6 +1013,12 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 	); err != nil {
 		t.Fatalf("Create(second) returned error: %v", err)
 	}
+
+	setManagerTestGeneratedSessionName(
+		t,
+		secondRuntime,
+		"default",
+	)
 
 	session, err := manager.DiscoverByName(
 		versionRuntime,
@@ -874,6 +1036,83 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 			"runtime = %q, want %q",
 			session.Session.Runtime,
 			secondRuntime,
+		)
+	}
+}
+
+func TestManagerDiscoverByNameCanonicalizesThroughSessionID(
+	t *testing.T,
+) {
+	versionRuntime := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	runtimePath := filepath.Join(
+		versionRuntime,
+		"session",
+	)
+
+	prepareManagerTestRuntime(t, runtimePath)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		alive:     true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	created, err := manager.Create(
+		"test",
+		"default",
+		"native-default",
+		runtimePath,
+		endpoint,
+		"",
+		"",
+		nil,
+		nil,
+		api.Options{},
+	)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	metadata := setManagerTestGeneratedSessionName(
+		t,
+		runtimePath,
+		"default",
+	)
+
+	discovered, err := manager.DiscoverByName(
+		versionRuntime,
+		"default",
+	)
+	if err != nil {
+		t.Fatalf(
+			"DiscoverByName() returned error: %v",
+			err,
+		)
+	}
+
+	if discovered.Metadata.ID != created.Metadata.ID {
+		t.Fatalf(
+			"discovered ID = %q, want %q",
+			discovered.Metadata.ID,
+			created.Metadata.ID,
+		)
+	}
+
+	wantName := "default@" + metadata.ID[:7]
+
+	if discovered.Metadata.Name != wantName {
+		t.Fatalf(
+			"discovered name = %q, want %q",
+			discovered.Metadata.Name,
+			wantName,
 		)
 	}
 }

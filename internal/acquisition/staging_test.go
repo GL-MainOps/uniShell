@@ -57,6 +57,66 @@ func TestFilesystemStagerStagesDirectArtifact(t *testing.T) {
 	}
 }
 
+func TestFilesystemStagerStagesTarGzDirectBinary(t *testing.T) {
+	baseDir := t.TempDir()
+	stager := NewFilesystemStager(baseDir)
+
+	archiveData := createTarGz(t, map[string]string{
+		"rg": "rg-binary",
+	})
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "tar.gz",
+		BinaryPath:   "rg",
+		BinaryName:   "rg",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	staged, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err != nil {
+		t.Fatalf("Stage() returned error: %v", err)
+	}
+	defer os.RemoveAll(staged.RootPath)
+
+	if staged.BinaryName != "rg" {
+		t.Fatalf(
+			"BinaryName = %q, want %q",
+			staged.BinaryName,
+			"rg",
+		)
+	}
+
+	wantPath := filepath.Join(staged.RootPath, "rg")
+	if staged.BinaryPath != wantPath {
+		t.Fatalf(
+			"BinaryPath = %q, want %q",
+			staged.BinaryPath,
+			wantPath,
+		)
+	}
+
+	data, err := os.ReadFile(staged.BinaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile(BinaryPath) returned error: %v", err)
+	}
+
+	if string(data) != "rg-binary" {
+		t.Fatalf(
+			"staged binary = %q, want %q",
+			data,
+			"rg-binary",
+		)
+	}
+}
+
 func TestFilesystemStagerRejectsInvalidDirectBinaryName(t *testing.T) {
 	stager := NewFilesystemStager(t.TempDir())
 

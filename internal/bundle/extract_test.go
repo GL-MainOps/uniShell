@@ -45,7 +45,7 @@ func TestExtractArchive(t *testing.T) {
 		t.Fatalf("CreateArchive() returned error: %v", err)
 	}
 
-	if err := ExtractArchive(archive, destination); err != nil {
+	if err := ExtractArchive(bytes.NewReader(archive), destination); err != nil {
 		t.Fatalf("ExtractArchive() returned error: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestExtractArchivePreservesEmptyDirectories(t *testing.T) {
 		t.Fatalf("CreateArchive() returned error: %v", err)
 	}
 
-	if err := ExtractArchive(archive, destination); err != nil {
+	if err := ExtractArchive(bytes.NewReader(archive), destination); err != nil {
 		t.Fatalf("ExtractArchive() returned error: %v", err)
 	}
 
@@ -93,7 +93,7 @@ func TestExtractArchiveRejectsTraversal(t *testing.T) {
 	destination := t.TempDir()
 	outside := filepath.Join(filepath.Dir(destination), "outside")
 
-	err := ExtractArchive(archive, destination)
+	err := ExtractArchive(bytes.NewReader(archive), destination)
 
 	if err == nil {
 		t.Fatal("ExtractArchive() returned nil error")
@@ -119,7 +119,7 @@ func TestExtractArchiveRejectsAbsolutePath(t *testing.T) {
 		tar.TypeReg,
 	)
 
-	err := ExtractArchive(archive, t.TempDir())
+	err := ExtractArchive(bytes.NewReader(archive), t.TempDir())
 
 	if err == nil {
 		t.Fatal("ExtractArchive() returned nil error")
@@ -152,7 +152,10 @@ func TestExtractArchiveRejectsUnsupportedEntry(t *testing.T) {
 		t.Fatalf("close tar writer: %v", err)
 	}
 
-	err := ExtractArchive(buffer.Bytes(), t.TempDir())
+	err := ExtractArchive(
+		bytes.NewReader(buffer.Bytes()),
+		t.TempDir(),
+	)
 
 	if err == nil {
 		t.Fatal("ExtractArchive() returned nil error")
@@ -176,7 +179,7 @@ func TestExtractArchiveCreatesDestination(t *testing.T) {
 		tar.TypeReg,
 	)
 
-	if err := ExtractArchive(archive, destination); err != nil {
+	if err := ExtractArchive(bytes.NewReader(archive), destination); err != nil {
 		t.Fatalf("ExtractArchive() returned error: %v", err)
 	}
 

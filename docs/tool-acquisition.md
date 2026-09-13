@@ -106,6 +106,7 @@ A tool definition has this structure:
 ```toml
 [[tools]]
 name = "<tool-name>"
+profiles = ["common"]
 
 [[tools.artifacts]]
 version = "<tool-version>"
@@ -155,6 +156,41 @@ SourceMetadata
 
 Unknown TOML fields are rejected by the metadata loader. Therefore, do not  
 invent field names in a tool definition.
+
+### Profiles
+
+A tool definition may declare one or more profiles:
+
+```toml
+profiles = ["common"]
+```
+
+Profiles control which tools are included when a profile-specific runtime is
+built.
+
+The reserved profile:
+
+```text
+common
+```
+
+identifies tools that belong to the baseline shared by every selectable
+profile.
+
+A tool may belong to multiple profiles:
+
+```toml
+profiles = ["common", "k8s"]
+```
+
+A tool with no `profiles` field has no profile membership and is consumed by
+the normal no-profile build.
+
+The `common` profile cannot be selected directly.
+
+Selectable profile names are determined from the profile membership declared
+by the production tool definitions. Selecting a profile that is not declared
+by any tool is an error.
 
 ## 4. Tool Name
 
@@ -752,6 +788,74 @@ When this option is supplied, `scripts/build.sh` does not build or invoke
 | `--cache-dir`    | `tmp/acquisition-cache` | Directory used for acquired artifact cache             |
 | `--platform`     | `linux`                 | Target platform                                        |
 | `--architecture` | `amd64`                 | Target architecture                                    |
+| `--profile`      | unset                   | Select one declared runtime profile                    |
+
+### Profile selection
+
+`tool-fetch` accepts an optional:
+
+```text
+--profile <profile-name>
+```
+
+argument.
+
+The argument selects exactly one profile. Comma-separated profile lists are
+not accepted by `tool-fetch`.
+
+When a profile is selected, `tool-fetch` consumes:
+
+```text
+common
++
+selected profile
+```
+
+For example:
+
+```bash
+bin/tool-fetch --profile k8s
+```
+
+selects tools whose definitions contain either:
+
+```toml
+profiles = ["common"]
+```
+
+or:
+
+```toml
+profiles = ["k8s"]
+```
+
+or both:
+
+```toml
+profiles = ["common", "k8s"]
+```
+
+The reserved `common` profile cannot be selected directly:
+
+```bash
+bin/tool-fetch --profile common
+```
+
+is rejected.
+
+An unknown profile is also rejected:
+
+```bash
+bin/tool-fetch --profile nonexistent
+```
+
+A profile-specific acquisition therefore fails rather than silently
+producing an empty or unintended tool set when the requested profile does
+not exist.
+
+Profile selection is based only on the `profiles` metadata declared by the
+tool definitions. `tool-fetch` does not maintain a separate hard-coded list
+of profile names.
 
 Example:
 
@@ -889,6 +993,7 @@ The following is a generic example of an archived Linux amd64 executable:
 ```toml
 [[tools]]
 name = "example"
+profiles = ["common"]
 
 [[tools.artifacts]]
 version = "1.0.0"
