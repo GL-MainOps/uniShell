@@ -1,0 +1,15 @@
+stages:
+  - validate
+
+default:
+  image: golang:1.25
+
+workflow:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - when: never
+
+validate:
+  stage: validate
+  script:
+    - scripts/ci/validate.sh
