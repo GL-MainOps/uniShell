@@ -24,18 +24,36 @@ ASSET_EXCLUDES=(
     "tools/"
 )
 
-BUILD_COMMIT="$(git rev-parse --short=7 HEAD)"
-BUILD_DATE="$(date -u +%Y%m%d)"
-BUILD_VERSION="${BUILD_COMMIT}-${BUILD_DATE}"
-
 SKIP_FETCH=false
 PROFILE_LIST=""
+BUILD_VERSION=""
+
+BUILD_COMMIT="$(git rev-parse --short=7 HEAD)"
+BUILD_DATE="$(date -u +%Y%m%d)"
+
+if [[ -z "$BUILD_VERSION" ]]; then
+    BUILD_VERSION="${BUILD_COMMIT}-${BUILD_DATE}"
+fi
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-fetch)
             SKIP_FETCH=true
             shift
+            ;;
+        --version)
+            if [[ -n "$BUILD_VERSION" ]]; then
+                echo "error: --version may only be specified once" >&2
+                exit 1
+            fi
+
+            if [[ $# -lt 2 || -z "$2" ]]; then
+                echo "error: --version requires a version string" >&2
+                exit 1
+            fi
+
+            BUILD_VERSION="$2"
+            shift 2
             ;;
         --profile)
             if [[ -n "$PROFILE_LIST" ]]; then
