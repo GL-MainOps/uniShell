@@ -27,13 +27,10 @@ ASSET_EXCLUDES=(
 SKIP_FETCH=false
 PROFILE_LIST=""
 BUILD_VERSION=""
+BUILD_VERSION_EXPLICIT=false
 
 BUILD_COMMIT="$(git rev-parse --short=7 HEAD)"
 BUILD_DATE="$(date -u +%Y%m%d)"
-
-if [[ -z "$BUILD_VERSION" ]]; then
-    BUILD_VERSION="${BUILD_COMMIT}-${BUILD_DATE}"
-fi
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -42,7 +39,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --version)
-            if [[ -n "$BUILD_VERSION" ]]; then
+            if [[ "$BUILD_VERSION_EXPLICIT" == true ]]; then
                 echo "error: --version may only be specified once" >&2
                 exit 1
             fi
@@ -53,6 +50,7 @@ while [[ $# -gt 0 ]]; do
             fi
 
             BUILD_VERSION="$2"
+            BUILD_VERSION_EXPLICIT=true
             shift 2
             ;;
         --profile)
@@ -79,6 +77,10 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ -z "$BUILD_VERSION" ]]; then
+    BUILD_VERSION="${BUILD_COMMIT}-${BUILD_DATE}"
+fi
 
 if [[ $# -gt 0 ]]; then
     echo "error: unexpected build argument: $1" >&2
