@@ -40,6 +40,14 @@ jobs:
         with:
           go-version: '1.25'
 
+      - name: Cache acquisition data
+        uses: actions/cache@v5
+        with:
+          path: tmp/
+          key: unishell-acquisition-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/*.toml') }}
+          restore-keys: |
+            unishell-acquisition-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Verify authentication token
         env:
           UNISHELL_AUTH_TOKEN: ${{ secrets.UNISHELL_AUTH_TOKEN }}
@@ -51,7 +59,7 @@ jobs:
         run: ./scripts/build.sh --profile "$UNISHELL_PROFILE"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unishell-${{ github.sha }}
           path: bin/unishell-full
