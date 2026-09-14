@@ -9,7 +9,51 @@ import (
 	"testing"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/config"
 )
+
+func testZellijConfigResolver(
+	t *testing.T,
+) (*config.Resolver, string) {
+	t.Helper()
+
+	home := t.TempDir()
+
+	configPath := filepath.Join(
+		home,
+		".config",
+		"zellij",
+		"config.kdl",
+	)
+
+	if err := os.MkdirAll(
+		filepath.Dir(configPath),
+		0700,
+	); err != nil {
+		t.Fatalf(
+			"create zellij config directory: %v",
+			err,
+		)
+	}
+
+	if err := os.WriteFile(
+		configPath,
+		[]byte("pane_frames false\n"),
+		0600,
+	); err != nil {
+		t.Fatalf(
+			"write zellij config fixture: %v",
+			err,
+		)
+	}
+
+	resolver := config.NewResolver()
+	resolver.Home = func() (string, error) {
+		return home, nil
+	}
+
+	return resolver, configPath
+}
 
 func TestBinaryPathUsesSessionRuntime(t *testing.T) {
 	runtime := t.TempDir()
@@ -126,8 +170,11 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 		gotEnv  []string
 	)
 
+	resolver, configPath := testZellijConfigResolver(t)
+
 	backend := &Backend{
-		Binary: "fake-zellij",
+		Binary:         "fake-zellij",
+		ConfigResolver: resolver,
 		Run: func(
 			_ string,
 			args []string,
@@ -155,7 +202,7 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 
 	wantArgs := []string{
 		"--config",
-		"/tmp/uHome/.config/zellij/config.kdl",
+		configPath,
 		"attach",
 		"--create-background",
 		"--close-on-exit",
@@ -184,8 +231,11 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 func TestCreateUsesCloseOnExit(t *testing.T) {
 	var gotArgs []string
 
+	resolver, configPath := testZellijConfigResolver(t)
+
 	backend := &Backend{
-		Binary: "fake-zellij",
+		Binary:         "fake-zellij",
+		ConfigResolver: resolver,
 		Run: func(
 			_ string,
 			args []string,
@@ -206,7 +256,7 @@ func TestCreateUsesCloseOnExit(t *testing.T) {
 
 	want := []string{
 		"--config",
-		"/tmp/uHome/.config/zellij/config.kdl",
+		configPath,
 		"attach",
 		"--create-background",
 		"--close-on-exit",
@@ -227,8 +277,11 @@ func TestCreateUsesCloseOnExit(t *testing.T) {
 func TestCreateUsesSessionShellPath(t *testing.T) {
 	var gotArgs []string
 
+	resolver, configPath := testZellijConfigResolver(t)
+
 	backend := &Backend{
-		Binary: "fake-zellij",
+		Binary:         "fake-zellij",
+		ConfigResolver: resolver,
 		Run: func(
 			_ string,
 			args []string,
@@ -249,7 +302,7 @@ func TestCreateUsesSessionShellPath(t *testing.T) {
 
 	want := []string{
 		"--config",
-		"/tmp/uHome/.config/zellij/config.kdl",
+		configPath,
 		"attach",
 		"--create-background",
 		"--close-on-exit",
@@ -270,8 +323,11 @@ func TestCreateUsesSessionShellPath(t *testing.T) {
 func TestCreateUsesSessionShellArgs(t *testing.T) {
 	var gotArgs []string
 
+	resolver, configPath := testZellijConfigResolver(t)
+
 	backend := &Backend{
-		Binary: "fake-zellij",
+		Binary:         "fake-zellij",
+		ConfigResolver: resolver,
 		Run: func(
 			_ string,
 			args []string,
@@ -297,7 +353,7 @@ func TestCreateUsesSessionShellArgs(t *testing.T) {
 
 	want := []string{
 		"--config",
-		"/tmp/uHome/.config/zellij/config.kdl",
+		configPath,
 		"attach",
 		"--create-background",
 		"--close-on-exit",
@@ -606,8 +662,11 @@ func TestDestroyUsesSessionName(t *testing.T) {
 func TestCreateUsesConfiguredOptions(t *testing.T) {
 	var gotArgs []string
 
+	resolver, configPath := testZellijConfigResolver(t)
+
 	backend := &Backend{
-		Binary: "fake-zellij",
+		Binary:         "fake-zellij",
+		ConfigResolver: resolver,
 		Run: func(
 			_ string,
 			args []string,
@@ -635,7 +694,7 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 
 	want := []string{
 		"--config",
-		"/tmp/uHome/.config/zellij/config.kdl",
+		configPath,
 		"attach",
 		"--create-background",
 		"--close-on-exit",
@@ -769,8 +828,11 @@ func TestCreateRejectsLifecycleOptions(t *testing.T) {
 func TestCreateWithNativeNamePreservesExplicitName(t *testing.T) {
 	var gotArgs []string
 
+	resolver, configPath := testZellijConfigResolver(t)
+
 	backend := &Backend{
-		Binary: "fake-zellij",
+		Binary:         "fake-zellij",
+		ConfigResolver: resolver,
 		Run: func(
 			_ string,
 			args []string,
@@ -812,7 +874,7 @@ func TestCreateWithNativeNamePreservesExplicitName(t *testing.T) {
 
 	want := []string{
 		"--config",
-		"/tmp/uHome/.config/zellij/config.kdl",
+		configPath,
 		"attach",
 		"--create-background",
 		"--close-on-exit",
@@ -835,8 +897,11 @@ func TestCreateWithNativeNameGeneratesNativeName(
 ) {
 	var gotArgs []string
 
+	resolver, configPath := testZellijConfigResolver(t)
+
 	backend := &Backend{
-		Binary: "fake-zellij",
+		Binary:         "fake-zellij",
+		ConfigResolver: resolver,
 		Run: func(
 			_ string,
 			args []string,
@@ -866,7 +931,7 @@ func TestCreateWithNativeNameGeneratesNativeName(
 
 	wantPrefix := []string{
 		"--config",
-		"/tmp/uHome/.config/zellij/config.kdl",
+		configPath,
 		"attach",
 		"--create-background",
 		"--close-on-exit",
