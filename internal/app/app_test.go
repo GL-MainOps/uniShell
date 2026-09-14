@@ -799,6 +799,32 @@ func TestCreateMultiplexerSessionPassesShellStartup(
 		},
 	}
 
+	if err := os.MkdirAll(
+		runtimeSession.Paths.Bin,
+		0700,
+	); err != nil {
+		t.Fatalf(
+			"create runtime bin directory: %v",
+			err,
+		)
+	}
+
+	zsh := filepath.Join(
+		runtimeSession.Paths.Bin,
+		"zsh",
+	)
+
+	if err := os.WriteFile(
+		zsh,
+		[]byte("#!/bin/sh\n"),
+		0700,
+	); err != nil {
+		t.Fatalf(
+			"write bundled zsh fixture: %v",
+			err,
+		)
+	}
+
 	startup := shell.Startup{
 		Args: []string{
 			"-d",
