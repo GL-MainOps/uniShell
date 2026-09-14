@@ -44,7 +44,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tmp/
-          key: unishell-acquisition-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/*.toml') }}
+          key: unishell-acquisition-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('assets/tools/*.toml') }}
           restore-keys: |
             unishell-acquisition-${{ runner.os }}-${{ runner.arch }}-
 
