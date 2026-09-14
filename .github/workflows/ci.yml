@@ -59,10 +59,40 @@ jobs:
           UNISHELL_AUTH_TOKEN: ${{ secrets.UNISHELL_AUTH_TOKEN }}
         run: ./scripts/build.sh --profile "$UNISHELL_PROFILE" --version "$UNISHELL_VERSION"
 
-      - name: Upload build artifact
+      - name: Upload build binaries
         uses: actions/upload-artifact@v7
         with:
-          name: unishell-${{ github.sha }}
-          path: bin/unishell-full
+          name: unishell-release-binaries
+          path: bin/unishell-*
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 2
+
+  release-preparation:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download build binaries
+        uses: actions/download-artifact@v7
+        with:
+          name: unishell-release-binaries
+          path: bin
+
+      - name: Prepare release
+        run: |
+          scripts/release/checksums.sh SHA256SUMS
+          scripts/release/notes.sh "$GITHUB_REF_NAME" SHA256SUMS RELEASE_NOTES.md
+
+      - name: Upload release preparation
+        uses: actions/upload-artifact@v7
+        with:
+          name: unishell-release-preparation
+          path: |
+            bin/unishell-*
+            SHA256SUMS
+            RELEASE_NOTES.md
+          if-no-files-found: error
+          retention-days: 2
