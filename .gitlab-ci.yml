@@ -1,6 +1,7 @@
 stages:
   - validate
   - build
+  - release
 
 default:
   image: golang:1.25
@@ -47,6 +48,9 @@ release-preparation:
     - job: build
       artifacts: true
 
+  variables:
+    GIT_DEPTH: "0"
+
   script:
     - scripts/release/checksums.sh SHA256SUMS
     - scripts/release/notes.sh "$CI_COMMIT_TAG" SHA256SUMS RELEASE_NOTES.md
@@ -58,3 +62,22 @@ release-preparation:
       - RELEASE_NOTES.md
       - bin/unishell-*
     expire_in: 2 days
+
+release:
+  stage: release
+
+  image: registry.gitlab.com/gitlab-org/cli:latest
+
+  needs:
+    - job: release-preparation
+      artifacts: true
+
+  script:
+    - >
+      GLAB_ENABLE_CI_AUTOLOGIN=true
+      glab release create "$CI_COMMIT_TAG"
+      --name "uniShell $CI_COMMIT_TAG"
+      --notes-file RELEASE_NOTES.md
+      --use-package-registry
+      bin/unishell-*
+      SHA256SUMS

@@ -74,6 +74,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Download build binaries
         uses: actions/download-artifact@v7
@@ -96,3 +98,33 @@ jobs:
             RELEASE_NOTES.md
           if-no-files-found: error
           retention-days: 2
+
+  release:
+    needs: release-preparation
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download release preparation
+        uses: actions/download-artifact@v7
+        with:
+          name: unishell-release-preparation
+          path: .
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "uniShell $GITHUB_REF_NAME" \
+            --notes-file RELEASE_NOTES.md \
+            bin/unishell-* \
+            SHA256SUMS
