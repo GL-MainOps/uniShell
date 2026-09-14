@@ -255,6 +255,8 @@ build_profile() {
         -o "$profile_binary" \
         ./cmd/unishell
 
+    chmod +x "$profile_binary"
+
     echo "unishell-$profile: $profile_binary"
 }
 
@@ -309,6 +311,8 @@ go build \
     -ldflags "-s -w -X main.version=$BUILD_VERSION -X main.commit=$BUILD_COMMIT" \
     -o "$UNISHELL_BINARY" \
     ./cmd/unishell
+
+chmod +x "$UNISHELL_BINARY"
 
 echo "==> Build complete"
 echo "unishell:       $UNISHELL_BINARY"
