@@ -1,6 +1,6 @@
 FROM golang:alpine
 
-RUN apk add --no-cache zsh fish nushell bash bash-completion git tmux zellij  vim openssh curl wget
+RUN apk add --no-cache bash bash-completion git vim openssh curl wget
 
 ENV SHELL=/bin/bash
 ENV EDITOR=vim
