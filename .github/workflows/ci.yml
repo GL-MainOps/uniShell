@@ -30,6 +30,7 @@ jobs:
 
     env:
       UNISHELL_PROFILE: full
+      UNISHELL_VERSION: ${{ github.ref_name }}
 
     steps:
       - name: Checkout
@@ -56,7 +57,7 @@ jobs:
       - name: Build
         env:
           UNISHELL_AUTH_TOKEN: ${{ secrets.UNISHELL_AUTH_TOKEN }}
-        run: ./scripts/build.sh --profile "$UNISHELL_PROFILE"
+        run: ./scripts/build.sh --profile "$UNISHELL_PROFILE" --version "$UNISHELL_VERSION"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
