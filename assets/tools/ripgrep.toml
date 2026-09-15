@@ -2,6 +2,7 @@
 name = "ripgrep"
 profiles = [
     "full",
+    "slim",
     "common"
 ]
 

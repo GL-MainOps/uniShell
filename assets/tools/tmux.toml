@@ -2,6 +2,7 @@
 name = "tmux"
 profiles = [
     "full",
+    "slim",
     "common"
 ]
 

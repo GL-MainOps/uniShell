@@ -2,6 +2,7 @@
 name = "bat"
 profiles = [
     "full",
+    "slim",
     "common"
 ]
 

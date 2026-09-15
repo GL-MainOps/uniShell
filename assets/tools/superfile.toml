@@ -2,6 +2,7 @@
 name = "superfile"
 profiles = [
     "full",
+    "slim",
     "common"
 ]
 

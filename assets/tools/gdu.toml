@@ -2,6 +2,7 @@
 name = "gdu"
 profiles = [
     "full",
+    "slim",
     "common"
 ]
 

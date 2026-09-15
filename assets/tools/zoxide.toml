@@ -2,6 +2,7 @@
 name = "zoxide"
 profiles = [
     "full",
+    "slim",
     "common"
 ]
 

@@ -2,6 +2,7 @@
 name = "eza"
 profiles = [
     "full",
+    "slim",
     "common"
 ]
 

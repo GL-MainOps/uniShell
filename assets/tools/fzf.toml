@@ -2,6 +2,7 @@
 name = "fzf"
 profiles = [
     "full",
+    "slim",
     "common"
 ]
 

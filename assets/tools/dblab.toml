@@ -2,6 +2,8 @@
 name = "dblab"
 profiles = [
     "full",
+    "database",
+    "inspect",
     "common"
 ]
 

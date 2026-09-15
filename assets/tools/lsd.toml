@@ -2,6 +2,7 @@
 name = "lsd"
 profiles = [
     "full",
+    "slim",
     "common"
 ]
 
