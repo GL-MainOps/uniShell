@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily uniShell release synchronization
+
+[Timer]
+OnCalendar=*-*-* 05:00:00
+RandomizedDelaySec=3h
+Persistent=true
+Unit=lesscache-sync.service
+
+[Install]
+WantedBy=timers.target
