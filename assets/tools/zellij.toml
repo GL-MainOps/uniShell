@@ -1,8 +1,7 @@
 [[tools]]
 name = "zellij"
 profiles = [
-    "full",
-    "common"
+    "full"
 ]
 
 [[tools.artifacts]]

@@ -1,9 +1,9 @@
 [[tools]]
 name = "lsd"
 profiles = [
-    "full",
-    "slim",
-    "common"
+    "depricated"
+    #"slim",
+    #"common"
 ]
 
 [[tools.artifacts]]

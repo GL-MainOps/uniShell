@@ -30,3 +30,4 @@ internal/bundle/runtime.bundle
 # Build-time acquired runtime artifacts
 assets/bin/*
 !assets/bin/.gitkeep
+!assets/bin/sysmon
