@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"github.com/ulikunitz/xz"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,6 +114,53 @@ func TestFilesystemStagerStagesTarGzDirectBinary(t *testing.T) {
 			"staged binary = %q, want %q",
 			data,
 			"rg-binary",
+		)
+	}
+}
+
+func TestFilesystemStagerStagesXZArtifact(t *testing.T) {
+	baseDir := t.TempDir()
+	stager := NewFilesystemStager(baseDir)
+
+	archiveData := createXZ(t, []byte("example-binary"))
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "xz",
+		BinaryName:   "example",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	staged, err := stager.Stage(
+		context.Background(),
+		artifact,
+		bytes.NewReader(archiveData),
+	)
+	if err != nil {
+		t.Fatalf("Stage() returned error: %v", err)
+	}
+	defer os.RemoveAll(staged.RootPath)
+
+	wantPath := filepath.Join(staged.RootPath, "example")
+	if staged.BinaryPath != wantPath {
+		t.Fatalf(
+			"BinaryPath = %q, want %q",
+			staged.BinaryPath,
+			wantPath,
+		)
+	}
+
+	data, err := os.ReadFile(staged.BinaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile(BinaryPath) returned error: %v", err)
+	}
+	if string(data) != "example-binary" {
+		t.Fatalf(
+			"staged binary = %q, want %q",
+			data,
+			"example-binary",
 		)
 	}
 }
@@ -313,6 +361,79 @@ func TestFilesystemStagerStagesTgzArtifact(t *testing.T) {
 
 	if string(data) != "example-binary" {
 		t.Fatalf("staged binary = %q, want %q", data, "example-binary")
+	}
+}
+
+func TestFilesystemStagerStagesTarXZArtifacts(t *testing.T) {
+	for _, archiveType := range []string{"tar.xz", "txz"} {
+		t.Run(archiveType, func(t *testing.T) {
+			baseDir := t.TempDir()
+			stager := NewFilesystemStager(baseDir)
+
+			archiveData := createTarXZ(t, map[string]string{
+				"example-1.0.0-linux-amd64/README.md": "documentation",
+				"example-1.0.0-linux-amd64/example":   "example-binary",
+			})
+
+			artifact := Artifact{
+				Platform:     "linux",
+				Architecture: "amd64",
+				ArchiveType:  archiveType,
+				BinaryPath:   "example-1.0.0-linux-amd64/example",
+				BinaryName:   "example",
+				Source: testSource{
+					kind: SourceKindDirectURL,
+				},
+			}
+
+			staged, err := stager.Stage(
+				context.Background(),
+				artifact,
+				bytes.NewReader(archiveData),
+			)
+			if err != nil {
+				t.Fatalf("Stage() returned error: %v", err)
+			}
+			defer os.RemoveAll(staged.RootPath)
+
+			wantPath := filepath.Join(staged.RootPath, "example")
+			if staged.BinaryPath != wantPath {
+				t.Fatalf(
+					"BinaryPath = %q, want %q",
+					staged.BinaryPath,
+					wantPath,
+				)
+			}
+
+			data, err := os.ReadFile(staged.BinaryPath)
+			if err != nil {
+				t.Fatalf("ReadFile(BinaryPath) returned error: %v", err)
+			}
+			if string(data) != "example-binary" {
+				t.Fatalf(
+					"staged binary = %q, want %q",
+					data,
+					"example-binary",
+				)
+			}
+
+			readmePath := filepath.Join(
+				staged.RootPath,
+				"example-1.0.0-linux-amd64",
+				"README.md",
+			)
+			readme, err := os.ReadFile(readmePath)
+			if err != nil {
+				t.Fatalf("read staged README: %v", err)
+			}
+			if string(readme) != "documentation" {
+				t.Fatalf(
+					"staged README = %q, want %q",
+					readme,
+					"documentation",
+				)
+			}
+		})
 	}
 }
 
@@ -836,4 +957,89 @@ func createTarGz(t *testing.T, files map[string]string) []byte {
 	}
 
 	return buffer.Bytes()
+}
+
+func createXZ(t *testing.T, data []byte) []byte {
+	t.Helper()
+
+	var buffer bytes.Buffer
+
+	writer, err := xz.NewWriter(&buffer)
+	if err != nil {
+		t.Fatalf("xz.NewWriter() returned error: %v", err)
+	}
+
+	if _, err := writer.Write(data); err != nil {
+		t.Fatalf("xz Write() returned error: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("xz Close() returned error: %v", err)
+	}
+
+	return buffer.Bytes()
+}
+
+func createTarXZ(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+
+	var buffer bytes.Buffer
+
+	xzWriter, err := xz.NewWriter(&buffer)
+	if err != nil {
+		t.Fatalf("xz.NewWriter() returned error: %v", err)
+	}
+
+	tarWriter := tar.NewWriter(xzWriter)
+
+	for name, contents := range files {
+		data := []byte(contents)
+
+		header := &tar.Header{
+			Name: name,
+			Mode: 0700,
+			Size: int64(len(data)),
+		}
+
+		if err := tarWriter.WriteHeader(header); err != nil {
+			t.Fatalf("WriteHeader() returned error: %v", err)
+		}
+
+		if _, err := tarWriter.Write(data); err != nil {
+			t.Fatalf("Write() returned error: %v", err)
+		}
+	}
+
+	if err := tarWriter.Close(); err != nil {
+		t.Fatalf("tar Close() returned error: %v", err)
+	}
+
+	if err := xzWriter.Close(); err != nil {
+		t.Fatalf("xz Close() returned error: %v", err)
+	}
+
+	return buffer.Bytes()
+}
+
+func TestFilesystemStagerRejectsInvalidXZArtifact(t *testing.T) {
+	stager := NewFilesystemStager(t.TempDir())
+
+	artifact := Artifact{
+		Platform:     "linux",
+		Architecture: "amd64",
+		ArchiveType:  "xz",
+		BinaryName:   "example",
+		Source: testSource{
+			kind: SourceKindDirectURL,
+		},
+	}
+
+	_, err := stager.Stage(
+		context.Background(),
+		artifact,
+		strings.NewReader("not-an-xz-stream"),
+	)
+	if err == nil {
+		t.Fatal("Stage() returned nil error, want invalid XZ error")
+	}
 }

@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ulikunitz/xz"
+
 	unishellruntime "gitlab.com/mainops/uniShell/internal/runtime"
 )
 
@@ -56,6 +58,9 @@ func (s FilesystemStager) Stage(
 		artifact.ArchiveType != "tar" &&
 		artifact.ArchiveType != "tar.gz" &&
 		artifact.ArchiveType != "tgz" &&
+		artifact.ArchiveType != "tar.xz" &&
+		artifact.ArchiveType != "txz" &&
+		artifact.ArchiveType != "xz" &&
 		artifact.ArchiveType != "zip" {
 		return StagedArtifact{}, ErrUnsupportedArchiveType
 	}
@@ -101,6 +106,21 @@ func (s FilesystemStager) Stage(
 			os.RemoveAll(root)
 			return StagedArtifact{}, closeErr
 		}
+	} else if artifact.ArchiveType == "xz" {
+		binaryPath, err = safeArchiveTarget(root, artifact.BinaryName)
+		if err != nil {
+			os.RemoveAll(root)
+			return StagedArtifact{}, fmt.Errorf(
+				"invalid binary name %q: %w",
+				artifact.BinaryName,
+				err,
+			)
+		}
+
+		if err := extractXZ(binaryPath, reader); err != nil {
+			os.RemoveAll(root)
+			return StagedArtifact{}, err
+		}
 	} else {
 		if err := extractArchive(root, artifact.ArchiveType, reader); err != nil {
 			os.RemoveAll(root)
@@ -112,7 +132,6 @@ func (s FilesystemStager) Stage(
 			os.RemoveAll(root)
 			return StagedArtifact{}, err
 		}
-
 		binaryPath, err = canonicalizeStagedBinary(
 			root,
 			selectedPath,
@@ -211,6 +230,34 @@ func canonicalizeStagedBinary(
 	return target, nil
 }
 
+func extractXZ(binaryPath string, reader io.Reader) error {
+	xzReader, err := xz.NewReader(reader)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(
+		binaryPath,
+		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
+		0700,
+	)
+	if err != nil {
+		return err
+	}
+
+	_, copyErr := io.Copy(file, xzReader)
+	closeErr := file.Close()
+
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+
+	return nil
+}
+
 func extractArchive(root, archiveType string, reader io.Reader) error {
 	switch archiveType {
 	case "tar":
@@ -224,6 +271,14 @@ func extractArchive(root, archiveType string, reader io.Reader) error {
 		defer gzipReader.Close()
 
 		return extractTar(root, gzipReader)
+
+	case "tar.xz", "txz":
+		xzReader, err := xz.NewReader(reader)
+		if err != nil {
+			return err
+		}
+
+		return extractTar(root, xzReader)
 
 	case "zip":
 		return extractZip(root, reader)

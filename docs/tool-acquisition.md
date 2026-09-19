@@ -301,8 +301,37 @@ Current supported archive types are:
 tar
 tar.gz
 tgz
+tar.xz
+txz
+xz
 zip
 ```
+
+`tar.xz` and `txz` describe an XZ-compressed tar archive.
+
+`xz` describes a raw XZ-compressed executable artifact. It does not
+contain an archive entry, so `binary_path` is not used for `xz`.
+The decompressed content is staged using `binary_name`.
+
+For example:
+
+```toml
+archive_type = "xz"
+binary_path = ""
+binary_name = "example"
+```
+
+For an XZ-compressed tar archive, `binary_path` identifies the executable
+inside the extracted tar archive in the same way as it does for
+`tar.gz` and `tgz`:
+
+```toml
+archive_type = "tar.xz"
+binary_path = "example-1.0.0-linux-amd64/example"
+binary_name = "example"
+```
+
+`txz` has the same semantics as `tar.xz`.
 
 Example:
 
