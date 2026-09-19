@@ -20,9 +20,6 @@ fi
 ## VARIABLES
 ################################################
 
-# PATH
-export PATH="$UNISHELL_SESSION_RUNTIME_DIR/scripts:$PATH"
-
 # EDITORS & PAGERS
 declare -A TERMVIEWERS=(
     [bat]="export GROFF_NO_SGR=1 MANPAGER=\"sh -c 'col -bx | bat -l man -p'\" PAGER=\"bat -p --paging=always\""

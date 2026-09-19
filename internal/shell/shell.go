@@ -159,7 +159,10 @@ func NewEnvironmentForShell(
 		)
 	}
 
+	runtimeScripts := filepath.Join(sessionRuntime, "scripts")
+
 	path := buildPATH(
+		runtimeScripts,
 		runtimeBin,
 		os.Getenv("PATH"),
 	)
@@ -380,12 +383,16 @@ func resolveShell(
 	return host, SourceHost, true
 }
 
-func buildPATH(runtimeBin, existing string) string {
+func buildPATH(runtimeScripts, runtimeBin, existing string) string {
+	runtimePath := runtimeScripts +
+		string(os.PathListSeparator) +
+		runtimeBin
+
 	if existing == "" {
-		return runtimeBin
+		return runtimePath
 	}
 
-	return runtimeBin +
+	return runtimePath +
 		string(os.PathListSeparator) +
 		existing
 }

@@ -38,13 +38,16 @@ func findEnv(env []string, key string) (string, bool) {
 	return "", false
 }
 
-func TestBuildPATHPrependsRuntimeBin(t *testing.T) {
+func TestBuildPATHPrependsRuntimeScriptsAndBin(t *testing.T) {
 	got := buildPATH(
+		"/runtime/scripts",
 		"/runtime/bin",
 		"/usr/bin:/bin",
 	)
 
-	want := "/runtime/bin" +
+	want := "/runtime/scripts" +
+		string(os.PathListSeparator) +
+		"/runtime/bin" +
 		string(os.PathListSeparator) +
 		"/usr/bin:/bin"
 
@@ -54,13 +57,21 @@ func TestBuildPATHPrependsRuntimeBin(t *testing.T) {
 }
 
 func TestBuildPATHHandlesEmptyExistingPath(t *testing.T) {
-	got := buildPATH("/runtime/bin", "")
+	got := buildPATH(
+		"/runtime/scripts",
+		"/runtime/bin",
+		"",
+	)
 
-	if got != "/runtime/bin" {
+	want := "/runtime/scripts" +
+		string(os.PathListSeparator) +
+		"/runtime/bin"
+
+	if got != want {
 		t.Fatalf(
 			"buildPATH() = %q, want %q",
 			got,
-			"/runtime/bin",
+			want,
 		)
 	}
 }
@@ -600,7 +611,7 @@ func TestNewEnvironmentIncludesRuntimePath(t *testing.T) {
 		t.Fatal("PATH was not included")
 	}
 
-	want := "/runtime/bin:/usr/bin:/bin"
+	want := "/runtime/session/scripts:/runtime/bin:/usr/bin:/bin"
 
 	if path != want {
 		t.Fatalf(
