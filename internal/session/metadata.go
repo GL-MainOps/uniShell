@@ -27,6 +27,7 @@ type Metadata struct {
 	Mode              Mode      `json:"mode"`
 	ShellName         string    `json:"shell_name,omitempty"`
 	ShellPath         string    `json:"shell_path,omitempty"`
+	ShellProfile      string    `json:"shell_profile"`
 	Name              string    `json:"name,omitempty"`
 	NativeName        string    `json:"native_name,omitempty"`
 	Multiplexer       string    `json:"multiplexer,omitempty"`
@@ -175,4 +176,25 @@ func validateMetadata(metadata Metadata) error {
 			metadata.Mode,
 		)
 	}
+}
+
+func (metadata Metadata) Environment() map[string]string {
+	env := map[string]string{
+		"UNISHELL_SESSION_ID":            metadata.ID,
+		"UNISHELL_SESSION_VERSION":       metadata.Version,
+		"UNISHELL_SESSION_MODE":          string(metadata.Mode),
+		"UNISHELL_SESSION_SHELL_NAME":    metadata.ShellName,
+		"UNISHELL_SESSION_NAME":          metadata.Name,
+		"UNISHELL_SESSION_SHELL_PROFILE": metadata.ShellProfile,
+	}
+
+	if metadata.Multiplexer != "" {
+		env["UNISHELL_SESSION_MULTIPLEXER"] = metadata.Multiplexer
+	}
+
+	if metadata.Endpoint != "" {
+		env["UNISHELL_SESSION_MULTIPLEXER_ENDPOINT"] = metadata.Endpoint
+	}
+
+	return env
 }

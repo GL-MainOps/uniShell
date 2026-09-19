@@ -32,6 +32,7 @@ func TestMetadataRoundTrip(t *testing.T) {
 		Mode:              ModeNormal,
 		ShellName:         "bash",
 		ShellPath:         "/bin/bash",
+		ShellProfile:      "work",
 	}
 
 	if err := WriteMetadata(runtimePath, want); err != nil {
@@ -138,6 +139,14 @@ func TestMetadataRoundTrip(t *testing.T) {
 			"ShellPath = %q, want %q",
 			got.ShellPath,
 			want.ShellPath,
+		)
+	}
+
+	if got.ShellProfile != want.ShellProfile {
+		t.Fatalf(
+			"ShellProfile = %q, want %q",
+			got.ShellProfile,
+			want.ShellProfile,
 		)
 	}
 }
@@ -293,6 +302,78 @@ func TestReadMetadataRejectsMultiplexerMetadataWithoutProcessGroupID(
 	if _, err := ReadMetadata(runtimePath); err == nil {
 		t.Fatal(
 			"ReadMetadata() returned nil error for invalid process group ID",
+		)
+	}
+}
+
+func TestMetadataEnvironment(t *testing.T) {
+	metadata := Metadata{
+		ID:           "session-id",
+		Version:      "development",
+		Mode:         ModeMultiplexer,
+		ShellName:    "bash",
+		Name:         "development@session",
+		ShellProfile: "work",
+		Multiplexer:  "tmux",
+		Endpoint:     "/runtime/multiplexer/tmux.sock",
+	}
+
+	got := metadata.Environment()
+
+	want := map[string]string{
+		"UNISHELL_SESSION_ID":                   "session-id",
+		"UNISHELL_SESSION_VERSION":              "development",
+		"UNISHELL_SESSION_MODE":                 "multiplexer",
+		"UNISHELL_SESSION_SHELL_NAME":           "bash",
+		"UNISHELL_SESSION_NAME":                 "development@session",
+		"UNISHELL_SESSION_SHELL_PROFILE":        "work",
+		"UNISHELL_SESSION_MULTIPLEXER":          "tmux",
+		"UNISHELL_SESSION_MULTIPLEXER_ENDPOINT": "/runtime/multiplexer/tmux.sock",
+	}
+
+	for key, wantValue := range want {
+		if gotValue := got[key]; gotValue != wantValue {
+			t.Fatalf(
+				"%s = %q, want %q",
+				key,
+				gotValue,
+				wantValue,
+			)
+		}
+	}
+}
+
+func TestMetadataEnvironmentOmitsMultiplexerValuesForNormalSession(
+	t *testing.T,
+) {
+	metadata := Metadata{
+		ID:           "session-id",
+		Version:      "development",
+		Mode:         ModeNormal,
+		ShellName:    "bash",
+		Name:         "development@session",
+		ShellProfile: "none",
+	}
+
+	got := metadata.Environment()
+
+	if got["UNISHELL_SESSION_SHELL_PROFILE"] != "none" {
+		t.Fatalf(
+			"UNISHELL_SESSION_SHELL_PROFILE = %q, want %q",
+			got["UNISHELL_SESSION_SHELL_PROFILE"],
+			"none",
+		)
+	}
+
+	if _, ok := got["UNISHELL_SESSION_MULTIPLEXER"]; ok {
+		t.Fatal(
+			"UNISHELL_SESSION_MULTIPLEXER unexpectedly present",
+		)
+	}
+
+	if _, ok := got["UNISHELL_SESSION_MULTIPLEXER_ENDPOINT"]; ok {
+		t.Fatal(
+			"UNISHELL_SESSION_MULTIPLEXER_ENDPOINT unexpectedly present",
 		)
 	}
 }
