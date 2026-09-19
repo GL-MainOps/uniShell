@@ -3,17 +3,28 @@ package multiplexer
 import (
 	"path/filepath"
 	"testing"
+
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/tmux"
 )
 
-func TestResolveTmuxSocketUsesRuntimeDefault(t *testing.T) {
+func TestTmuxBackendResolvesRuntimeDefaultEndpoint(t *testing.T) {
 	runtimePath := filepath.Join(
 		t.TempDir(),
 		"runtime",
 	)
 
-	got, err := ResolveTmuxSocket(runtimePath, "")
+	backend := tmux.New()
+
+	got, err := backend.ResolveEndpoint(
+		runtimePath,
+		api.Options{},
+	)
 	if err != nil {
-		t.Fatalf("ResolveTmuxSocket() returned error: %v", err)
+		t.Fatalf(
+			"ResolveEndpoint() returned error: %v",
+			err,
+		)
 	}
 
 	want := filepath.Join(
@@ -23,35 +34,22 @@ func TestResolveTmuxSocketUsesRuntimeDefault(t *testing.T) {
 	)
 
 	if got != want {
-		t.Fatalf("socket = %q, want %q", got, want)
+		t.Fatalf(
+			"endpoint = %q, want %q",
+			got,
+			want,
+		)
 	}
 }
 
-func TestResolveTmuxSocketUsesExplicitPath(t *testing.T) {
-	runtimePath := filepath.Join(
-		t.TempDir(),
-		"runtime",
+func TestTmuxBackendRejectsEmptyRuntime(t *testing.T) {
+	backend := tmux.New()
+
+	_, err := backend.ResolveEndpoint(
+		"",
+		api.Options{},
 	)
-
-	explicit := filepath.Join(
-		t.TempDir(),
-		"custom",
-		"tmux.sock",
-	)
-
-	got, err := ResolveTmuxSocket(runtimePath, explicit)
-	if err != nil {
-		t.Fatalf("ResolveTmuxSocket() returned error: %v", err)
-	}
-
-	if got != explicit {
-		t.Fatalf("socket = %q, want %q", got, explicit)
-	}
-}
-
-func TestResolveTmuxSocketRejectsEmptyRuntime(t *testing.T) {
-	_, err := ResolveTmuxSocket("", "")
 	if err == nil {
-		t.Fatal("ResolveTmuxSocket() returned nil error")
+		t.Fatal("ResolveEndpoint() returned nil error")
 	}
 }

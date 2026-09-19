@@ -28,6 +28,7 @@ type Backend interface {
 	Capabilities() map[Capability]bool
 	Available() bool
 	AvailableForSession(Session) bool
+	ResolveEndpoint(runtimePath string, options Options) (string, error)
 
 	Create(Session) error
 	Attach(Session) error

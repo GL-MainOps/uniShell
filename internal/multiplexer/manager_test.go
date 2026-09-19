@@ -54,6 +54,13 @@ func (b *managerTestBackend) AvailableForSession(
 	return b.available
 }
 
+func (b *managerTestBackend) ResolveEndpoint(
+	string,
+	api.Options,
+) (string, error) {
+	return endpoint, nil
+}
+
 func (b *managerTestBackend) Create(session Session) error {
 	b.created = true
 	b.createdSession = session

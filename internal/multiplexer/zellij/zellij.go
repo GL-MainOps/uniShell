@@ -94,6 +94,10 @@ func (b *Backend) Available() bool {
 	return err == nil
 }
 
+func (b *Backend) ResolveEndpoint(_ string, _ api.Options) (string, error) {
+	return "", nil
+}
+
 func (b *Backend) AvailableForSession(
 	session api.Session,
 ) bool {

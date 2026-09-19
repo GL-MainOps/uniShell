@@ -103,6 +103,10 @@ func (b *Backend) Available() bool {
 	return err == nil
 }
 
+func (b *Backend) ResolveEndpoint(runtimePath string, options api.Options) (string, error) {
+	return ResolveEndpoint(runtimePath, options)
+}
+
 func (b *Backend) AvailableForSession(
 	session api.Session,
 ) bool {

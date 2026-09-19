@@ -1,6 +1,10 @@
 package multiplexer
 
-import "testing"
+import (
+	"testing"
+
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
+)
 
 type testBackend struct {
 	name      string
@@ -24,6 +28,13 @@ func (b testBackend) Available() bool {
 
 func (b testBackend) AvailableForSession(Session) bool {
 	return b.available
+}
+
+func (b testBackend) ResolveEndpoint(
+	string,
+	api.Options,
+) (string, error) {
+	return "", nil
 }
 
 func (b testBackend) Create(Session) error {
