@@ -60,6 +60,68 @@ func (s *Session) SetName(name string) error {
 	return nil
 }
 
+// SetShellSelection records the resolved shell and selected profile in the
+// session metadata.
+func (s *Session) SetShellSelection(
+	shellName string,
+	shellPath string,
+	shellProfile string,
+) error {
+	if shellName == "" {
+		return errors.New("runtime session shell name cannot be empty")
+	}
+
+	if shellPath == "" {
+		return errors.New("runtime session shell path cannot be empty")
+	}
+
+	if shellProfile == "" {
+		shellProfile = "none"
+	}
+
+	metadata, err := sessionmeta.ReadMetadata(
+		s.Paths.Runtime,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"read runtime session metadata: %w",
+			err,
+		)
+	}
+
+	metadata.ShellName = shellName
+	metadata.ShellPath = shellPath
+	metadata.ShellProfile = shellProfile
+
+	if err := sessionmeta.WriteMetadata(
+		s.Paths.Runtime,
+		metadata,
+	); err != nil {
+		return fmt.Errorf(
+			"write runtime session metadata: %w",
+			err,
+		)
+	}
+
+	return nil
+}
+
+// Environment returns the environment variables represented by the
+// persisted session metadata.
+func (s *Session) Environment() (map[string]string, error) {
+	metadata, err := sessionmeta.ReadMetadata(
+		s.Paths.Runtime,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"read runtime session metadata: %w",
+			err,
+		)
+	}
+
+	return metadata.Environment(), nil
+}
+
 // Prepare creates the private directories and session metadata required by
 // the session.
 func (s *Session) Prepare() error {

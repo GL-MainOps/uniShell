@@ -174,8 +174,8 @@ Example:
 /var/tmp/.lesscache/runtime/development/80790914fd006a7e29c4d6945463b371
 ```
 
-This variable is provided by uniShell to the environment inherited by  
-the multiplexer and shells it launches.
+This variable is provided by uniShell to the environment inherited by the
+shell and, when applicable, the multiplexer and processes it launches.
 
 It can be used by tools and configuration files that need to locate  
 files belonging to the active uniShell runtime.
@@ -192,6 +192,76 @@ session.
 
 When reattaching to an existing uniShell session, it continues to  
 refer to the existing session's runtime directory.
+
+### Session Environment
+
+uniShell provides session metadata to the environment inherited by the
+direct shell and, in later session modes, by the processes launched
+within the session.
+
+These variables describe the active uniShell session:
+
+### `UNISHELL_SESSION_ID`
+
+Contains the unique runtime session identifier.
+
+This value corresponds to the session identifier stored in the active
+session metadata.
+
+### `UNISHELL_SESSION_VERSION`
+
+Contains the uniShell session metadata version.
+
+### `UNISHELL_SESSION_MODE`
+
+Contains the active uniShell session mode.
+
+### `UNISHELL_SESSION_SHELL_NAME`
+
+Contains the logical name of the shell selected for the active session.
+
+### `UNISHELL_SESSION_NAME`
+
+Contains the uniShell logical session name.
+
+This is the logical session identity and is independent from any native
+multiplexer session name.
+
+### `UNISHELL_SESSION_SHELL_PROFILE`
+
+Contains the shell profile selected for the active session.
+
+When no shell profile is selected, the value is:
+
+```text
+none
+```
+
+### `UNISHELL_SESSION_MULTIPLEXER`
+
+When a multiplexer is associated with the active session, contains the
+selected multiplexer name.
+
+This variable is omitted when the session does not use a multiplexer.
+
+### `UNISHELL_SESSION_MULTIPLEXER_ENDPOINT`
+
+When a multiplexer is associated with the active session, contains the
+endpoint used to access that multiplexer session.
+
+This variable is omitted when the session does not use a multiplexer.
+
+These variables are **runtime-provided values**, not configuration
+inputs. They are derived from the active session metadata and are
+injected into the environment of the shell launched by uniShell.
+
+For a direct shell session, the shell receives these values after
+uniShell resolves the requested shell and shell profile.
+
+The persisted session metadata is the canonical source for these
+values; shell configuration files do not need to parse `.session.json`
+directly.
+
 
 ## Multiplexer Configuration
 

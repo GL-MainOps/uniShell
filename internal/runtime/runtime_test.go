@@ -241,6 +241,140 @@ func TestSessionMetadataContainsIdentity(t *testing.T) {
 	}
 }
 
+func TestSetShellSelectionUpdatesSessionMetadata(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "unishell")
+
+	paths, err := NewPaths(root, "1.0.0")
+	if err != nil {
+		t.Fatalf("NewPaths() returned error: %v", err)
+	}
+
+	session, err := NewSession(paths)
+	if err != nil {
+		t.Fatalf("NewSession() returned error: %v", err)
+	}
+
+	if err := session.Prepare(); err != nil {
+		t.Fatalf("Prepare() returned error: %v", err)
+	}
+	defer session.Cleanup()
+
+	if err := session.SetShellSelection(
+		"bash",
+		"/bin/bash",
+		"work",
+	); err != nil {
+		t.Fatalf(
+			"SetShellSelection() returned error: %v",
+			err,
+		)
+	}
+
+	metadata, err := sessionmeta.ReadMetadata(
+		session.Paths.Runtime,
+	)
+	if err != nil {
+		t.Fatalf(
+			"ReadMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	if metadata.ShellName != "bash" {
+		t.Fatalf(
+			"metadata shell name = %q, want %q",
+			metadata.ShellName,
+			"bash",
+		)
+	}
+
+	if metadata.ShellPath != "/bin/bash" {
+		t.Fatalf(
+			"metadata shell path = %q, want %q",
+			metadata.ShellPath,
+			"/bin/bash",
+		)
+	}
+
+	if metadata.ShellProfile != "work" {
+		t.Fatalf(
+			"metadata shell profile = %q, want %q",
+			metadata.ShellProfile,
+			"work",
+		)
+	}
+}
+
+func TestSessionEnvironmentReadsPersistedMetadata(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "unishell")
+
+	paths, err := NewPaths(root, "1.0.0")
+	if err != nil {
+		t.Fatalf("NewPaths() returned error: %v", err)
+	}
+
+	session, err := NewSession(paths)
+	if err != nil {
+		t.Fatalf("NewSession() returned error: %v", err)
+	}
+
+	if err := session.Prepare(); err != nil {
+		t.Fatalf("Prepare() returned error: %v", err)
+	}
+	defer session.Cleanup()
+
+	if err := session.SetShellSelection(
+		"zsh",
+		"/bin/zsh",
+		"none",
+	); err != nil {
+		t.Fatalf(
+			"SetShellSelection() returned error: %v",
+			err,
+		)
+	}
+
+	got, err := session.Environment()
+	if err != nil {
+		t.Fatalf(
+			"Environment() returned error: %v",
+			err,
+		)
+	}
+
+	want := map[string]string{
+		"UNISHELL_SESSION_ID":            session.ID,
+		"UNISHELL_SESSION_VERSION":       "1.0.0",
+		"UNISHELL_SESSION_MODE":          "normal",
+		"UNISHELL_SESSION_SHELL_NAME":    "zsh",
+		"UNISHELL_SESSION_NAME":          "",
+		"UNISHELL_SESSION_SHELL_PROFILE": "none",
+	}
+
+	for key, wantValue := range want {
+		if gotValue := got[key]; gotValue != wantValue {
+			t.Fatalf(
+				"%s = %q, want %q",
+				key,
+				gotValue,
+				wantValue,
+			)
+		}
+	}
+
+	if _, ok := got["UNISHELL_SESSION_MULTIPLEXER"]; ok {
+		t.Fatal(
+			"UNISHELL_SESSION_MULTIPLEXER unexpectedly present",
+		)
+	}
+
+	if _, ok := got["UNISHELL_SESSION_MULTIPLEXER_ENDPOINT"]; ok {
+		t.Fatal(
+			"UNISHELL_SESSION_MULTIPLEXER_ENDPOINT unexpectedly present",
+		)
+	}
+}
+
 func TestConcurrentSessionsAreIsolated(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "unishell")
 

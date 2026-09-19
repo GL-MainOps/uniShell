@@ -205,6 +205,34 @@ func shellTestRuntime(t *testing.T) *runtime.Session {
 	}
 }
 
+func TestSetSessionEnvironmentInitializesNilEnvironment(
+	t *testing.T,
+) {
+	startup := shell.Startup{}
+
+	sessionEnvironment := map[string]string{
+		"UNISHELL_SESSION_ID":         "session-id",
+		"UNISHELL_SESSION_MODE":       "normal",
+		"UNISHELL_SESSION_SHELL_NAME": "bash",
+	}
+
+	startup = setSessionEnvironment(
+		startup,
+		sessionEnvironment,
+	)
+
+	for key, want := range sessionEnvironment {
+		if got := startup.Env[key]; got != want {
+			t.Fatalf(
+				"%s = %q, want %q",
+				key,
+				got,
+				want,
+			)
+		}
+	}
+}
+
 type shellTestApplication struct {
 	discoverSession              *app.Session
 	discoverSessions             []*multiplexer.ManagedSession

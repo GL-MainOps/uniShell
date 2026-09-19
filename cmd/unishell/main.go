@@ -275,6 +275,21 @@ func prepareShellStartup(
 	return startup, nil
 }
 
+func setSessionEnvironment(
+	startup shell.Startup,
+	sessionEnvironment map[string]string,
+) shell.Startup {
+	if startup.Env == nil {
+		startup.Env = make(map[string]string)
+	}
+
+	for key, value := range sessionEnvironment {
+		startup.Env[key] = value
+	}
+
+	return startup
+}
+
 func runDirectShell(
 	application shellApplication,
 	ctx context.Context,
@@ -328,6 +343,19 @@ func runDirectShell(
 		)
 	}
 
+	if err := runtimeSession.SetShellSelection(
+		resolved.Name,
+		resolved.Path,
+		application.RequestedShellProfile(),
+	); err != nil {
+		return cleanupRuntime(
+			fmt.Errorf(
+				"record shell selection: %w",
+				err,
+			),
+		)
+	}
+
 	startup, err := prepareShellStartup(
 		application,
 		resolved,
@@ -336,6 +364,21 @@ func runDirectShell(
 	if err != nil {
 		return cleanupRuntime(err)
 	}
+
+	sessionEnvironment, err := runtimeSession.Environment()
+	if err != nil {
+		return cleanupRuntime(
+			fmt.Errorf(
+				"prepare session environment: %w",
+				err,
+			),
+		)
+	}
+
+	startup = setSessionEnvironment(
+		startup,
+		sessionEnvironment,
+	)
 
 	command, err := shell.NewCommand(
 		resolved,
