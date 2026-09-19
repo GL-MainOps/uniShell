@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+# Set locale to handle Unicode characters properly
+export LC_ALL=C.UTF-8
+
+# CPU calculation (POSIX sleep)
+read -r _ user nice system idle iowait irq softirq steal _ </proc/stat
+t1=$((user+nice+system+idle+iowait+irq+softirq+steal))
+i1=$idle
+sleep 1  # POSIX-compliant integer sleep
+read -r _ user nice system idle iowait irq softirq steal _ </proc/stat
+t2=$((user+nice+system+idle+iowait+irq+softirq+steal))
+
+# CPU percentage calculation (safe integer math)
+id=$((idle - i1))
+td=$((t2 - t1))
+if [ $td -ne 0 ]; then
+    cpu_pct=$((1000*(td - id)/td))
+    printf "(%d.%d%%) $(nproc)   | " $((cpu_pct/10)) $((cpu_pct%10))
+else
+    printf "(0.0%%) $(nproc)   | "
+fi
+
+# Memory calculation (single read of /proc/meminfo)
+mem_total=0 mem_avail=0 swap_total=0 swap_free=0
+while read -r key value _; do
+    case $key in
+        MemTotal:) mem_total=$value ;;
+        MemAvailable:) mem_avail=$value ;;
+        SwapTotal:) swap_total=$value ;;
+        SwapFree:) swap_free=$value ;;
+    esac
+done < /proc/meminfo
+
+mem_used_kb=$((mem_total - mem_avail))
+mem_used_pct=$(( mem_used_kb * 1000 / mem_total ))
+used_gb=$(( (mem_used_kb * 10 + 524288) / 1048576 ))
+total_gb=$(( (mem_total * 10 + 524288) / 1048576 ))
+printf "%d.%dGB/%d.%dGB (%d.%d%%)  " $((used_gb / 10)) $((used_gb % 10)) $((total_gb / 10)) $((total_gb % 10)) $((mem_used_pct / 10)) $((mem_used_pct % 10))
+
+# Swap calculation with validation
+if [ "$swap_total" -gt 0 ]; then
+    swap_used_pct=$(( (swap_total - swap_free) * 1000 / swap_total ))
+    printf " - %d.%d%%   | " $((swap_used_pct/10)) $((swap_used_pct%10))
+else # NO SWAP FOUND
+    printf " | "
+fi
+
+# Disk (POSIX-compliant)
+# Calculated in Integers
+## df -P / | awk "NR==2 {gsub(/%/, \"\"); printf \"%s%%  | \", \$5}"
+
+# Calculated up to 2 decimal points
+df -P / | awk 'NR==2 {
+    used = $3;
+    total = $2;
+    pct = (used * 100) / total;
+    printf "%.2f%%   | ", pct
+}'
+
+# Uptime (pure shell math)
+read -r uptime _ </proc/uptime
+s=${uptime%%.*}
+printf "%d:%02dH:%02d   |  : " \
+    $((s/86400)) $(( (s%86400)/3600 )) $(( (s%3600)/60 ))
+
+# Users (POSIX-compliant)
+who | awk "{print \$1}" | sort -u | paste -sd, -
