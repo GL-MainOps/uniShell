@@ -1,0 +1,341 @@
+let $VIM_CACHE_HOME = $VIM_CACHE_HOME
+
+for dir in ['swap', 'undo', 'backup']
+    let fullpath = expand($VIM_CACHE_HOME . '/' . dir)
+    if !isdirectory(fullpath)
+        call mkdir(fullpath, 'p')
+    endif
+endfor
+
+let &directory = expand($VIM_CACHE_HOME . '/swap//')
+let &undodir   = expand($VIM_CACHE_HOME . '/undo//')
+let &backupdir = expand($VIM_CACHE_HOME . '/backup//')
+
+" Enable persistence features
+set undofile
+set backup
+set swapfile
+
+let &viminfo = "'1000,n" . $VIM_CACHE_HOME . "/viminfo"
+
+
+"==================================================
+" CORE EDITOR SETTINGS
+"==================================================
+
+" Interface & Behavior
+set novisualbell         " Disable visual bell
+set nospell              " Disable spellcheck
+set mouse-=a             " Disable mouse in all modes
+set wrap                 " Wrap long lines
+set history=1000         " Increase command history (default:20)
+set laststatus=2         " Always show status line
+" set title                " Show window title
+set clipboard=unnamed    " Use system clipboard
+set wildmenu             " Enhanced command completion
+set report=0             " Always report changed lines
+set lazyredraw           " Optimize macro execution
+set ttyfast              " Faster redraw for modern terminals
+set autoread             " Reload files changed externally
+set showmatch            " Highlight matching brackets
+set scrolloff=6          " Minimum context lines around cursor
+set nojoinspaces         " Single space after '.'
+set updatetime=500       " Shorter delay for events
+set encoding=utf-8       " Default encoding
+set background=dark      " Colorscheme background hint
+" set omnifunc=syntaxcomplete#Complete  " Omnicompletion backend
+
+"set statusline=%F        " Show full path of the opened file
+set statusline=%F\ %m%r%=%l/%L\ %p%%\ [%{&ff}/%Y]
+
+" Folding
+set foldlevel=99         " start with all folds open
+set foldenable           " ensure folding is enabled
+
+" Display
+set nonumber             " Disable line numbers
+set linebreak            " Wrap at word boundaries
+set breakindent          " Indent wrapped lines
+
+
+" Indentation & Tabs
+set tabstop=4            " Spaces per tab
+set shiftwidth=0         " Use tabstop value for indentation
+set softtabstop=-1       " Use tabstop value
+set expandtab            " Convert tabs to spaces
+set smarttab             " Better tab behavior
+set smartindent          " Context-aware indentation
+set autoindent           " Maintain current indent level
+
+" Search Settings
+set ignorecase           " Case-insensitive search
+set smartcase            " Case-sensitive if uppercase present
+set magic                " Use regex 'magic' mode
+set incsearch            " Show matches while typing
+"set hlsearch            " Keep matches highlighted
+
+" Window Management
+set splitbelow           " New horizontal splits go below
+set splitright           " New vertical splits go right
+
+
+"==================================================
+" SYNTAX & FILETYPE HANDLING
+"==================================================
+
+syntax on                " Enable syntax highlighting
+filetype detect          " Detect file types
+filetype plugin on       " Load filetype plugins
+filetype indent on       " Load indent rules
+
+
+"==================================================
+" COLOR & HIGHLIGHTING
+"==================================================
+
+if has("termguicolors")
+    let &t_8f = "\<Esc>[38;2;%lu;%lu;%lum"
+    let &t_8b = "\<Esc>[48;2;%lu;%lu;%lum"
+    set termguicolors      " Enable true-color support
+endif
+
+set cul                  " Highlight current line
+"set cuc                 " Highlight current column
+
+" colorscheme slate        " Active colorscheme
+
+" Example highlight customizations:
+"highlight CursorLine cterm=NONE ctermbg=DarkGrey guibg=#333333
+highlight CursorLine term=underline cterm=underline guibg=#2c3440
+highlight Visual cterm=NONE ctermbg=237 ctermfg=NONE guibg=#333333
+"highlight Visual cterm=NONE ctermbg=237 ctermfg=NONE
+"highlight CursorColumn cterm=NONE ctermbg=8
+
+
+"==================================================
+" FILE BROWSING (netrw)
+"==================================================
+
+let g:netrw_home = $VIM_CACHE_HOME  " Use cache directory
+let g:netrw_banner=1     " Show banner
+let g:netrw_liststyle=3  " Tree-style listing
+let g:netrw_showhide=1   " Toggle hidden files
+let g:netrw_winsize=20   " Default browser width
+
+
+"==================================================
+" KEY MAPPINGS
+"==================================================
+
+" Set leader key to space
+let mapleader="\<space>"
+
+" Map it to <leader># in visual mode
+xnoremap <leader># :<C-u>call ToggleCommentLines()<CR>
+
+" ----------------------------
+" FILE OPERATIONS
+" ----------------------------
+" Save current file
+nnoremap <silent> <leader>w :w<CR>
+
+" Open file explorer (netrw)
+nnoremap <silent> <leader>e :E<CR>
+
+" List open buffers
+nnoremap <leader>b <cmd>buffers<CR>
+
+
+" ----------------------------
+" WINDOW MANAGEMENT
+" ----------------------------
+" Create horizontal split
+nnoremap <silent> <leader>ss :split<CR>
+
+" Create vertical split
+nnoremap <silent> <leader>sv :vsplit<CR>
+
+" Close current window
+nnoremap <silent> <leader>sc :close<CR>
+
+
+" ----------------------------
+" UI TOGGLES
+" ----------------------------
+" Toggle line numbers
+nnoremap <silent> <leader>n :set number!<CR>
+
+" Toggle search highlighting
+nnoremap <silent> <leader>h :set hlsearch!<CR>
+
+
+" ----------------------------
+" CURSOR MOVEMENT
+" ----------------------------
+" Jump to start of line
+nnoremap <silent> <C-a> 0
+
+" Jump to end of line
+nnoremap <silent> <C-e> $
+
+
+" ----------------------------
+" BUFFER MANAGEMENT
+" ----------------------------
+" Create new empty buffer
+noremap <silent> <leader><Backspace> :enew<CR>
+
+" Switch to last used buffer
+noremap <silent> <leader><space> :b#<CR>
+
+
+" ----------------------------
+" TEXT OPERATIONS
+" ----------------------------
+
+" Persist Yanked Text unless replaced
+vnoremap p "_dP
+
+" Replace selected text throughout file
+vnoremap <leader>r "hy:%s^<C-r>h^^gc<left><left><left>
+
+" Move selected lines up
+" vnoremap <S-up> :m '>-2<CR>gv=gv
+
+" Move selected lines down
+" vnoremap <S-down> :m '>+1<CR>gv=gv
+
+
+" ----------------------------
+" AUTO-CLOSING CHARACTERS
+" ----------------------------
+" Note: Quotes disabled to prevent conflicts
+" inoremap " ""<left>
+" inoremap ' ''<left>
+inoremap [ []<left>
+inoremap ( ()<left>
+inoremap { {}<left>
+inoremap < <><left>
+inoremap /* /**/<left>
+
+
+" ----------------------------
+" UTILITIES
+" ----------------------------
+" Exit insert mode quickly
+inoremap jj <Esc>
+
+" Open terminal in split
+nnoremap <silent> <leader>t :ter<CR>
+
+" Surround word with custom character
+" Warning: May conflict with auto-closing mappings
+nnoremap <leader>sw <cmd>echo "Press a character: " \| let c = nr2char(getchar()) \| exec "normal viwo\ei" . c . "\eea" . c . "\e" \| redraw<CR>
+
+" Set foldmethod to "indent"
+set foldmethod=indent   " or remove foldlevel/foldenable since <leader>f sets it anyway
+noremap <silent> <leader>f :set foldmethod=indent<CR>
+"==================================================
+" FUNCTIONS
+"==================================================
+
+" Tab completion
+" function! TabComplete()
+"     if getline('.')[col('.') - 2] =~ '\K' || pumvisible()
+"         return "\<C-N>"
+"     else
+"         return "\<Tab>"
+"     endif
+" endfunction
+
+" Autocompletion
+" function! AutoComplete()
+"     if v:char =~ '\K'
+"         \ && getline('.')[col('.') - 4] !~ '\K'
+"         \ && getline('.')[col('.') - 3] =~ '\K'
+"         \ && getline('.')[col('.') - 2] =~ '\K'
+"         \ && getline('.')[col('.') - 1] !~ '\K'
+"         call feedkeys("\<C-N>", 'n')
+"     endif
+" endfunction
+
+" Function to toggle comments for selected lines
+function! ToggleCommentLines()
+    let ft = &filetype
+    let s:line_comments = {
+        \ 'c': '//', 'cpp': '//', 'java': '//', 'javascript': '//',
+        \ 'typescript': '//', 'go': '//', 'rust': '//', 'php': '//',
+        \ 'css': '//', 'swift': '//', 'kotlin': '//', 'scala': '//',
+        \ }
+    let cs = has_key(s:line_comments, ft) ? s:line_comments[ft] . ' '
+        \ : (empty(&commentstring) ? '# ' : trim(split(&commentstring, '%s', 1)[0]) . ' ')
+    let first_line = getline("'<")
+    if first_line =~ '^\s*' . escape(trim(cs), '/\.*[]')
+        execute "'<,'>s/^\\(\\s*\\)" . escape(trim(cs), '/\') . "\\s*/\\1/"
+    else
+        execute "'<,'>s/^/" . escape(cs, '/\') . "/"
+    endif
+endfunction
+
+
+" Diff current buffer against saved file on disk
+function! DiffWithSaved()
+    let filetype = &filetype
+    diffthis
+    vnew | r # | normal! 1Gdd
+    diffthis
+    execute 'setlocal bt=nofile bh=wipe nobl noswf ro ft=' . filetype
+endfunction
+nnoremap <leader>ds :call DiffWithSaved()<CR>
+
+
+" Enable for specific users
+"let s:enabled_users = ['myahia', 'xyz']
+"if index(s:enabled_users, $USER) >= 0
+"    " Enable mappings
+"    inoremap <expr> <Tab> TabComplete()
+"    "inoremap <expr> <CR> pumvisible() ? "\<C-Y>" : "\<CR>"
+"    "autocmd InsertCharPre * call AutoComplete()
+"endif
+
+"==================================================
+" FILETYPE-SPECIFIC SETTINGS
+"==================================================
+" Allow saving of files as sudo when I forgot to start vim using sudo
+" cnoremap w!! w !sudo -E tee > /dev/null %
+function! SudoWrite()
+    if !filereadable(expand('%'))
+        echo 'New file, no sudo needed'
+        return
+    endif
+    write !sudo -E tee > /dev/null %
+    edit!
+endfunction
+nnoremap <silent> <leader>WW :call SudoWrite()<CR>
+
+
+" Detect and warn on mixed indentation
+function! CheckMixedIndent()
+    let has_tabs    = search('^\t', 'nw')
+    let has_spaces  = search('^ ', 'nw')
+    if has_tabs && has_spaces
+        echohl WarningMsg
+        echo 'Warning: mixed tabs and spaces in ' . expand('%:t')
+        echohl None
+    endif
+endfunction
+augroup mixed_indent
+    autocmd!
+    autocmd BufReadPost *.py,*.yaml,*.yml call CheckMixedIndent()
+augroup END
+
+
+
+augroup filetype_settings
+    autocmd!
+    autocmd FileType * setlocal formatoptions-=cro
+    autocmd FileType markdown setlocal ts=2 sts=2 sw=2 et
+    autocmd FileType yaml setlocal foldmethod=indent ts=2 sts=2 sw=2 et indentkeys-=0#
+augroup END
+
+autocmd FileType * if &omnifunc == '' | setlocal omnifunc=syntaxcomplete#Complete | endif
