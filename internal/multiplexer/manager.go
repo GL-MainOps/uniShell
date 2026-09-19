@@ -146,6 +146,16 @@ func (m *Manager) Create(
 		)
 	}
 
+	var existingMetadata sessionmeta.Metadata
+
+	existingMetadata, err = sessionmeta.ReadMetadata(runtimePath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf(
+			"read existing session metadata: %w",
+			err,
+		)
+	}
+
 	metadata := sessionmeta.Metadata{
 		ID:                id,
 		PID:               identity.PID,
@@ -160,6 +170,7 @@ func (m *Manager) Create(
 		Endpoint:          endpoint,
 		ShellName:         shellName,
 		ShellPath:         shellPath,
+		ShellProfile:      existingMetadata.ShellProfile,
 	}
 
 	if err := sessionmeta.WriteMetadata(

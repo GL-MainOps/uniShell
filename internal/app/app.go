@@ -423,6 +423,17 @@ func (a *App) CreateMultiplexerSession(
 		)
 	}
 
+	if err := runtimeSession.SetShellSelection(
+		selectedShell.Name,
+		selectedShell.Path,
+		a.ShellProfile,
+	); err != nil {
+		return nil, fmt.Errorf(
+			"record shell selection: %w",
+			err,
+		)
+	}
+
 	environment, err := shell.NewEnvironmentForShell(
 		runtimeSession.Paths.Bin,
 		runtimeSession.Paths.Runtime,

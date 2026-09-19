@@ -2076,6 +2076,25 @@ func TestManagerCreatePersistsShell(t *testing.T) {
 
 	prepareManagerTestRuntime(t, runtimePath)
 
+	if err := sessionmeta.WriteMetadata(
+		runtimePath,
+		sessionmeta.Metadata{
+			ID:                "test-session",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeMultiplexer,
+			ShellProfile:      "none",
+		},
+	); err != nil {
+		t.Fatalf(
+			"sessionmeta.WriteMetadata() returned error: %v",
+			err,
+		)
+	}
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -2155,6 +2174,85 @@ func TestManagerCreatePersistsShell(t *testing.T) {
 			"stored shell path = %q, want %q",
 			metadata.ShellPath,
 			shellPath,
+		)
+	}
+
+	if metadata.ShellProfile != "none" {
+		t.Fatalf(
+			"metadata shell profile = %q, want %q",
+			metadata.ShellProfile,
+			"none",
+		)
+	}
+}
+
+func TestManagerCreatePreservesShellProfile(t *testing.T) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	prepareManagerTestRuntime(t, runtimePath)
+
+	if err := sessionmeta.WriteMetadata(
+		runtimePath,
+		sessionmeta.Metadata{
+			ID:                "test-session",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeMultiplexer,
+			ShellProfile:      "work",
+		},
+	); err != nil {
+		t.Fatalf(
+			"sessionmeta.WriteMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	_, err := manager.Create(
+		"test",
+		"session",
+		"native-session",
+		runtimePath,
+		"bash",
+		"/bin/bash",
+		nil,
+		nil,
+		api.Options{},
+	)
+	if err != nil {
+		t.Fatalf(
+			"Manager.Create() returned error: %v",
+			err,
+		)
+	}
+
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
+	if err != nil {
+		t.Fatalf(
+			"sessionmeta.ReadMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	if metadata.ShellProfile != "work" {
+		t.Fatalf(
+			"metadata shell profile = %q, want %q",
+			metadata.ShellProfile,
+			"work",
 		)
 	}
 }

@@ -720,12 +720,29 @@ func TestCreateMultiplexerSessionUsesProvidedMultiplexer(
 		t.Fatalf("New() returned error: %v", err)
 	}
 
-	runtimeSession := &runtime.Session{
-		Paths: runtime.Paths{
-			Bin:     t.TempDir(),
-			Runtime: t.TempDir(),
-		},
+	runtimePaths := runtime.Paths{
+		Root:    t.TempDir(),
+		Runtime: filepath.Join(t.TempDir(), "runtime"),
 	}
+
+	runtimeSession, err := runtime.NewSessionWithMode(
+		runtimePaths,
+		runtime.SessionModeMultiplexer,
+	)
+	if err != nil {
+		t.Fatalf(
+			"NewSessionWithMode() returned error: %v",
+			err,
+		)
+	}
+
+	if err := runtimeSession.Prepare(); err != nil {
+		t.Fatalf(
+			"Prepare() returned error: %v",
+			err,
+		)
+	}
+	defer runtimeSession.Cleanup()
 
 	session, err := application.CreateMultiplexerSession(
 		runtimeSession,
@@ -748,6 +765,36 @@ func TestCreateMultiplexerSessionUsesProvidedMultiplexer(
 		t.Fatal("multiplexer session is nil")
 	}
 
+	metadata, err := sessionmeta.ReadMetadata(
+		runtimeSession.Paths.Runtime,
+	)
+	if err != nil {
+		t.Fatalf(
+			"ReadMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	if metadata.ShellName != "bash" {
+		t.Fatalf(
+			"metadata shell name = %q, want %q",
+			metadata.ShellName,
+			"bash",
+		)
+	}
+
+	if metadata.ShellProfile != "none" {
+		t.Fatalf(
+			"metadata shell profile = %q, want %q",
+			metadata.ShellProfile,
+			"none",
+		)
+	}
+
+	if metadata.ShellPath == "" {
+		t.Fatal("metadata shell path is empty")
+	}
+
 	if session.Multiplexer.Metadata.Multiplexer != "test" {
 		t.Fatalf(
 			"multiplexer = %q, want %q",
@@ -758,10 +805,6 @@ func TestCreateMultiplexerSessionUsesProvidedMultiplexer(
 
 	if !backend.created {
 		t.Fatal("multiplexer backend Create() was not called")
-	}
-
-	if err := session.Cleanup(); err != nil {
-		t.Fatalf("Cleanup() returned error: %v", err)
 	}
 }
 
@@ -794,27 +837,35 @@ func TestCreateMultiplexerSessionPassesShellStartup(
 		Multiplexer:     manager,
 		MultiplexerName: "test",
 		SessionName:     "default",
+		ShellProfile:    "work",
 	})
 	if err != nil {
 		t.Fatalf("New() returned error: %v", err)
 	}
 
-	runtimeSession := &runtime.Session{
-		Paths: runtime.Paths{
-			Runtime: runtimePath,
-			Bin:     filepath.Join(runtimePath, "bin"),
-		},
+	runtimePaths := runtime.Paths{
+		Root:    filepath.Dir(runtimePath),
+		Runtime: runtimePath,
 	}
 
-	if err := os.MkdirAll(
-		runtimeSession.Paths.Bin,
-		0700,
-	); err != nil {
+	runtimeSession, err := runtime.NewSessionWithMode(
+		runtimePaths,
+		runtime.SessionModeMultiplexer,
+	)
+	if err != nil {
 		t.Fatalf(
-			"create runtime bin directory: %v",
+			"NewSessionWithMode() returned error: %v",
 			err,
 		)
 	}
+
+	if err := runtimeSession.Prepare(); err != nil {
+		t.Fatalf(
+			"Prepare() returned error: %v",
+			err,
+		)
+	}
+	defer runtimeSession.Cleanup()
 
 	zsh := filepath.Join(
 		runtimeSession.Paths.Bin,
@@ -838,7 +889,7 @@ func TestCreateMultiplexerSessionPassesShellStartup(
 		},
 		Env: map[string]string{
 			"ZDOTDIR": filepath.Join(
-				runtimePath,
+				runtimeSession.Paths.Runtime,
 				"config",
 				"shell",
 				"zsh",
@@ -857,6 +908,36 @@ func TestCreateMultiplexerSessionPassesShellStartup(
 			"CreateMultiplexerSession() returned error: %v",
 			err,
 		)
+	}
+
+	metadata, err := sessionmeta.ReadMetadata(
+		runtimeSession.Paths.Runtime,
+	)
+	if err != nil {
+		t.Fatalf(
+			"ReadMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	if metadata.ShellName != "zsh" {
+		t.Fatalf(
+			"metadata shell name = %q, want %q",
+			metadata.ShellName,
+			"zsh",
+		)
+	}
+
+	if metadata.ShellProfile != "work" {
+		t.Fatalf(
+			"metadata shell profile = %q, want %q",
+			metadata.ShellProfile,
+			"work",
+		)
+	}
+
+	if metadata.ShellPath == "" {
+		t.Fatal("metadata shell path is empty")
 	}
 
 	if !reflect.DeepEqual(
