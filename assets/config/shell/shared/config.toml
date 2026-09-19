@@ -1,10 +1,39 @@
 [environment]
-UNISHELL_ASSET_TEST = "shared-config-active"
+LANG = "en_US.UTF-8"
+LANGUAGE = "en_US.UTF-8"
+LC_ALL = "en_US.UTF-8"
 
-[path]
-add = [
-    "$HOME/.unishell-test-bin",
-]
+USER_PROMPT = '\[\033[01;37m\][\[\033[01;32m\]\u\[\033[37m\]@\[\033[38;5;214m\]\h \[\033[01;34m\]\w\[\033[01;37m\]] \[\033[48;5;17m\033[48;5;52m\] \$ \[\033[00m\] '
+ROOT_PROMPT = '\[\033[01;37m\][\[\033[01;31m\]\u\[\033[37m\]@\[\033[38;5;214m\]\h \[\033[01;34m\]\w\[\033[01;37m\]] \[\033[48;5;17m\033[48;5;52m\] \$ \[\033[00m\] '
+
+UNISHELL_CONFIG_PATH = "${UNISHELL_SESSION_RUNTIME_DIR}/config"
+
+# [path]
+# add = [
+# ]
 
 [aliases]
-ushared = "printf 'shared-alias-active\\n'"
+
+# LINIX TOOLS
+ssh = "ssh -o StrictHostKeyChecking=no"
+ports = "sudo lsof -i -P -n | grep LISTEN"
+cd = "z"
+
+# BAT
+cat = "bat -p"
+less = "bat --paging=always"
+
+# EZA
+l1 = "eza --icons=auto --classify --almost-all --sort changed --time-style relative -l --no-user --no-permissions --total-size"
+
+l = "eza --icons=auto --classify --group-directories-first"
+ls = "eza --icons=auto --classify --group-directories-first"
+la = "eza --icons=auto --classify --almost-all --group-directories-first"
+ll = "eza --icons=auto --classify --group-directories-first -l --group"
+lla = "eza --icons=auto --classify --almost-all --group-directories-first -l --group"
+
+# NGINX
+ngxt = "sudo nginx -t"
+ngxr = "sudo nginx -s reload"
+
+zz = "zi"
