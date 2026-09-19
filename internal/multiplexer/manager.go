@@ -35,7 +35,6 @@ func (m *Manager) Create(
 	sessionName string,
 	nativeName string,
 	runtimePath string,
-	endpoint string,
 	shellName string,
 	shellPath string,
 	shellArgs []string,
@@ -51,7 +50,20 @@ func (m *Manager) Create(
 		)
 	}
 
+	endpoint, err := backend.ResolveEndpoint(
+		runtimePath,
+		options,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"resolve %s endpoint: %w",
+			backendName,
+			err,
+		)
+	}
+
 	id, err := generateSessionID()
+
 	if err != nil {
 		return nil, fmt.Errorf(
 			"generate multiplexer session ID: %w",

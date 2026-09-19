@@ -2,8 +2,6 @@ package app
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"gitlab.com/mainops/uniShell/internal/bundle"
@@ -425,26 +423,6 @@ func (a *App) CreateMultiplexerSession(
 		)
 	}
 
-	multiplexerRuntime := filepath.Join(
-		runtimeSession.Paths.Runtime,
-		"multiplexer",
-	)
-
-	if err := os.MkdirAll(
-		multiplexerRuntime,
-		0700,
-	); err != nil {
-		return nil, fmt.Errorf(
-			"prepare multiplexer runtime: %w",
-			err,
-		)
-	}
-
-	endpoint := filepath.Join(
-		multiplexerRuntime,
-		multiplexerName+".sock",
-	)
-
 	environment, err := shell.NewEnvironmentForShell(
 		runtimeSession.Paths.Bin,
 		runtimeSession.Paths.Runtime,
@@ -470,7 +448,6 @@ func (a *App) CreateMultiplexerSession(
 		runtimeSession.Name,
 		a.MultiplexerSessionName,
 		runtimeSession.Paths.Runtime,
-		endpoint,
 		selectedShell.Name,
 		selectedShell.Path,
 		startup.Args,

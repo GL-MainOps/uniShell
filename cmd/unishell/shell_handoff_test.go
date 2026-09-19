@@ -6,6 +6,7 @@ import (
 
 	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 )
 
 type shellHandoffBackend struct {
@@ -35,6 +36,13 @@ func (b *shellHandoffBackend) AvailableForSession(
 	multiplexer.Session,
 ) bool {
 	return true
+}
+
+func (b *shellHandoffBackend) ResolveEndpoint(
+	_ string,
+	_ api.Options,
+) (string, error) {
+	return "", nil
 }
 
 func (b *shellHandoffBackend) Create(multiplexer.Session) error {
@@ -197,6 +205,13 @@ func (b *shellHandoffBackendWithError) AvailableForSession(
 	multiplexer.Session,
 ) bool {
 	return true
+}
+
+func (b *shellHandoffBackendWithError) ResolveEndpoint(
+	_ string,
+	_ api.Options,
+) (string, error) {
+	return "", nil
 }
 
 func (b *shellHandoffBackendWithError) Create(multiplexer.Session) error {

@@ -416,6 +416,13 @@ func (b *shellTestBackend) AvailableForSession(
 	return true
 }
 
+func (b *shellTestBackend) ResolveEndpoint(
+	_ string,
+	_ api.Options,
+) (string, error) {
+	return "", nil
+}
+
 func (b *shellTestBackend) Create(multiplexer.Session) error {
 	return nil
 }
@@ -474,6 +481,13 @@ func (b *cleanLifecycleBackend) AvailableForSession(
 	multiplexer.Session,
 ) bool {
 	return true
+}
+
+func (b *cleanLifecycleBackend) ResolveEndpoint(
+	_ string,
+	_ api.Options,
+) (string, error) {
+	return "", nil
 }
 
 func (b *cleanLifecycleBackend) Create(
@@ -960,7 +974,6 @@ func TestRunCleanTerminatesConfirmedMultiplexerSessionEndToEnd(
 		"development",
 		"",
 		runtimePath,
-		"/tmp/test.endpoint",
 		"",
 		"",
 		nil,

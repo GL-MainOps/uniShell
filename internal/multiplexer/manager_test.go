@@ -259,7 +259,6 @@ func TestManagerCreateWritesMetadata(t *testing.T) {
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -374,6 +373,65 @@ func TestManagerCreateWritesMetadata(t *testing.T) {
 	}
 }
 
+func TestManagerCreateResolvesEndpointThroughBackend(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf(
+			"create runtime directory: %v",
+			err,
+		)
+	}
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	session, err := manager.Create(
+		"test",
+		"default",
+		"",
+		runtimePath,
+		"bash",
+		"/bin/bash",
+		nil,
+		nil,
+		api.Options{},
+	)
+	if err != nil {
+		t.Fatalf(
+			"manager.Create() returned error: %v",
+			err,
+		)
+	}
+
+	if session.Session.Endpoint != endpoint {
+		t.Fatalf(
+			"session endpoint = %q, want %q",
+			session.Session.Endpoint,
+			endpoint,
+		)
+	}
+
+	if session.Metadata.Endpoint != endpoint {
+		t.Fatalf(
+			"metadata endpoint = %q, want %q",
+			session.Metadata.Endpoint,
+			endpoint,
+		)
+	}
+}
+
 func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
 	runtimePath := filepath.Join(
 		t.TempDir(),
@@ -402,7 +460,6 @@ func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
 		"default",
 		"native-work",
 		runtimePath,
-		endpoint,
 		"bash",
 		"/bin/bash",
 		nil,
@@ -486,7 +543,6 @@ func TestManagerCreatePassesMultiplexerOptionsToBackend(
 		"default",
 		"native-work",
 		runtimePath,
-		endpoint,
 		"bash",
 		"/bin/bash",
 		nil,
@@ -533,7 +589,6 @@ func TestManagerAttachRequiresLiveSession(t *testing.T) {
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -603,7 +658,6 @@ func TestManagerDestroyRemovesMetadata(t *testing.T) {
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -651,7 +705,6 @@ func TestManagerDiscoverFindsLiveSession(t *testing.T) {
 		"default",
 		"native-default",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -737,7 +790,6 @@ func TestManagerDiscoverRejectsMatchingNameWithDifferentID(
 		"default",
 		"native-default",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -786,7 +838,6 @@ func TestManagerDiscoverRejectsDifferentSessionID(t *testing.T) {
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -990,7 +1041,6 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 		"other",
 		"",
 		firstRuntime,
-		"/tmp/first.endpoint",
 		"",
 		"",
 		nil,
@@ -1011,7 +1061,6 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 		"default",
 		"",
 		secondRuntime,
-		"/tmp/second.endpoint",
 		"",
 		"",
 		nil,
@@ -1077,7 +1126,6 @@ func TestManagerDiscoverByNameCanonicalizesThroughSessionID(
 		"default",
 		"native-default",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -1171,7 +1219,6 @@ func TestManagerDiscoverAllFindsManagedSessions(
 		"development",
 		"native-development",
 		firstRuntime,
-		filepath.Join(firstRuntime, "endpoint"),
 		"",
 		"",
 		nil,
@@ -1189,7 +1236,6 @@ func TestManagerDiscoverAllFindsManagedSessions(
 		"production",
 		"native-production",
 		secondRuntime,
-		filepath.Join(secondRuntime, "endpoint"),
 		"",
 		"",
 		nil,
@@ -1345,7 +1391,6 @@ func TestManagerDiscoverAllIncludesExitedManagedSessions(
 		"development",
 		"native-development",
 		runtimePath,
-		filepath.Join(runtimePath, "endpoint"),
 		"",
 		"",
 		nil,
@@ -1411,7 +1456,6 @@ func TestManagerReconcilePreservesLiveSession(t *testing.T) {
 		"default",
 		"",
 		sessionRuntime,
-		"/tmp/test.endpoint",
 		"",
 		"",
 		nil,
@@ -1469,7 +1513,6 @@ func TestManagerReconcileRemovesDeadSession(t *testing.T) {
 		"default",
 		"",
 		sessionRuntime,
-		"/tmp/test.endpoint",
 		"",
 		"",
 		nil,
@@ -1521,7 +1564,6 @@ func TestManagerReconcileIgnoresUnavailableBackend(t *testing.T) {
 		"default",
 		"",
 		sessionRuntime,
-		"/tmp/test.endpoint",
 		"",
 		"",
 		nil,
@@ -1568,7 +1610,6 @@ func TestManagerCreatePreservesNativeSessionName(t *testing.T) {
 		"default",
 		"native-work",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -1634,7 +1675,6 @@ func TestManagerCreatePreservesEmptyNativeSessionName(t *testing.T) {
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -1710,7 +1750,6 @@ func TestManagerCleanupDestroysLiveSessionAndRemovesRuntime(
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -1786,7 +1825,6 @@ func TestManagerCleanupRemovesStaleSessionRuntime(
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -1838,7 +1876,6 @@ func TestManagerCleanupPreservesRuntimeWhenBackendUnavailable(
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -1902,7 +1939,6 @@ func TestManagerCleanupPreservesRuntimeWhenProcessIdentityFails(
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -1994,7 +2030,6 @@ func TestManagerCleanupPreservesRuntimeWhenDestroyFails(
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -2060,7 +2095,6 @@ func TestManagerCreatePersistsShell(t *testing.T) {
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		shellName,
 		shellPath,
 		nil,
@@ -2150,7 +2184,6 @@ func TestManagerAttachPreservesShell(t *testing.T) {
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"fish",
 		"/runtime/bin/fish",
 		nil,
@@ -2208,7 +2241,6 @@ func TestManagerReconcileSessionPreservesLiveSession(t *testing.T) {
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -2274,7 +2306,6 @@ func TestManagerReconcileSessionRemovesExitedSession(
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -2338,7 +2369,6 @@ func TestManagerReconcileSessionPreservesRuntimeWhenBackendUnavailable(
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -2398,7 +2428,6 @@ func TestManagerReconcileSessionIsIdempotent(t *testing.T) {
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -2460,7 +2489,6 @@ func TestManagerCreateDoesNotCreateLegacyMultiplexerMetadata(
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"bash",
 		"/bin/bash",
 		nil,
@@ -2527,7 +2555,6 @@ func TestManagerCreatePersistsBackendProcessIdentity(
 		"default",
 		"native-default",
 		runtimePath,
-		endpoint,
 		"bash",
 		"/bin/bash",
 		nil,
@@ -2593,7 +2620,6 @@ func TestManagerCreateDestroysBackendWhenProcessIdentityDiscoveryFails(
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,
@@ -2658,7 +2684,6 @@ func TestManagerCreateRejectsInvalidProcessIdentity(
 		"default",
 		"",
 		runtimePath,
-		endpoint,
 		"",
 		"",
 		nil,

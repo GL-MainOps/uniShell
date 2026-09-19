@@ -553,6 +553,13 @@ func (appTestBackend) AvailableForSession(
 	return true
 }
 
+func (b *appTestBackend) ResolveEndpoint(
+	_ string,
+	_ api.Options,
+) (string, error) {
+	return "", nil
+}
+
 func (b *appTestBackend) Create(multiplexer.Session) error {
 	b.created = true
 	return nil

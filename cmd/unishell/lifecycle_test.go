@@ -11,6 +11,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/app"
 	"gitlab.com/mainops/uniShell/internal/bundle"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 
 	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
@@ -260,6 +261,13 @@ func (b *lifecycleTestBackend) AvailableForSession(
 	multiplexer.Session,
 ) bool {
 	return true
+}
+
+func (b *lifecycleTestBackend) ResolveEndpoint(
+	_ string,
+	_ api.Options,
+) (string, error) {
+	return "", nil
 }
 
 func (b *lifecycleTestBackend) Create(

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
+	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
@@ -40,6 +41,13 @@ func (b *cleanTestBackend) AvailableForSession(
 	multiplexer.Session,
 ) bool {
 	return true
+}
+
+func (b *cleanTestBackend) ResolveEndpoint(
+	_ string,
+	_ api.Options,
+) (string, error) {
+	return "", nil
 }
 
 func (b *cleanTestBackend) Create(multiplexer.Session) error {
