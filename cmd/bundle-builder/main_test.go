@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -125,6 +126,72 @@ func TestWrongPasswordDoesNotOpenGeneratedBundle(t *testing.T) {
 			"bundle.Open() error = %v, want %v",
 			err,
 			credentials.ErrAuthenticationFailed,
+		)
+	}
+}
+
+func TestRunCompressFlagControlsBundleCompression(t *testing.T) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-password")
+
+	input := t.TempDir()
+	payload := bytes.Repeat([]byte("highly-compressible-runtime-data\n"), 1000)
+
+	if err := os.WriteFile(
+		filepath.Join(input, "payload.txt"),
+		payload,
+		0600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	runBundle := func(t *testing.T, args ...string) []byte {
+		t.Helper()
+
+		output := filepath.Join(t.TempDir(), "bundle.dat")
+
+		runArgs := []string{
+			"-input", input,
+			"-output", output,
+		}
+		runArgs = append(runArgs, args...)
+
+		if err := run(runArgs); err != nil {
+			t.Fatal(err)
+		}
+
+		data, err := os.ReadFile(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		authenticated, err := bundle.OpenAuthenticated(
+			data,
+			"test-password",
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return authenticated
+	}
+
+	defaultPayload := runBundle(t)
+	explicitCompressedPayload := runBundle(t, "-compress=true")
+	explicitUncompressedPayload := runBundle(t, "-compress=false")
+
+	if len(explicitCompressedPayload) >= len(explicitUncompressedPayload) {
+		t.Fatalf(
+			"compressed payload should be smaller than uncompressed payload: compressed=%d uncompressed=%d",
+			len(explicitCompressedPayload),
+			len(explicitUncompressedPayload),
+		)
+	}
+
+	if len(defaultPayload) != len(explicitCompressedPayload) {
+		t.Fatalf(
+			"default payload size differs from explicit compressed payload: default=%d explicit_compressed=%d",
+			len(defaultPayload),
+			len(explicitCompressedPayload),
 		)
 	}
 }

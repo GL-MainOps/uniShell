@@ -33,6 +33,12 @@ func run(args []string) error {
 		"output encrypted bundle path",
 	)
 
+	compress := flags.Bool(
+		"compress",
+		true,
+		"compress the runtime archive",
+	)
+
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -50,7 +56,7 @@ func run(args []string) error {
 		return err
 	}
 
-	data, err := bundle.Create(*input, password, true)
+	data, err := bundle.Create(*input, password, *compress)
 	if err != nil {
 		return fmt.Errorf("create bundle: %w", err)
 	}
