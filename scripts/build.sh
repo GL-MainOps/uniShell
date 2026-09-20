@@ -28,6 +28,7 @@ SKIP_FETCH=false
 PROFILE_LIST=""
 BUILD_VERSION=""
 BUILD_VERSION_EXPLICIT=false
+BUILD_COMPRESS=""
 
 BUILD_COMMIT="$(git rev-parse --short=7 HEAD)"
 BUILD_DATE="$(date -u +%Y%m%d)"
@@ -36,6 +37,36 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-fetch)
             SKIP_FETCH=true
+            shift
+            ;;
+        --compress)
+            if [[ -n "$BUILD_COMPRESS" ]]; then
+                echo "error: --compress may only be specified once" >&2
+                exit 1
+            fi
+
+            if [[ $# -lt 2 || ( "$2" != "true" && "$2" != "false" ) ]]; then
+                echo "error: --compress requires true or false" >&2
+                exit 1
+            fi
+
+            BUILD_COMPRESS="$2"
+            shift 2
+            ;;
+        --compress=*)
+            if [[ -n "$BUILD_COMPRESS" ]]; then
+                echo "error: --compress may only be specified once" >&2
+                exit 1
+            fi
+
+            value="${1#--compress=}"
+
+            if [[ "$value" != "true" && "$value" != "false" ]]; then
+                echo "error: --compress requires true or false" >&2
+                exit 1
+            fi
+
+            BUILD_COMPRESS="$value"
             shift
             ;;
         --version)
@@ -189,8 +220,26 @@ split_profiles() {
     done
 }
 
+resolve_profile_compression() {
+    local profile="$1"
+
+    if [[ -n "$BUILD_COMPRESS" ]]; then
+        printf '%s\n' "$BUILD_COMPRESS"
+        return
+    fi
+
+    if [[ "$profile" == "slim" ]]; then
+        printf '%s\n' "false"
+        return
+    fi
+
+    printf '%s\n' "true"
+}
+
 build_profile() {
     local profile="$1"
+    local compress
+
     local profile_runtime_dir="$TMP_DIR/runtime-$profile"
     local profile_bundle_output="$TMP_DIR/runtime-$profile.bundle"
     local profile_bundle_asset="$ROOT_DIR/internal/bundle/runtime.bundle"
@@ -205,6 +254,10 @@ build_profile() {
     trap cleanup_profile RETURN
 
     echo "==> Building profile: $profile"
+
+    compress="$(resolve_profile_compression "$profile")"
+
+    echo "==> Runtime archive compression: $compress"
 
     rm -rf "$profile_runtime_dir"
     mkdir -p "$profile_runtime_dir"
@@ -231,7 +284,8 @@ build_profile() {
 
     "$BUNDLE_BUILDER" \
         -input "$profile_runtime_dir" \
-        -output "$profile_bundle_output"
+        -output "$profile_bundle_output" \
+        -compress "$compress"
 
     if [[ ! -s "$profile_bundle_output" ]]; then
         echo "error: bundle builder did not create $profile_bundle_output" >&2
@@ -288,7 +342,8 @@ echo "==> Generating runtime bundle"
 
 "$BUNDLE_BUILDER" \
     -input "$RUNTIME_DIR" \
-    -output "$BUNDLE_OUTPUT"
+    -output "$BUNDLE_OUTPUT" \
+    -compress "${BUILD_COMPRESS:-true}"
 
 if [[ ! -s "$BUNDLE_OUTPUT" ]]; then
     echo "error: bundle builder did not create $BUNDLE_OUTPUT" >&2
