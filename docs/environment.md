@@ -136,6 +136,20 @@ Equivalent flag:
 If unset, uniShell does not override the multiplexer-native session  
 naming behavior.
 
+### Logical and Native Session Names
+
+uniShell maintains two distinct session-name concepts for multiplexer
+sessions:
+
+- `UNISHELL_SESSION_NAME` identifies the uniShell logical session.
+- `UNISHELL_MULTIPLEXER_SESSION` selects the native session name passed
+  to the multiplexer backend.
+
+The logical session name is part of uniShell session metadata and remains
+independent of the multiplexer implementation.
+
+The native session name belongs to the selected multiplexer backend.
+
 ## Runtime
 
 ### `UNISHELL_RUNTIME_DIR`
@@ -196,8 +210,11 @@ refer to the existing session's runtime directory.
 ### Session Environment
 
 uniShell provides session metadata to the environment inherited by the
-direct shell and, in later session modes, by the processes launched
-within the session.
+direct shell and by processes launched within the managed session.
+
+For multiplexer sessions, these variables are injected before the
+multiplexer backend creates the native session, so the multiplexer and
+its child shells inherit the same uniShell session environment.
 
 These variables describe the active uniShell session:
 
@@ -247,16 +264,23 @@ This variable is omitted when the session does not use a multiplexer.
 ### `UNISHELL_SESSION_MULTIPLEXER_ENDPOINT`
 
 When a multiplexer is associated with the active session, contains the
-endpoint used to access that multiplexer session.
+canonical endpoint resolved by the selected multiplexer backend.
+
+The endpoint is backend-specific. uniShell does not construct or
+interpret the backend endpoint in the application layer.
 
 This variable is omitted when the session does not use a multiplexer.
 
 These variables are **runtime-provided values**, not configuration
-inputs. They are derived from the active session metadata and are
-injected into the environment of the shell launched by uniShell.
+inputs. They are derived from the active session metadata.
 
-For a direct shell session, the shell receives these values after
-uniShell resolves the requested shell and shell profile.
+For a direct shell session, the values are injected into the shell
+environment after uniShell resolves the requested shell and shell
+profile.
+
+For a multiplexer session, the values are injected before the backend
+creates the native multiplexer session, allowing the multiplexer and its
+child processes to inherit the same session environment.
 
 The persisted session metadata is the canonical source for these
 values; shell configuration files do not need to parse `.session.json`
@@ -284,33 +308,6 @@ Zellij backend.
 
 This allows users to customize Zellij invocation without modifying the  
 uniShell source or bundled Zellij configuration.
-
-## tmux
-
-### `UNISHELL_TMUX_SOCKET`
-
-Overrides the tmux server socket path.
-
-Default:
-
-```text
-<runtime-session>/multiplexer/tmux.sock
-```
-
-This controls the tmux backend only.
-
-Equivalent flag:
-
-```text
---tmux-socket
-```
-
-When unset, uniShell creates a private socket location inside the  
-current runtime session.
-
-Using a custom socket path outside the runtime session is an explicit  
-configuration choice and can change the isolation characteristics of  
-the tmux backend.
 
 ## Configuration Precedence
 
