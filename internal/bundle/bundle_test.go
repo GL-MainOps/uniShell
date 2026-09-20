@@ -24,7 +24,7 @@ func TestOpenAuthenticatedReturnsCompressedPayload(t *testing.T) {
 		t.Fatalf("write runtime payload: %v", err)
 	}
 
-	bundleData, err := Create(sourceDir, "test-password")
+	bundleData, err := Create(sourceDir, "test-password", true)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestCreateAndOpen(t *testing.T) {
 
 	password := "test-password"
 
-	bundle, err := Create(source, password)
+	bundle, err := Create(source, password, true)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestCreateCompressesRuntimeArchive(t *testing.T) {
 
 	password := "test-password"
 
-	bundle, err := Create(source, password)
+	bundle, err := Create(source, password, true)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -154,6 +154,48 @@ func TestCreateCompressesRuntimeArchive(t *testing.T) {
 	}
 }
 
+func TestCreateCanDisableRuntimeArchiveCompression(t *testing.T) {
+	source := t.TempDir()
+
+	payload := bytes.Repeat(
+		[]byte("uniShell runtime uncompressed integration test\n"),
+		10000,
+	)
+
+	if err := os.WriteFile(
+		filepath.Join(source, "test"),
+		payload,
+		0600,
+	); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	password := "test-password"
+
+	bundle, err := Create(source, password, false)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	decrypted, err := crypto.Decrypt(bundle, password)
+	if err != nil {
+		t.Fatalf("decrypt created bundle: %v", err)
+	}
+
+	if defaultCompressor.Matches(decrypted) {
+		t.Fatal("created bundle payload is Zstandard-compressed")
+	}
+
+	archive, err := Open(bundle, password)
+	if err != nil {
+		t.Fatalf("Open() returned error: %v", err)
+	}
+
+	if len(archive) == 0 {
+		t.Fatal("opened archive is empty")
+	}
+}
+
 func TestOpenRejectsWrongPassword(t *testing.T) {
 	source := t.TempDir()
 
@@ -165,7 +207,7 @@ func TestOpenRejectsWrongPassword(t *testing.T) {
 		t.Fatalf("write source file: %v", err)
 	}
 
-	bundle, err := Create(source, "test-password")
+	bundle, err := Create(source, "test-password", true)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -191,7 +233,7 @@ func TestOpenRejectsModifiedBundle(t *testing.T) {
 		t.Fatalf("write source file: %v", err)
 	}
 
-	bundle, err := Create(source, "test-password")
+	bundle, err := Create(source, "test-password", true)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -254,7 +296,7 @@ func TestCreateRejectsEmptyPassword(t *testing.T) {
 		t.Fatalf("write source file: %v", err)
 	}
 
-	_, err := Create(source, "")
+	_, err := Create(source, "", true)
 
 	if !errors.Is(err, credentials.ErrEmptyToken) {
 		t.Fatalf(

@@ -76,7 +76,7 @@ func TestWriteOutputCanBeOpenedAsBundle(t *testing.T) {
 
 	password := "test-password"
 
-	data, err := bundle.Create(source, password)
+	data, err := bundle.Create(source, password, true)
 	if err != nil {
 		t.Fatalf("bundle.Create() returned error: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestWrongPasswordDoesNotOpenGeneratedBundle(t *testing.T) {
 		t.Fatalf("write source: %v", err)
 	}
 
-	data, err := bundle.Create(source, "test-password")
+	data, err := bundle.Create(source, "test-password", true)
 	if err != nil {
 		t.Fatalf("bundle.Create() returned error: %v", err)
 	}

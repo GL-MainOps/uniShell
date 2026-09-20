@@ -315,7 +315,7 @@ func testBundleSource(t *testing.T) BundleSource {
 		t.Fatalf("write test runtime payload: %v", err)
 	}
 
-	data, err := bundle.Create(sourceDir, "test-fixture-token")
+	data, err := bundle.Create(sourceDir, "test-fixture-token", true)
 	if err != nil {
 		t.Fatalf("create test bundle: %v", err)
 	}

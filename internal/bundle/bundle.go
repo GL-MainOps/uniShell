@@ -9,20 +9,26 @@ import (
 )
 
 // Create creates an encrypted uniShell runtime bundle from sourceDir.
-func Create(sourceDir, password string) ([]byte, error) {
+func Create(sourceDir, password string, compress bool) ([]byte, error) {
 	archive, err := CreateArchive(sourceDir)
 	if err != nil {
 		return nil, fmt.Errorf("create runtime archive: %w", err)
 	}
 
-	compressed, err := defaultCompressor.Compress(archive)
-	if err != nil {
-		return nil, fmt.Errorf("compress runtime archive: %w", err)
+	payload := archive
+
+	if compress {
+		compressed, err := defaultCompressor.Compress(archive)
+		if err != nil {
+			return nil, fmt.Errorf("compress runtime archive: %w", err)
+		}
+
+		payload = compressed
 	}
 
-	encrypted, err := crypto.Encrypt(compressed, password)
+	encrypted, err := crypto.Encrypt(payload, password)
 	if err != nil {
-		return nil, fmt.Errorf("encrypt compressed runtime archive: %w", err)
+		return nil, fmt.Errorf("encrypt runtime archive: %w", err)
 	}
 
 	return encrypted, nil

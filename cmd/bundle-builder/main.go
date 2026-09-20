@@ -50,7 +50,7 @@ func run(args []string) error {
 		return err
 	}
 
-	data, err := bundle.Create(*input, password)
+	data, err := bundle.Create(*input, password, true)
 	if err != nil {
 		return fmt.Errorf("create bundle: %w", err)
 	}

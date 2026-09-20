@@ -342,7 +342,7 @@ func lifecycleTestBundleSource(t *testing.T) app.BundleSource {
 		t.Fatalf("write lifecycle test runtime payload: %v", err)
 	}
 
-	data, err := bundle.Create(sourceDir, "test-fixture-token")
+	data, err := bundle.Create(sourceDir, "test-fixture-token", true)
 	if err != nil {
 		t.Fatalf("create lifecycle test bundle: %v", err)
 	}
