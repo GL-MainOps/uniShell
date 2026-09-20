@@ -30,6 +30,43 @@ type ManagedSession struct {
 	Session  Session
 }
 
+func sessionEnvironment(
+	env []string,
+	metadata sessionmeta.Metadata,
+) []string {
+	result := append([]string(nil), env...)
+
+	for key, value := range metadata.Environment() {
+		prefix := key + "="
+
+		replaced := false
+		filtered := result[:0]
+
+		for _, entry := range result {
+			if strings.HasPrefix(entry, prefix) {
+				if !replaced {
+					filtered = append(
+						filtered,
+						prefix+value,
+					)
+					replaced = true
+				}
+				continue
+			}
+
+			filtered = append(filtered, entry)
+		}
+
+		result = filtered
+
+		if !replaced {
+			result = append(result, prefix+value)
+		}
+	}
+
+	return result
+}
+
 func (m *Manager) Create(
 	backendName string,
 	sessionName string,
@@ -91,6 +128,34 @@ func (m *Manager) Create(
 		)
 	}
 
+	var existingMetadata sessionmeta.Metadata
+
+	existingMetadata, err = sessionmeta.ReadMetadata(runtimePath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf(
+			"read existing session metadata: %w",
+			err,
+		)
+	}
+
+	var sessionMetadata = sessionmeta.Metadata{
+		ID:           id,
+		Version:      filepath.Base(filepath.Dir(runtimePath)),
+		Mode:         sessionmeta.ModeMultiplexer,
+		Name:         sessionName,
+		NativeName:   nativeName,
+		Multiplexer:  backendName,
+		Endpoint:     endpoint,
+		ShellName:    shellName,
+		ShellPath:    shellPath,
+		ShellProfile: existingMetadata.ShellProfile,
+	}
+
+	session.Env = sessionEnvironment(
+		session.Env,
+		sessionMetadata,
+	)
+
 	var createdNativeName = nativeName
 
 	if creator, ok := backend.(api.NativeNameCreator); ok {
@@ -143,16 +208,6 @@ func (m *Manager) Create(
 		return nil, fmt.Errorf(
 			"discover %s session process identity: invalid identity",
 			backendName,
-		)
-	}
-
-	var existingMetadata sessionmeta.Metadata
-
-	existingMetadata, err = sessionmeta.ReadMetadata(runtimePath)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf(
-			"read existing session metadata: %w",
-			err,
 		)
 	}
 

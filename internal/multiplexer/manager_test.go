@@ -453,6 +453,9 @@ func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
 	env := []string{
 		"PATH=/runtime/work/bin:/usr/bin",
 		"SHELL=/bin/bash",
+		"UNISHELL_SESSION_MODE=spoofed",
+		"UNISHELL_SESSION_MODE=duplicate",
+		"UNISHELL_SESSION_MULTIPLEXER=spoofed",
 	}
 
 	_, err := manager.Create(
@@ -470,15 +473,61 @@ func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	if !reflect.DeepEqual(
-		backend.createdSession.Env,
-		env,
-	) {
+	gotEnvironment := make(map[string]string)
+
+	for _, entry := range backend.createdSession.Env {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+
+		gotEnvironment[key] = value
+	}
+
+	wantEnvironment := map[string]string{
+		"PATH":                                  "/runtime/work/bin:/usr/bin",
+		"SHELL":                                 "/bin/bash",
+		"UNISHELL_SESSION_VERSION":              filepath.Base(filepath.Dir(runtimePath)),
+		"UNISHELL_SESSION_MODE":                 string(sessionmeta.ModeMultiplexer),
+		"UNISHELL_SESSION_SHELL_NAME":           "bash",
+		"UNISHELL_SESSION_NAME":                 "default",
+		"UNISHELL_SESSION_SHELL_PROFILE":        "",
+		"UNISHELL_SESSION_MULTIPLEXER":          "test",
+		"UNISHELL_SESSION_MULTIPLEXER_ENDPOINT": endpoint,
+	}
+
+	for key, wantValue := range wantEnvironment {
+		if gotValue := gotEnvironment[key]; gotValue != wantValue {
+			t.Fatalf(
+				"%s = %q, want %q",
+				key,
+				gotValue,
+				wantValue,
+			)
+		}
+	}
+
+	sessionModeCount := 0
+
+	for _, entry := range backend.createdSession.Env {
+		if strings.HasPrefix(
+			entry,
+			"UNISHELL_SESSION_MODE=",
+		) {
+			sessionModeCount++
+		}
+	}
+
+	if sessionModeCount != 1 {
 		t.Fatalf(
-			"backend environment = %#v, want %#v",
-			backend.createdSession.Env,
-			env,
+			"UNISHELL_SESSION_MODE occurrences = %d, want 1",
+			sessionModeCount,
 		)
+	}
+
+	sessionID := gotEnvironment["UNISHELL_SESSION_ID"]
+	if sessionID == "" {
+		t.Fatal("UNISHELL_SESSION_ID is empty")
 	}
 
 	if backend.createdSession.Name != "default" {
