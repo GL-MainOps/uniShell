@@ -178,6 +178,7 @@ func (m *Manager) Create(
 	}
 
 	session.NativeName = createdNativeName
+	sessionMetadata.NativeName = createdNativeName
 
 	identityProvider, ok := backend.(api.ProcessIdentityProvider)
 	if !ok {
@@ -211,26 +212,14 @@ func (m *Manager) Create(
 		)
 	}
 
-	metadata := sessionmeta.Metadata{
-		ID:                id,
-		PID:               identity.PID,
-		ProcessStartTicks: identity.ProcessStartTicks,
-		ProcessGroupID:    identity.ProcessGroupID,
-		CreatedAt:         time.Now().UTC(),
-		Version:           filepath.Base(filepath.Dir(runtimePath)),
-		Mode:              sessionmeta.ModeMultiplexer,
-		Name:              sessionName,
-		NativeName:        createdNativeName,
-		Multiplexer:       backendName,
-		Endpoint:          endpoint,
-		ShellName:         shellName,
-		ShellPath:         shellPath,
-		ShellProfile:      existingMetadata.ShellProfile,
-	}
+	sessionMetadata.PID = identity.PID
+	sessionMetadata.ProcessStartTicks = identity.ProcessStartTicks
+	sessionMetadata.ProcessGroupID = identity.ProcessGroupID
+	sessionMetadata.CreatedAt = time.Now().UTC()
 
 	if err := sessionmeta.WriteMetadata(
 		runtimePath,
-		metadata,
+		sessionMetadata,
 	); err != nil {
 		_ = backend.Destroy(session)
 
@@ -238,7 +227,7 @@ func (m *Manager) Create(
 	}
 
 	return &ManagedSession{
-		Metadata: metadata,
+		Metadata: sessionMetadata,
 		Backend:  backend,
 		Session:  session,
 	}, nil

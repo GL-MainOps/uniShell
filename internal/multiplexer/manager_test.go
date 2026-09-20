@@ -458,7 +458,7 @@ func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
 		"UNISHELL_SESSION_MULTIPLEXER=spoofed",
 	}
 
-	_, err := manager.Create(
+	managedSession, err := manager.Create(
 		"test",
 		"default",
 		"native-work",
@@ -482,6 +482,21 @@ func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
 		}
 
 		gotEnvironment[key] = value
+	}
+
+	if managedSession.Metadata.Environment() == nil {
+		t.Fatal("managed session metadata environment is nil")
+	}
+
+	for key, wantValue := range managedSession.Metadata.Environment() {
+		if gotValue := gotEnvironment[key]; gotValue != wantValue {
+			t.Fatalf(
+				"backend environment %s = %q, want managed metadata value %q",
+				key,
+				gotValue,
+				wantValue,
+			)
+		}
 	}
 
 	wantEnvironment := map[string]string{
@@ -528,6 +543,25 @@ func TestManagerCreatePassesEnvironmentToBackend(t *testing.T) {
 	sessionID := gotEnvironment["UNISHELL_SESSION_ID"]
 	if sessionID == "" {
 		t.Fatal("UNISHELL_SESSION_ID is empty")
+	}
+
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
+	if err != nil {
+		t.Fatalf(
+			"ReadMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	for key, wantValue := range metadata.Environment() {
+		if gotValue := gotEnvironment[key]; gotValue != wantValue {
+			t.Fatalf(
+				"backend environment %s = %q, want persisted metadata value %q",
+				key,
+				gotValue,
+				wantValue,
+			)
+		}
 	}
 
 	if backend.createdSession.Name != "default" {
