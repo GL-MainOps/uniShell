@@ -7,7 +7,7 @@ profiles = [
 ]
 
 [[tools.artifacts]]
-version = "0.74.3"
+version = "0.74.4"
 platform = "linux"
 architecture = "amd64"
 archive_type = "tar.gz"
@@ -26,5 +26,5 @@ kind = "github-release"
 [tools.artifacts.source.github_release]
 owner = "junegunn"
 repository = "fzf"
-release = "v0.74.3"
-asset = "fzf-0.74.3-linux_amd64.tar.gz"
+release = "v0.74.4"
+asset = "fzf-0.74.4-linux_amd64.tar.gz"
