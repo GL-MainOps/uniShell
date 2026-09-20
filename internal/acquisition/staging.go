@@ -122,16 +122,30 @@ func (s FilesystemStager) Stage(
 			return StagedArtifact{}, err
 		}
 	} else {
-		if err := extractArchive(root, artifact.ArchiveType, reader); err != nil {
-			os.RemoveAll(root)
-			return StagedArtifact{}, err
-		}
-
-		selectedPath, err := selectStagedBinary(root, artifact.BinaryPath)
+		archiveRoot, err := os.MkdirTemp(root, "archive-")
 		if err != nil {
 			os.RemoveAll(root)
 			return StagedArtifact{}, err
 		}
+
+		if err := extractArchive(
+			archiveRoot,
+			artifact.ArchiveType,
+			reader,
+		); err != nil {
+			os.RemoveAll(root)
+			return StagedArtifact{}, err
+		}
+
+		selectedPath, err := selectStagedBinary(
+			archiveRoot,
+			artifact.BinaryPath,
+		)
+		if err != nil {
+			os.RemoveAll(root)
+			return StagedArtifact{}, err
+		}
+
 		binaryPath, err = canonicalizeStagedBinary(
 			root,
 			selectedPath,
@@ -140,6 +154,14 @@ func (s FilesystemStager) Stage(
 		if err != nil {
 			os.RemoveAll(root)
 			return StagedArtifact{}, err
+		}
+
+		if err := os.RemoveAll(archiveRoot); err != nil {
+			os.RemoveAll(root)
+			return StagedArtifact{}, fmt.Errorf(
+				"remove extracted archive: %w",
+				err,
+			)
 		}
 	}
 

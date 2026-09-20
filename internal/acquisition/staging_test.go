@@ -257,16 +257,16 @@ func TestFilesystemStagerStagesTarGzArtifact(t *testing.T) {
 	stager := NewFilesystemStager(baseDir)
 
 	archiveData := createTarGz(t, map[string]string{
-		"example-1.0.0-linux-amd64/README.md": "documentation",
-		"example-1.0.0-linux-amd64/example":   "example-binary",
+		"btop/README.md": "documentation",
+		"btop/bin/btop":  "btop-binary",
 	})
 
 	artifact := Artifact{
 		Platform:     "linux",
 		Architecture: "amd64",
 		ArchiveType:  "tar.gz",
-		BinaryPath:   "example-1.0.0-linux-amd64/example",
-		BinaryName:   "example",
+		BinaryPath:   "btop/bin/btop",
+		BinaryName:   "btop",
 		Source: testSource{
 			kind: SourceKindDirectURL,
 		},
@@ -282,13 +282,21 @@ func TestFilesystemStagerStagesTarGzArtifact(t *testing.T) {
 	}
 	defer os.RemoveAll(staged.RootPath)
 
-	if staged.BinaryName != "example" {
-		t.Fatalf("BinaryName = %q, want %q", staged.BinaryName, "example")
+	if staged.BinaryName != "btop" {
+		t.Fatalf(
+			"BinaryName = %q, want %q",
+			staged.BinaryName,
+			"btop",
+		)
 	}
 
-	wantPath := filepath.Join(staged.RootPath, "example")
+	wantPath := filepath.Join(staged.RootPath, "btop")
 	if staged.BinaryPath != wantPath {
-		t.Fatalf("BinaryPath = %q, want %q", staged.BinaryPath, wantPath)
+		t.Fatalf(
+			"BinaryPath = %q, want %q",
+			staged.BinaryPath,
+			wantPath,
+		)
 	}
 
 	data, err := os.ReadFile(staged.BinaryPath)
@@ -296,22 +304,21 @@ func TestFilesystemStagerStagesTarGzArtifact(t *testing.T) {
 		t.Fatalf("read staged binary: %v", err)
 	}
 
-	if string(data) != "example-binary" {
-		t.Fatalf("staged binary = %q, want %q", data, "example-binary")
+	if string(data) != "btop-binary" {
+		t.Fatalf(
+			"staged binary = %q, want %q",
+			data,
+			"btop-binary",
+		)
 	}
 
-	readmePath := filepath.Join(
-		staged.RootPath,
-		"example-1.0.0-linux-amd64",
-		"README.md",
-	)
-	readme, err := os.ReadFile(readmePath)
+	info, err := os.Stat(staged.BinaryPath)
 	if err != nil {
-		t.Fatalf("read staged README: %v", err)
+		t.Fatalf("Stat(BinaryPath) returned error: %v", err)
 	}
 
-	if string(readme) != "documentation" {
-		t.Fatalf("staged README = %q, want %q", readme, "documentation")
+	if !info.Mode().IsRegular() {
+		t.Fatal("staged binary is not a regular file")
 	}
 }
 
@@ -414,23 +421,6 @@ func TestFilesystemStagerStagesTarXZArtifacts(t *testing.T) {
 					"staged binary = %q, want %q",
 					data,
 					"example-binary",
-				)
-			}
-
-			readmePath := filepath.Join(
-				staged.RootPath,
-				"example-1.0.0-linux-amd64",
-				"README.md",
-			)
-			readme, err := os.ReadFile(readmePath)
-			if err != nil {
-				t.Fatalf("read staged README: %v", err)
-			}
-			if string(readme) != "documentation" {
-				t.Fatalf(
-					"staged README = %q, want %q",
-					readme,
-					"documentation",
 				)
 			}
 		})
@@ -588,20 +578,6 @@ func TestFilesystemStagerStagesZipArtifact(t *testing.T) {
 	if string(data) != "example-binary" {
 		t.Fatalf("staged binary = %q, want %q", data, "example-binary")
 	}
-
-	readmePath := filepath.Join(
-		staged.RootPath,
-		"example-1.0.0-linux-amd64",
-		"README.md",
-	)
-	readme, err := os.ReadFile(readmePath)
-	if err != nil {
-		t.Fatalf("read staged README: %v", err)
-	}
-
-	if string(readme) != "documentation" {
-		t.Fatalf("staged README = %q, want %q", readme, "documentation")
-	}
 }
 
 func TestFilesystemStagerSelectsBinaryPath(t *testing.T) {
@@ -663,37 +639,47 @@ func TestFilesystemStagerSelectsBinaryPath(t *testing.T) {
 	}
 }
 
-func TestFilesystemStagerRejectsCanonicalBinaryCollision(t *testing.T) {
-	stager := NewFilesystemStager(t.TempDir())
+func TestCanonicalizeStagedBinaryRejectsCanonicalBinaryCollision(t *testing.T) {
+	root := t.TempDir()
 
-	archiveData := createTar(t, map[string]string{
-		"zellij-0.45.1/zellij": "selected-binary",
-		"zellij":               "existing-binary",
-	})
-
-	artifact := Artifact{
-		Platform:     "linux",
-		Architecture: "amd64",
-		ArchiveType:  "tar",
-		BinaryPath:   "zellij-0.45.1/zellij",
-		BinaryName:   "zellij",
-		Source: testSource{
-			kind: SourceKindDirectURL,
-		},
+	selectedPath := filepath.Join(root, "zellij-0.45.1", "zellij")
+	if err := os.MkdirAll(filepath.Dir(selectedPath), 0700); err != nil {
+		t.Fatalf("MkdirAll() returned error: %v", err)
 	}
 
-	_, err := stager.Stage(
-		context.Background(),
-		artifact,
-		bytes.NewReader(archiveData),
+	if err := os.WriteFile(
+		selectedPath,
+		[]byte("selected-binary"),
+		0700,
+	); err != nil {
+		t.Fatalf("WriteFile(selectedPath) returned error: %v", err)
+	}
+
+	canonicalPath := filepath.Join(root, "zellij")
+	if err := os.WriteFile(
+		canonicalPath,
+		[]byte("existing-binary"),
+		0700,
+	); err != nil {
+		t.Fatalf("WriteFile(canonicalPath) returned error: %v", err)
+	}
+
+	_, err := canonicalizeStagedBinary(
+		root,
+		selectedPath,
+		"zellij",
 	)
 	if err == nil {
-		t.Fatal("Stage() returned nil error, want canonical binary collision error")
+		t.Fatal(
+			"canonicalizeStagedBinary() returned nil error, " +
+				"want canonical binary collision error",
+		)
 	}
 
 	if !strings.Contains(err.Error(), "canonical binary target") {
 		t.Fatalf(
-			"Stage() error = %v, want canonical binary collision error",
+			"canonicalizeStagedBinary() error = %v, "+
+				"want canonical binary collision error",
 			err,
 		)
 	}
