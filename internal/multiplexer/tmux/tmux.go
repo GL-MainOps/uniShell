@@ -148,6 +148,14 @@ func (b *Backend) Create(session api.Session) error {
 		return fmt.Errorf("tmux shell path cannot be empty")
 	}
 
+	if session.NativeName == "" {
+		session.NativeName = session.Name
+	}
+
+	if session.NativeName == "" {
+		return fmt.Errorf("tmux native session name cannot be empty")
+	}
+
 	if err := prepareSocketPath(session.Endpoint); err != nil {
 		return err
 	}
@@ -199,6 +207,24 @@ func (b *Backend) Create(session api.Session) error {
 		args,
 		session.Env,
 	)
+}
+
+func (b *Backend) CreateWithNativeName(
+	session api.Session,
+) (string, error) {
+	if session.NativeName == "" {
+		session.NativeName = session.Name
+	}
+
+	if session.NativeName == "" {
+		return "", fmt.Errorf("tmux native session name cannot be empty")
+	}
+
+	if err := b.Create(session); err != nil {
+		return "", err
+	}
+
+	return session.NativeName, nil
 }
 
 func (b *Backend) Attach(session api.Session) error {

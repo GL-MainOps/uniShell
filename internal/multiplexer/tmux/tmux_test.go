@@ -122,6 +122,121 @@ func TestCreateUsesSessionEndpointAndName(t *testing.T) {
 	}
 }
 
+func TestCreateUsesManagedSessionNameWhenNativeNameIsEmpty(t *testing.T) {
+	var gotArgs []string
+
+	endpoint := filepath.Join(
+		t.TempDir(),
+		"multiplexer",
+		"tmux.sock",
+	)
+
+	backend := &Backend{
+		Binary: "fake-tmux",
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
+			gotArgs = append(
+				[]string(nil),
+				args...,
+			)
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		Name:       "work@abc",
+		ShellPath:  "/runtime/bin/bash",
+		Endpoint:   endpoint,
+	})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	want := []string{
+		"-S",
+		endpoint,
+		"new-session",
+		"-d",
+		"-s",
+		"work@abc",
+		"/runtime/bin/bash",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			want,
+		)
+	}
+}
+
+func TestCreateWithNativeNameUsesManagedSessionName(t *testing.T) {
+	var gotArgs []string
+
+	endpoint := filepath.Join(
+		t.TempDir(),
+		"multiplexer",
+		"tmux.sock",
+	)
+
+	backend := &Backend{
+		Binary: "fake-tmux",
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
+			gotArgs = append(
+				[]string(nil),
+				args...,
+			)
+			return nil
+		},
+	}
+
+	nativeName, err := backend.CreateWithNativeName(api.Session{
+		Name:       "work@abc",
+		ShellPath:  "/runtime/bin/bash",
+		Endpoint:   endpoint,
+	})
+	if err != nil {
+		t.Fatalf(
+			"CreateWithNativeName() returned error: %v",
+			err,
+		)
+	}
+
+	if nativeName != "work@abc" {
+		t.Fatalf(
+			"native name = %q, want %q",
+			nativeName,
+			"work@abc",
+		)
+	}
+
+	want := []string{
+		"-S",
+		endpoint,
+		"new-session",
+		"-d",
+		"-s",
+		"work@abc",
+		"/runtime/bin/bash",
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf(
+			"args = %#v, want %#v",
+			gotArgs,
+			want,
+		)
+	}
+}
+
 func TestCreateSetsShellForSession(t *testing.T) {
 	var gotArgs [][]string
 

@@ -1139,6 +1139,27 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 		"other",
 	)
 
+	metadata, err := sessionmeta.ReadMetadata(firstRuntime)
+	if err != nil {
+		t.Fatalf(
+			"ReadMetadata(first) returned error: %v",
+			err,
+		)
+	}
+
+	metadata.MultiplexerSessionName =
+		"other@" + metadata.ID[:3]
+
+	if err := sessionmeta.WriteMetadata(
+		firstRuntime,
+		metadata,
+	); err != nil {
+		t.Fatalf(
+			"WriteMetadata(first) returned error: %v",
+			err,
+		)
+	}
+
 	if _, err := manager.Create(
 		"test",
 		"default",
@@ -1158,6 +1179,27 @@ func TestManagerDiscoverByNameFindsSessionAcrossRuntimeDirectories(t *testing.T)
 		secondRuntime,
 		"default",
 	)
+
+	metadata, err = sessionmeta.ReadMetadata(secondRuntime)
+	if err != nil {
+		t.Fatalf(
+			"ReadMetadata(second) returned error: %v",
+			err,
+		)
+	}
+
+	metadata.MultiplexerSessionName =
+		"default@" + metadata.ID[:3]
+
+	if err := sessionmeta.WriteMetadata(
+		secondRuntime,
+		metadata,
+	); err != nil {
+		t.Fatalf(
+			"WriteMetadata(second) returned error: %v",
+			err,
+		)
+	}
 
 	session, err := manager.DiscoverByName(
 		versionRuntime,
@@ -1224,6 +1266,19 @@ func TestManagerDiscoverByNameCanonicalizesThroughSessionID(
 		runtimePath,
 		"default",
 	)
+
+	metadata.MultiplexerSessionName =
+		"default@" + metadata.ID[:3]
+
+	if err := sessionmeta.WriteMetadata(
+		runtimePath,
+		metadata,
+	); err != nil {
+		t.Fatalf(
+			"WriteMetadata() returned error: %v",
+			err,
+		)
+	}
 
 	discovered, err := manager.DiscoverByName(
 		versionRuntime,
@@ -2903,6 +2958,25 @@ func TestManagerCreatePersistsMultiplexerSessionName(
 
 	prepareManagerTestRuntime(t, runtimePath)
 
+	if err := sessionmeta.WriteMetadata(
+		runtimePath,
+		sessionmeta.Metadata{
+			ID:                "runtime-session",
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+			CreatedAt:         time.Now().UTC(),
+			Version:           "development",
+			Mode:              sessionmeta.ModeMultiplexer,
+			Name:              "runtime@abcdefg",
+		},
+	); err != nil {
+		t.Fatalf(
+			"sessionmeta.WriteMetadata() returned error: %v",
+			err,
+		)
+	}
+
 	backend := &managerTestBackend{
 		name:      "test",
 		available: true,
@@ -2935,6 +3009,14 @@ func TestManagerCreatePersistsMultiplexerSessionName(
 		)
 	}
 
+	if session.Metadata.Name != "runtime@abcdefg" {
+		t.Fatalf(
+			"session metadata name = %q, want %q",
+			session.Metadata.Name,
+			"runtime@abcdefg",
+		)
+	}
+
 	if session.Metadata.MultiplexerSessionName != "work@abc" {
 		t.Fatalf(
 			"multiplexer session name = %q, want %q",
@@ -2956,6 +3038,14 @@ func TestManagerCreatePersistsMultiplexerSessionName(
 			"persisted multiplexer session name = %q, want %q",
 			metadata.MultiplexerSessionName,
 			"work@abc",
+		)
+	}
+
+	if metadata.Name != "runtime@abcdefg" {
+		t.Fatalf(
+			"persisted metadata name = %q, want %q",
+			metadata.Name,
+			"runtime@abcdefg",
 		)
 	}
 }

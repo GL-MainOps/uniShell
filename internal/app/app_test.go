@@ -654,7 +654,7 @@ func TestStartMultiplexerSessionCreatesManagedSession(t *testing.T) {
 	}
 
 	wantSessionName := "work@" + session.Runtime.ID[:3]
-	if session.Multiplexer.Metadata.Name != wantSessionName {
+	if session.Multiplexer.Metadata.MultiplexerSessionName != wantSessionName {
 		t.Fatalf(
 			"multiplexer session name = %q, want %q",
 			session.Multiplexer.Metadata.Name,
@@ -748,7 +748,7 @@ func TestStartMultiplexerSessionUsesDefaultMultiplexerSessionName(
 	}
 
 	want := "uS@" + session.Runtime.ID[:3]
-	if session.Multiplexer.Metadata.Name != want {
+	if session.Multiplexer.Metadata.MultiplexerSessionName != want {
 		t.Fatalf(
 			"multiplexer session name = %q, want %q",
 			session.Multiplexer.Metadata.Name,

@@ -138,13 +138,18 @@ func (m *Manager) Create(
 		)
 	}
 
-	var sessionMetadata = sessionmeta.Metadata{
-		ID:                     id,
-		Version:                filepath.Base(filepath.Dir(runtimePath)),
-		Mode:                   sessionmeta.ModeMultiplexer,
-		Name:                   sessionName,
-		NativeName:             nativeName,
-		MultiplexerSessionName: sessionName,
+    runtimeSessionName := existingMetadata.Name
+    if runtimeSessionName == "" {
+        runtimeSessionName = sessionName
+    }
+
+    var sessionMetadata = sessionmeta.Metadata{
+        ID:                     id,
+        Version:                filepath.Base(filepath.Dir(runtimePath)),
+        Mode:                   sessionmeta.ModeMultiplexer,
+        Name:                   runtimeSessionName,
+        NativeName:              nativeName,
+        MultiplexerSessionName: sessionName,
 		Multiplexer:            backendName,
 		Endpoint:               endpoint,
 		ShellName:              shellName,
@@ -487,7 +492,7 @@ func (m *Manager) DiscoverByName(
 		}
 
 		if !strings.HasPrefix(
-			metadata.Name,
+			metadata.MultiplexerSessionName,
 			baseName+"@",
 		) {
 			continue
