@@ -139,16 +139,17 @@ func (m *Manager) Create(
 	}
 
 	var sessionMetadata = sessionmeta.Metadata{
-		ID:           id,
-		Version:      filepath.Base(filepath.Dir(runtimePath)),
-		Mode:         sessionmeta.ModeMultiplexer,
-		Name:         sessionName,
-		NativeName:   nativeName,
-		Multiplexer:  backendName,
-		Endpoint:     endpoint,
-		ShellName:    shellName,
-		ShellPath:    shellPath,
-		ShellProfile: existingMetadata.ShellProfile,
+		ID:                     id,
+		Version:                filepath.Base(filepath.Dir(runtimePath)),
+		Mode:                   sessionmeta.ModeMultiplexer,
+		Name:                   sessionName,
+		NativeName:             nativeName,
+		MultiplexerSessionName: sessionName,
+		Multiplexer:            backendName,
+		Endpoint:               endpoint,
+		ShellName:              shellName,
+		ShellPath:              shellPath,
+		ShellProfile:           existingMetadata.ShellProfile,
 	}
 
 	session.Env = sessionEnvironment(

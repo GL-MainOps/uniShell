@@ -3,6 +3,7 @@ package runtime
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,6 +100,62 @@ func TestSessionPrepareWritesSessionName(t *testing.T) {
 			"metadata name = %q, want %q",
 			metadata.Name,
 			"direct-shell",
+		)
+	}
+}
+
+func TestSessionPrepareOmitsMultiplexerSessionNameForNormalSession(
+	t *testing.T,
+) {
+	root := t.TempDir()
+
+	paths := Paths{
+		Root:    root,
+		Runtime: filepath.Join(root, "runtime"),
+	}
+
+	session, err := NewSession(paths)
+	if err != nil {
+		t.Fatalf("NewSession() returned error: %v", err)
+	}
+
+	if err := session.SetName("direct-shell"); err != nil {
+		t.Fatalf("SetName() returned error: %v", err)
+	}
+
+	if err := session.Prepare(); err != nil {
+		t.Fatalf("Prepare() returned error: %v", err)
+	}
+	defer session.Cleanup()
+
+	metadata, err := sessionmeta.ReadMetadata(
+		session.Paths.Runtime,
+	)
+	if err != nil {
+		t.Fatalf("ReadMetadata() returned error: %v", err)
+	}
+
+	if metadata.MultiplexerSessionName != "" {
+		t.Fatalf(
+			"metadata multiplexer session name = %q, want empty",
+			metadata.MultiplexerSessionName,
+		)
+	}
+
+	data, err := os.ReadFile(
+		sessionmeta.MetadataPath(session.Paths.Runtime),
+	)
+	if err != nil {
+		t.Fatalf("read metadata file: %v", err)
+	}
+
+	if strings.Contains(
+		string(data),
+		`"multiplexer_session_name"`,
+	) {
+		t.Fatalf(
+			"normal-session metadata unexpectedly contains multiplexer_session_name:\n%s",
+			data,
 		)
 	}
 }

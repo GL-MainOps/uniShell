@@ -2892,3 +2892,70 @@ func TestManagerCreateRejectsInvalidProcessIdentity(
 		)
 	}
 }
+
+func TestManagerCreatePersistsMultiplexerSessionName(
+	t *testing.T,
+) {
+	runtimePath := filepath.Join(
+		t.TempDir(),
+		"runtime",
+	)
+
+	prepareManagerTestRuntime(t, runtimePath)
+
+	backend := &managerTestBackend{
+		name:      "test",
+		available: true,
+		processIdentity: sessionmeta.ProcessIdentity{
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+		},
+	}
+
+	manager := NewManager(
+		NewRegistry(backend),
+	)
+
+	session, err := manager.Create(
+		"test",
+		"work@abc",
+		"native-work",
+		runtimePath,
+		"bash",
+		"/bin/bash",
+		nil,
+		nil,
+		api.Options{},
+	)
+	if err != nil {
+		t.Fatalf(
+			"Create() returned error: %v",
+			err,
+		)
+	}
+
+	if session.Metadata.MultiplexerSessionName != "work@abc" {
+		t.Fatalf(
+			"multiplexer session name = %q, want %q",
+			session.Metadata.MultiplexerSessionName,
+			"work@abc",
+		)
+	}
+
+	metadata, err := sessionmeta.ReadMetadata(runtimePath)
+	if err != nil {
+		t.Fatalf(
+			"ReadMetadata() returned error: %v",
+			err,
+		)
+	}
+
+	if metadata.MultiplexerSessionName != "work@abc" {
+		t.Fatalf(
+			"persisted multiplexer session name = %q, want %q",
+			metadata.MultiplexerSessionName,
+			"work@abc",
+		)
+	}
+}

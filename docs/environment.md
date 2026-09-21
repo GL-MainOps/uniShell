@@ -181,6 +181,20 @@ includes a short runtime-session identifier suffix.
 The backend-native session name remains implementation-specific and is
 managed by the selected multiplexer backend.
 
+For multiplexer sessions, the managed uniShell multiplexer session name
+is also persisted in the session's `.session.json` metadata as:
+
+```json
+"multiplexer_session_name": "<managed-multiplexer-session-name>"
+```
+
+This field contains the canonical managed uniShell multiplexer session
+name, such as `uS@abc` or `work@abc`. It does not contain the backend-native
+session name.
+
+The `multiplexer_session_name` field is present only for multiplexer
+sessions. Direct-shell session metadata does not contain this field.
+
 ## Runtime
 
 ### `UNISHELL_RUNTIME_DIR`

@@ -23,16 +23,17 @@ func TestMetadataRoundTrip(t *testing.T) {
 	)
 
 	want := Metadata{
-		ID:                "43b9ab54912bf09a03cc414bf7697bf1",
-		PID:               12345,
-		ProcessStartTicks: 987654,
-		ProcessGroupID:    12345,
-		CreatedAt:         created,
-		Version:           "development",
-		Mode:              ModeNormal,
-		ShellName:         "bash",
-		ShellPath:         "/bin/bash",
-		ShellProfile:      "work",
+		ID:                     "43b9ab54912bf09a03cc414bf7697bf1",
+		PID:                    12345,
+		ProcessStartTicks:      987654,
+		ProcessGroupID:         12345,
+		CreatedAt:              created,
+		Version:                "development",
+		Mode:                   ModeNormal,
+		ShellName:              "bash",
+		ShellPath:              "/bin/bash",
+		ShellProfile:           "work",
+		MultiplexerSessionName: "work@abc",
 	}
 
 	if err := WriteMetadata(runtimePath, want); err != nil {
@@ -147,6 +148,14 @@ func TestMetadataRoundTrip(t *testing.T) {
 			"ShellProfile = %q, want %q",
 			got.ShellProfile,
 			want.ShellProfile,
+		)
+	}
+
+	if got.MultiplexerSessionName != want.MultiplexerSessionName {
+		t.Fatalf(
+			"MultiplexerSessionName = %q, want %q",
+			got.MultiplexerSessionName,
+			want.MultiplexerSessionName,
 		)
 	}
 }

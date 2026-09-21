@@ -18,20 +18,21 @@ const (
 )
 
 type Metadata struct {
-	ID                string    `json:"id"`
-	PID               int       `json:"pid"`
-	ProcessStartTicks uint64    `json:"process_start_ticks"`
-	ProcessGroupID    int       `json:"process_group_id"`
-	CreatedAt         time.Time `json:"created_at"`
-	Version           string    `json:"version"`
-	Mode              Mode      `json:"mode"`
-	ShellName         string    `json:"shell_name,omitempty"`
-	ShellPath         string    `json:"shell_path,omitempty"`
-	ShellProfile      string    `json:"shell_profile"`
-	Name              string    `json:"name,omitempty"`
-	NativeName        string    `json:"native_name,omitempty"`
-	Multiplexer       string    `json:"multiplexer,omitempty"`
-	Endpoint          string    `json:"endpoint,omitempty"`
+	ID                     string    `json:"id"`
+	PID                    int       `json:"pid"`
+	ProcessStartTicks      uint64    `json:"process_start_ticks"`
+	ProcessGroupID         int       `json:"process_group_id"`
+	CreatedAt              time.Time `json:"created_at"`
+	Version                string    `json:"version"`
+	Mode                   Mode      `json:"mode"`
+	ShellName              string    `json:"shell_name,omitempty"`
+	ShellPath              string    `json:"shell_path,omitempty"`
+	ShellProfile           string    `json:"shell_profile"`
+	Name                   string    `json:"name,omitempty"`
+	NativeName             string    `json:"native_name,omitempty"`
+	MultiplexerSessionName string    `json:"multiplexer_session_name,omitempty"`
+	Multiplexer            string    `json:"multiplexer,omitempty"`
+	Endpoint               string    `json:"endpoint,omitempty"`
 }
 
 func MetadataPath(runtimePath string) string {
