@@ -602,14 +602,15 @@ func TestStartMultiplexerSessionCreatesManagedSession(t *testing.T) {
 	)
 
 	application, err := New(Options{
-		Version:              "1.0.0",
-		Commit:               "test",
-		Root:                 root,
-		Bundle:               testBundleSource(t),
-		Multiplexer:          manager,
-		MultiplexerName:      "test",
-		SessionName:          "default",
-		SessionNameSpecified: true,
+		Version:                "1.0.0",
+		Commit:                 "test",
+		Root:                   root,
+		Bundle:                 testBundleSource(t),
+		Multiplexer:            manager,
+		MultiplexerName:        "test",
+		SessionName:            "default",
+		SessionNameSpecified:   true,
+		MultiplexerSessionName: "work",
 	})
 	if err != nil {
 		t.Fatalf("New() returned error: %v", err)
@@ -643,7 +644,16 @@ func TestStartMultiplexerSessionCreatesManagedSession(t *testing.T) {
 		)
 	}
 
-	wantSessionName := "default@" + session.Runtime.ID[:7]
+	wantRuntimeSessionName := "default@" + session.Runtime.ID[:7]
+	if session.Runtime.Name != wantRuntimeSessionName {
+		t.Fatalf(
+			"runtime session name = %q, want %q",
+			session.Runtime.Name,
+			wantRuntimeSessionName,
+		)
+	}
+
+	wantSessionName := "work@" + session.Runtime.ID[:3]
 	if session.Multiplexer.Metadata.Name != wantSessionName {
 		t.Fatalf(
 			"multiplexer session name = %q, want %q",
@@ -686,6 +696,68 @@ func TestStartMultiplexerSessionCreatesManagedSession(t *testing.T) {
 
 	if err := session.Cleanup(); err != nil {
 		t.Fatalf("Cleanup() returned error: %v", err)
+	}
+}
+
+func TestStartMultiplexerSessionUsesDefaultMultiplexerSessionName(
+	t *testing.T,
+) {
+	root := filepath.Join(t.TempDir(), "unishell")
+
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-fixture-token")
+
+	helper := startAppProcessGroupHelper(t)
+	defer func() {
+		_ = helper.Process.Kill()
+		_ = helper.Wait()
+	}()
+
+	backend := &appTestBackend{
+		created:         true,
+		processIdentity: appProcessIdentity(t, helper),
+	}
+
+	manager := multiplexer.NewManager(
+		multiplexer.NewRegistry(backend),
+	)
+
+	application, err := New(Options{
+		Version:              "1.0.0",
+		Commit:               "test",
+		Root:                 root,
+		Bundle:               testBundleSource(t),
+		Multiplexer:          manager,
+		MultiplexerName:      "test",
+		SessionName:          "default",
+		SessionNameSpecified: true,
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	session, err := application.StartMultiplexerSession()
+	if err != nil {
+		t.Fatalf(
+			"StartMultiplexerSession() returned error: %v",
+			err,
+		)
+	}
+
+	if session == nil {
+		t.Fatal("StartMultiplexerSession() returned nil session")
+	}
+
+	want := "uS@" + session.Runtime.ID[:3]
+	if session.Multiplexer.Metadata.Name != want {
+		t.Fatalf(
+			"multiplexer session name = %q, want %q",
+			session.Multiplexer.Metadata.Name,
+			want,
+		)
+	}
+
+	if err := session.Cleanup(); err != nil {
+		t.Fatalf("session Cleanup() returned error: %v", err)
 	}
 }
 
@@ -1227,6 +1299,187 @@ func TestSessionNameForRuntime(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestMultiplexerSessionNameForRuntime(t *testing.T) {
+	runtimeSession := &runtime.Session{
+		ID: "81cac8cbf90a225223b66c0898c8d54f",
+	}
+
+	tests := []struct {
+		name          string
+		specifiedName string
+		want          string
+	}{
+		{
+			name: "unspecified",
+			want: "uS@81c",
+		},
+		{
+			name:          "specified",
+			specifiedName: "work",
+			want:          "work@81c",
+		},
+		{
+			name:          "specified with surrounding whitespace",
+			specifiedName: "  work  ",
+			want:          "work@81c",
+		},
+		{
+			name:          "whitespace only",
+			specifiedName: "   ",
+			want:          "uS@81c",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := multiplexerSessionNameForRuntime(
+				runtimeSession,
+				test.specifiedName,
+			)
+			if err != nil {
+				t.Fatalf(
+					"multiplexerSessionNameForRuntime() returned error: %v",
+					err,
+				)
+			}
+
+			if got != test.want {
+				t.Fatalf(
+					"multiplexerSessionNameForRuntime() = %q, want %q",
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestDiscoverMultiplexerSessionUsesMultiplexerSessionName(
+	t *testing.T,
+) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
+
+	root := filepath.Join(t.TempDir(), "unishell")
+
+	backend := &appTestBackend{
+		processIdentity: sessionmeta.ProcessIdentity{
+			PID:               os.Getpid(),
+			ProcessStartTicks: sessionmeta.CurrentProcessStartTicks(),
+			ProcessGroupID:    sessionmeta.CurrentProcessGroupID(),
+		},
+	}
+
+	manager := multiplexer.NewManager(
+		multiplexer.NewRegistry(backend),
+	)
+
+	application, err := New(Options{
+		Version:                "1.0.0",
+		Commit:                 "test",
+		Root:                   root,
+		Multiplexer:            manager,
+		MultiplexerName:        "test",
+		SessionName:            "default",
+		SessionNameSpecified:   true,
+		MultiplexerSessionName: "work",
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	runtimePath := filepath.Join(
+		application.Paths.Runtime,
+		"session",
+	)
+
+	if err := os.MkdirAll(runtimePath, 0700); err != nil {
+		t.Fatalf(
+			"create runtime path: %v",
+			err,
+		)
+	}
+
+	managed, err := manager.Create(
+		"test",
+		"work@abc",
+		"",
+		runtimePath,
+		"bash",
+		"/bin/bash",
+		nil,
+		nil,
+		api.Options{},
+	)
+	if err != nil {
+		t.Fatalf(
+			"manager.Create() returned error: %v",
+			err,
+		)
+	}
+
+	discovered, err := application.DiscoverMultiplexerSession()
+	if err != nil {
+		t.Fatalf(
+			"DiscoverMultiplexerSession() returned error: %v",
+			err,
+		)
+	}
+
+	if discovered == nil || discovered.Multiplexer == nil {
+		t.Fatal(
+			"DiscoverMultiplexerSession() returned nil multiplexer session",
+		)
+	}
+
+	if discovered.Multiplexer.Metadata.ID != managed.Metadata.ID {
+		t.Fatalf(
+			"discovered session ID = %q, want %q",
+			discovered.Multiplexer.Metadata.ID,
+			managed.Metadata.ID,
+		)
+	}
+
+	if discovered.Multiplexer.Metadata.Name != "work@abc" {
+		t.Fatalf(
+			"discovered session name = %q, want %q",
+			discovered.Multiplexer.Metadata.Name,
+			"work@abc",
+		)
+	}
+}
+
+func TestMultiplexerSessionNameForRuntimeRejectsNilRuntime(
+	t *testing.T,
+) {
+	_, err := multiplexerSessionNameForRuntime(
+		nil,
+		"work",
+	)
+
+	if err == nil {
+		t.Fatal(
+			"multiplexerSessionNameForRuntime() returned nil error",
+		)
+	}
+}
+
+func TestMultiplexerSessionNameForRuntimeRejectsShortRuntimeID(
+	t *testing.T,
+) {
+	_, err := multiplexerSessionNameForRuntime(
+		&runtime.Session{
+			ID: "ab",
+		},
+		"work",
+	)
+
+	if err == nil {
+		t.Fatal(
+			"multiplexerSessionNameForRuntime() returned nil error",
+		)
 	}
 }
 

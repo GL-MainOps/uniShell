@@ -7,7 +7,21 @@ import (
 	"gitlab.com/mainops/uniShell/internal/runtime"
 )
 
-const sessionNameIDLength = 7
+const (
+	sessionNameIDLength            = 7
+	multiplexerSessionNameIDLength = 3
+)
+
+func multiplexerSessionBaseName(
+	specifiedName string,
+) string {
+	baseName := strings.TrimSpace(specifiedName)
+	if baseName == "" {
+		return "uS"
+	}
+
+	return baseName
+}
 
 func sessionNameForRuntime(
 	runtimeSession *runtime.Session,
@@ -35,5 +49,30 @@ func sessionNameForRuntime(
 		"%s@%s",
 		baseName,
 		runtimeSession.ID[:sessionNameIDLength],
+	), nil
+}
+
+func multiplexerSessionNameForRuntime(
+	runtimeSession *runtime.Session,
+	specifiedName string,
+) (string, error) {
+	if runtimeSession == nil {
+		return "", fmt.Errorf("runtime session is nil")
+	}
+
+	if len(runtimeSession.ID) < multiplexerSessionNameIDLength {
+		return "", fmt.Errorf(
+			"runtime session ID %q is shorter than %d characters",
+			runtimeSession.ID,
+			multiplexerSessionNameIDLength,
+		)
+	}
+
+	baseName := multiplexerSessionBaseName(specifiedName)
+
+	return fmt.Sprintf(
+		"%s@%s",
+		baseName,
+		runtimeSession.ID[:multiplexerSessionNameIDLength],
 	), nil
 }

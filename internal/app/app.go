@@ -412,6 +412,17 @@ func (a *App) CreateMultiplexerSession(
 		)
 	}
 
+	multiplexerSessionName, err := multiplexerSessionNameForRuntime(
+		runtimeSession,
+		a.MultiplexerSessionName,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"generate multiplexer session name: %w",
+			err,
+		)
+	}
+
 	selectedShell, err := shell.Resolve(
 		shellName,
 		runtimeSession.Paths.Bin,
@@ -456,8 +467,8 @@ func (a *App) CreateMultiplexerSession(
 
 	managedSession, err := a.Multiplexer.Create(
 		multiplexerName,
-		runtimeSession.Name,
-		a.MultiplexerSessionName,
+		multiplexerSessionName,
+		"",
 		runtimeSession.Paths.Runtime,
 		selectedShell.Name,
 		selectedShell.Path,
@@ -501,7 +512,7 @@ func (a *App) StartMultiplexerSession() (*Session, error) {
 func (a *App) DiscoverMultiplexerSession() (*Session, error) {
 	managed, err := a.Multiplexer.DiscoverByName(
 		a.Paths.Runtime,
-		a.SessionName,
+		multiplexerSessionBaseName(a.MultiplexerSessionName),
 	)
 	if err != nil {
 		return nil, err

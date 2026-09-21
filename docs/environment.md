@@ -124,8 +124,8 @@ multiplexer's native session naming.
 
 ### `UNISHELL_MULTIPLEXER_SESSION`
 
-Optionally specifies the native session name passed to the selected  
-multiplexer.
+Optionally specifies the base name of the managed uniShell multiplexer
+session.
 
 Equivalent flag:
 
@@ -133,22 +133,53 @@ Equivalent flag:
 --multiplexer-session
 ```
 
-If unset, uniShell does not override the multiplexer-native session  
-naming behavior.
+When specified, uniShell derives the managed multiplexer session name as:
 
-### Logical and Native Session Names
+```text
+<specified-name>@<first-3-characters-of-runtime-session-id>
+```
+
+When unset or blank, uniShell uses:
+
+```text
+uS@<first-3-characters-of-runtime-session-id>
+```
+
+The runtime session ID is generated once for the session and is the same
+identifier used by the runtime session directory and session metadata.
+
+Examples:
+
+```text
+work@abc
+development@81c
+uS@7f2
+```
+
+The managed multiplexer session name is used by uniShell when discovering
+and reattaching to an existing multiplexer session.
+
+The selected multiplexer backend may use a separate native session name.
+The managed uniShell multiplexer session name does not require the backend
+to use the same native name.
+
+### Logical and Multiplexer Session Names
 
 uniShell maintains two distinct session-name concepts for multiplexer
 sessions:
 
-- `UNISHELL_SESSION_NAME` identifies the uniShell logical session.
-- `UNISHELL_MULTIPLEXER_SESSION` selects the native session name passed
-  to the multiplexer backend.
+- `UNISHELL_SESSION` identifies the uniShell logical session.
+- `UNISHELL_MULTIPLEXER_SESSION` selects the base name used to derive the
+    managed uniShell multiplexer session name.
 
 The logical session name is part of uniShell session metadata and remains
 independent of the multiplexer implementation.
 
-The native session name belongs to the selected multiplexer backend.
+The managed multiplexer session name is canonicalized by uniShell and
+includes a short runtime-session identifier suffix.
+
+The backend-native session name remains implementation-specific and is
+managed by the selected multiplexer backend.
 
 ## Runtime
 
