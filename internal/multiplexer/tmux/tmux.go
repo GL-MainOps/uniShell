@@ -202,9 +202,34 @@ func (b *Backend) Create(session api.Session) error {
 		session.ShellArgs...,
 	)
 
-	return b.Run(
+	if err := b.Run(
 		b.binaryPath(session),
 		args,
+		session.Env,
+	); err != nil {
+		return err
+	}
+
+	defaultCommand := buildDefaultCommand(
+		session.ShellPath,
+		session.ShellArgs,
+	)
+
+	setDefaultCommandArgs, err := b.commandArgs(
+		session,
+		"set-option",
+		"-t",
+		session.NativeName,
+		"default-command",
+		defaultCommand,
+	)
+	if err != nil {
+		return err
+	}
+
+	return b.Run(
+		b.binaryPath(session),
+		setDefaultCommandArgs,
 		session.Env,
 	)
 }
@@ -461,6 +486,24 @@ func (b *Backend) commandArgs(
 	result = append(result, args...)
 
 	return result, nil
+}
+
+func buildDefaultCommand(
+	shellPath string,
+	shellArgs []string,
+) string {
+	parts := make([]string, 0, len(shellArgs)+2)
+	parts = append(parts, "exec", shellQuote(shellPath))
+
+	for _, arg := range shellArgs {
+		parts = append(parts, shellQuote(arg))
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func validateCreateArgs(args []string) error {

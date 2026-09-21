@@ -115,6 +115,15 @@ func TestCreateUsesSessionEndpointAndName(t *testing.T) {
 			"work",
 			"/runtime/bin/bash",
 		},
+		{
+			"-S",
+			endpoint,
+			"set-option",
+			"-t",
+			"work",
+			"default-command",
+			"exec '/runtime/bin/bash'",
+		},
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
@@ -123,7 +132,7 @@ func TestCreateUsesSessionEndpointAndName(t *testing.T) {
 }
 
 func TestCreateUsesManagedSessionNameWhenNativeNameIsEmpty(t *testing.T) {
-	var gotArgs []string
+	var gotArgs [][]string
 
 	endpoint := filepath.Join(
 		t.TempDir(),
@@ -139,30 +148,41 @@ func TestCreateUsesManagedSessionNameWhenNativeNameIsEmpty(t *testing.T) {
 			_ []string,
 		) error {
 			gotArgs = append(
-				[]string(nil),
-				args...,
+				gotArgs,
+				append([]string(nil), args...),
 			)
 			return nil
 		},
 	}
 
 	err := backend.Create(api.Session{
-		Name:       "work@abc",
-		ShellPath:  "/runtime/bin/bash",
-		Endpoint:   endpoint,
+		Name:      "work@abc",
+		ShellPath: "/runtime/bin/bash",
+		Endpoint:  endpoint,
 	})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	want := []string{
-		"-S",
-		endpoint,
-		"new-session",
-		"-d",
-		"-s",
-		"work@abc",
-		"/runtime/bin/bash",
+	want := [][]string{
+		{
+			"-S",
+			endpoint,
+			"new-session",
+			"-d",
+			"-s",
+			"work@abc",
+			"/runtime/bin/bash",
+		},
+		{
+			"-S",
+			endpoint,
+			"set-option",
+			"-t",
+			"work@abc",
+			"default-command",
+			"exec '/runtime/bin/bash'",
+		},
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
@@ -175,7 +195,7 @@ func TestCreateUsesManagedSessionNameWhenNativeNameIsEmpty(t *testing.T) {
 }
 
 func TestCreateWithNativeNameUsesManagedSessionName(t *testing.T) {
-	var gotArgs []string
+	var gotArgs [][]string
 
 	endpoint := filepath.Join(
 		t.TempDir(),
@@ -191,17 +211,17 @@ func TestCreateWithNativeNameUsesManagedSessionName(t *testing.T) {
 			_ []string,
 		) error {
 			gotArgs = append(
-				[]string(nil),
-				args...,
+				gotArgs,
+				append([]string(nil), args...),
 			)
 			return nil
 		},
 	}
 
 	nativeName, err := backend.CreateWithNativeName(api.Session{
-		Name:       "work@abc",
-		ShellPath:  "/runtime/bin/bash",
-		Endpoint:   endpoint,
+		Name:      "work@abc",
+		ShellPath: "/runtime/bin/bash",
+		Endpoint:  endpoint,
 	})
 	if err != nil {
 		t.Fatalf(
@@ -218,20 +238,123 @@ func TestCreateWithNativeNameUsesManagedSessionName(t *testing.T) {
 		)
 	}
 
-	want := []string{
-		"-S",
-		endpoint,
-		"new-session",
-		"-d",
-		"-s",
-		"work@abc",
-		"/runtime/bin/bash",
+	want := [][]string{
+		{
+			"-S",
+			endpoint,
+			"new-session",
+			"-d",
+			"-s",
+			"work@abc",
+			"/runtime/bin/bash",
+		},
+		{
+			"-S",
+			endpoint,
+			"set-option",
+			"-t",
+			"work@abc",
+			"default-command",
+			"exec '/runtime/bin/bash'",
+		},
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
 		t.Fatalf(
 			"args = %#v, want %#v",
 			gotArgs,
+			want,
+		)
+	}
+}
+
+func TestCreatePropagatesShellToNewWindowsAndPanes(t *testing.T) {
+	var gotArgs [][]string
+
+	endpoint := filepath.Join(
+		t.TempDir(),
+		"multiplexer",
+		"tmux.sock",
+	)
+
+	backend := &Backend{
+		Binary: "fake-tmux",
+		Run: func(
+			_ string,
+			args []string,
+			_ []string,
+		) error {
+			gotArgs = append(
+				gotArgs,
+				append([]string(nil), args...),
+			)
+			return nil
+		},
+	}
+
+	session := api.Session{
+		NativeName: "work",
+		ShellPath:  "/runtime/bin/bash",
+		ShellArgs: []string{
+			"--noprofile",
+			"--rcfile",
+			"/runtime/config/shell-generated/main.bash",
+		},
+		Endpoint: endpoint,
+	}
+
+	if err := backend.Create(session); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	want := [][]string{
+		{
+			"-S",
+			endpoint,
+			"new-session",
+			"-d",
+			"-s",
+			"work",
+			"/runtime/bin/bash",
+			"--noprofile",
+			"--rcfile",
+			"/runtime/config/shell-generated/main.bash",
+		},
+		{
+			"-S",
+			endpoint,
+			"set-option",
+			"-t",
+			"work",
+			"default-command",
+			"exec '/runtime/bin/bash' '--noprofile' '--rcfile' '/runtime/config/shell-generated/main.bash'",
+		},
+	}
+
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf(
+			"tmux invocations = %#v, want %#v",
+			gotArgs,
+			want,
+		)
+	}
+}
+
+func TestBuildDefaultCommandQuotesShellInvocation(t *testing.T) {
+	got := buildDefaultCommand(
+		"/runtime/bin/bash with spaces",
+		[]string{
+			"--rcfile",
+			"/runtime/config/profile's.bash",
+		},
+	)
+
+	want := "exec '/runtime/bin/bash with spaces' '--rcfile' '/runtime/config/profile'\"'\"'s.bash'"
+
+	if got != want {
+		t.Fatalf(
+			"buildDefaultCommand() = %q, want %q",
+			got,
 			want,
 		)
 	}
@@ -270,8 +393,8 @@ func TestCreateSetsShellForSession(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	if len(gotArgs) != 1 {
-		t.Fatalf("tmux invocations = %d, want 1", len(gotArgs))
+	if len(gotArgs) != 2 {
+		t.Fatalf("tmux invocations = %d, want 2", len(gotArgs))
 	}
 
 	want := []string{
@@ -289,6 +412,24 @@ func TestCreateSetsShellForSession(t *testing.T) {
 			"tmux invocation args = %#v, want %#v",
 			gotArgs[0],
 			want,
+		)
+	}
+
+	wantDefaultCommand := []string{
+		"-S",
+		endpoint,
+		"set-option",
+		"-t",
+		"work",
+		"default-command",
+		"exec '/runtime/bin/zsh'",
+	}
+
+	if !reflect.DeepEqual(gotArgs[1], wantDefaultCommand) {
+		t.Fatalf(
+			"tmux default-command args = %#v, want %#v",
+			gotArgs[1],
+			wantDefaultCommand,
 		)
 	}
 }
@@ -318,7 +459,7 @@ func TestCreateRejectsEmptyShellPath(t *testing.T) {
 }
 
 func TestCreateUsesSessionEnvironment(t *testing.T) {
-	var gotArgs []string
+	var gotArgs [][]string
 	var gotEnv []string
 
 	endpoint := filepath.Join(
@@ -334,7 +475,10 @@ func TestCreateUsesSessionEnvironment(t *testing.T) {
 			args []string,
 			env []string,
 		) error {
-			gotArgs = append([]string(nil), args...)
+			gotArgs = append(
+				gotArgs,
+				append([]string(nil), args...),
+			)
 			gotEnv = append([]string(nil), env...)
 			return nil
 		},
@@ -353,18 +497,29 @@ func TestCreateUsesSessionEnvironment(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	want := []string{
-		"-S",
-		endpoint,
-		"new-session",
-		"-d",
-		"-e",
-		"PATH=/runtime/work/bin:/usr/bin",
-		"-e",
-		"SHELL=/bin/bash",
-		"-s",
-		"work",
-		"/runtime/bin/bash",
+	want := [][]string{
+		{
+			"-S",
+			endpoint,
+			"new-session",
+			"-d",
+			"-e",
+			"PATH=/runtime/work/bin:/usr/bin",
+			"-e",
+			"SHELL=/bin/bash",
+			"-s",
+			"work",
+			"/runtime/bin/bash",
+		},
+		{
+			"-S",
+			endpoint,
+			"set-option",
+			"-t",
+			"work",
+			"default-command",
+			"exec '/runtime/bin/bash'",
+		},
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
@@ -745,6 +900,15 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 			"work",
 			"/runtime/bin/bash",
 		},
+		{
+			"-S",
+			endpoint,
+			"set-option",
+			"-t",
+			"work",
+			"default-command",
+			"exec '/runtime/bin/bash'",
+		},
 	}
 
 	if !reflect.DeepEqual(gotArgs, want) {
@@ -810,27 +974,36 @@ func TestCreateUsesBundledConfig(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	want := []string{
-		"-f",
-		config,
-		"-S",
-		session.Endpoint,
-		"new-session",
-		"-d",
-		"-s",
-		"work",
-		"/runtime/bin/bash",
+	want := [][]string{
+		{
+			"-f",
+			config,
+			"-S",
+			session.Endpoint,
+			"new-session",
+			"-d",
+			"-s",
+			"work",
+			"/runtime/bin/bash",
+		},
+		{
+			"-f",
+			config,
+			"-S",
+			session.Endpoint,
+			"set-option",
+			"-t",
+			"work",
+			"default-command",
+			"exec '/runtime/bin/bash'",
+		},
 	}
 
-	if len(gotArgs) != 1 ||
-		!reflect.DeepEqual(
-			gotArgs[0],
-			want,
-		) {
+	if !reflect.DeepEqual(gotArgs, want) {
 		t.Fatalf(
 			"args = %#v, want %#v",
 			gotArgs,
-			[][]string{want},
+			want,
 		)
 	}
 }
