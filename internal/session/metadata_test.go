@@ -317,27 +317,29 @@ func TestReadMetadataRejectsMultiplexerMetadataWithoutProcessGroupID(
 
 func TestMetadataEnvironment(t *testing.T) {
 	metadata := Metadata{
-		ID:           "session-id",
-		Version:      "development",
-		Mode:         ModeMultiplexer,
-		ShellName:    "bash",
-		Name:         "development@session",
-		ShellProfile: "work",
-		Multiplexer:  "tmux",
-		Endpoint:     "/runtime/multiplexer/tmux.sock",
+		ID:                     "session-id",
+		Version:                "development",
+		Mode:                   ModeMultiplexer,
+		ShellName:              "bash",
+		Name:                   "development@session",
+		ShellProfile:           "work",
+		Multiplexer:            "tmux",
+		Endpoint:               "/runtime/multiplexer/tmux.sock",
+		MultiplexerSessionName: "work@abc",
 	}
 
 	got := metadata.Environment()
 
 	want := map[string]string{
-		"UNISHELL_SESSION_ID":                   "session-id",
-		"UNISHELL_SESSION_VERSION":              "development",
-		"UNISHELL_SESSION_MODE":                 "multiplexer",
-		"UNISHELL_SESSION_SHELL_NAME":           "bash",
-		"UNISHELL_SESSION_NAME":                 "development@session",
-		"UNISHELL_SESSION_SHELL_PROFILE":        "work",
-		"UNISHELL_SESSION_MULTIPLEXER":          "tmux",
-		"UNISHELL_SESSION_MULTIPLEXER_ENDPOINT": "/runtime/multiplexer/tmux.sock",
+		"UNISHELL_SESSION_ID":                       "session-id",
+		"UNISHELL_SESSION_VERSION":                  "development",
+		"UNISHELL_SESSION_MODE":                     "multiplexer",
+		"UNISHELL_SESSION_SHELL_NAME":               "bash",
+		"UNISHELL_SESSION_NAME":                     "development@session",
+		"UNISHELL_SESSION_SHELL_PROFILE":            "work",
+		"UNISHELL_SESSION_MULTIPLEXER":              "tmux",
+		"UNISHELL_SESSION_MULTIPLEXER_ENDPOINT":     "/runtime/multiplexer/tmux.sock",
+		"UNISHELL_SESSION_MULTIPLEXER_SESSION_NAME": "work@abc",
 	}
 
 	for key, wantValue := range want {
@@ -383,6 +385,12 @@ func TestMetadataEnvironmentOmitsMultiplexerValuesForNormalSession(
 	if _, ok := got["UNISHELL_SESSION_MULTIPLEXER_ENDPOINT"]; ok {
 		t.Fatal(
 			"UNISHELL_SESSION_MULTIPLEXER_ENDPOINT unexpectedly present",
+		)
+	}
+
+	if _, ok := got["UNISHELL_SESSION_MULTIPLEXER_SESSION_NAME"]; ok {
+		t.Fatal(
+			"UNISHELL_SESSION_MULTIPLEXER_SESSION_NAME unexpectedly present",
 		)
 	}
 }

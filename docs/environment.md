@@ -331,6 +331,24 @@ The persisted session metadata is the canonical source for these
 values; shell configuration files do not need to parse `.session.json`
 directly.
 
+### `UNISHELL_SESSION_MULTIPLEXER_SESSION_NAME`
+
+When a multiplexer is associated with the active session, contains the
+canonical managed uniShell multiplexer session name.
+
+This value is the same managed multiplexer session name persisted in the
+session's `.session.json` metadata as `multiplexer_session_name`.
+
+It is independent from the backend-native multiplexer session name.
+
+For example:
+
+```text
+work@abc
+uS@7f2
+```
+
+This variable is omitted for direct-shell sessions.
 
 ## Multiplexer Configuration
 

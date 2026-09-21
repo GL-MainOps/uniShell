@@ -193,6 +193,11 @@ func (metadata Metadata) Environment() map[string]string {
 		env["UNISHELL_SESSION_MULTIPLEXER"] = metadata.Multiplexer
 	}
 
+	if metadata.MultiplexerSessionName != "" {
+		env["UNISHELL_SESSION_MULTIPLEXER_SESSION_NAME"] =
+			metadata.MultiplexerSessionName
+	}
+
 	if metadata.Endpoint != "" {
 		env["UNISHELL_SESSION_MULTIPLEXER_ENDPOINT"] = metadata.Endpoint
 	}
