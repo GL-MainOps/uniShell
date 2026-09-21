@@ -285,7 +285,7 @@ build_profile() {
     "$BUNDLE_BUILDER" \
         -input "$profile_runtime_dir" \
         -output "$profile_bundle_output" \
-        -compress "$compress"
+        -compress="$compress"
 
     if [[ ! -s "$profile_bundle_output" ]]; then
         echo "error: bundle builder did not create $profile_bundle_output" >&2
@@ -343,7 +343,7 @@ echo "==> Generating runtime bundle"
 "$BUNDLE_BUILDER" \
     -input "$RUNTIME_DIR" \
     -output "$BUNDLE_OUTPUT" \
-    -compress "${BUILD_COMPRESS:-true}"
+    -compress="${BUILD_COMPRESS:-true}"
 
 if [[ ! -s "$BUNDLE_OUTPUT" ]]; then
     echo "error: bundle builder did not create $BUNDLE_OUTPUT" >&2
