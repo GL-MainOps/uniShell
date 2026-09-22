@@ -27,6 +27,12 @@ type QuietCommandRunner func(
 	env []string,
 ) ([]byte, error)
 
+const (
+	zellijShellPathEnv = "UNISHELL_ZELLIJ_SHELL_PATH"
+	zellijShellArgsEnv = "UNISHELL_ZELLIJ_SHELL_ARGS"
+	zellijShellScript  = "unishell-zellij-shell"
+)
+
 type Backend struct {
 	Binary         string
 	Run            CommandRunner
@@ -218,6 +224,44 @@ func isManagedServerCommand(
 	return false
 }
 
+func (b *Backend) shellScriptPath(session api.Session) string {
+	if session.Runtime == "" {
+		return zellijShellScript
+	}
+
+	return filepath.Join(
+		session.Runtime,
+		"scripts",
+		zellijShellScript,
+	)
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+func serializeShellArgs(args []string) string {
+	parts := make([]string, 0, len(args))
+
+	for _, arg := range args {
+		parts = append(parts, shellQuote(arg))
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func zellijShellEnvironment(session api.Session) []string {
+	env := append([]string(nil), session.Env...)
+
+	env = append(
+		env,
+		zellijShellPathEnv+"="+session.ShellPath,
+		zellijShellArgsEnv+"="+serializeShellArgs(session.ShellArgs),
+	)
+
+	return env
+}
+
 func (b *Backend) Create(session api.Session) error {
 	_, err := b.create(session)
 	return err
@@ -241,6 +285,14 @@ func (b *Backend) create(
 
 	configPath, err := configResolver.Zellij(
 		session.Runtime,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	configPath, err = prepareSessionConfig(
+		session,
+		configPath,
 	)
 	if err != nil {
 		return "", err
@@ -283,18 +335,13 @@ func (b *Backend) create(
 			args,
 			session.NativeName,
 			"--",
-			session.ShellPath,
-		)
-
-		args = append(
-			args,
-			session.ShellArgs...,
+			b.shellScriptPath(session),
 		)
 
 		if err := b.Run(
 			b.binaryPath(session),
 			args,
-			session.Env,
+			zellijShellEnvironment(session),
 		); err != nil {
 			return "", err
 		}
@@ -314,18 +361,13 @@ func (b *Backend) create(
 		args,
 		nativeName,
 		"--",
-		session.ShellPath,
-	)
-
-	args = append(
-		args,
-		session.ShellArgs...,
+		b.shellScriptPath(session),
 	)
 
 	if err := b.Run(
 		b.binaryPath(session),
 		args,
-		session.Env,
+		zellijShellEnvironment(session),
 	); err != nil {
 		return "", err
 	}

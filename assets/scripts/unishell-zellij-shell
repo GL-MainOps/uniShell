@@ -1,0 +1,15 @@
+#!/bin/sh
+
+if [ -z "${UNISHELL_ZELLIJ_SHELL_PATH:-}" ]; then
+    printf '%s\n' \
+        'unishell-zellij-shell: UNISHELL_ZELLIJ_SHELL_PATH is not set' >&2
+    exit 1
+fi
+
+if [ -n "${UNISHELL_ZELLIJ_SHELL_ARGS:-}" ]; then
+    eval "set -- ${UNISHELL_ZELLIJ_SHELL_ARGS}"
+else
+    set --
+fi
+
+exec "$UNISHELL_ZELLIJ_SHELL_PATH" "$@"

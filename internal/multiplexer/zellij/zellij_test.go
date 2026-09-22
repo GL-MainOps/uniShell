@@ -165,23 +165,22 @@ func TestIsManagedServerCommandRejectsDifferentBinary(t *testing.T) {
 }
 
 func TestCreateUsesBackgroundSession(t *testing.T) {
-	var (
-		gotArgs []string
-		gotEnv  []string
-	)
+	var gotEnvs [][]string
 
-	resolver, configPath := testZellijConfigResolver(t)
+	resolver, _ := testZellijConfigResolver(t)
 
 	backend := &Backend{
 		Binary:         "fake-zellij",
 		ConfigResolver: resolver,
 		Run: func(
 			_ string,
-			args []string,
+			_ []string,
 			env []string,
 		) error {
-			gotArgs = append([]string(nil), args...)
-			gotEnv = append([]string(nil), env...)
+			gotEnvs = append(
+				gotEnvs,
+				append([]string(nil), env...),
+			)
 			return nil
 		},
 	}
@@ -200,36 +199,55 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	wantArgs := []string{
-		"--config",
-		configPath,
-		"attach",
-		"--create-background",
-		"--close-on-exit",
-		"work",
-		"--",
-		"/runtime/bin/bash",
-	}
+if len(gotEnvs) != 1 {
+	t.Fatalf(
+		"Run() call count = %d, want 1",
+		len(gotEnvs),
+	)
+}
 
-	if !reflect.DeepEqual(gotArgs, wantArgs) {
+	gotEnv := gotEnvs[0]
+
+	if len(gotEnv) != len(wantEnv)+2 {
 		t.Fatalf(
-			"args = %#v, want %#v",
-			gotArgs,
-			wantArgs,
+			"environment length = %d, want %d",
+			len(gotEnv),
+			len(wantEnv)+2,
 		)
 	}
 
-	if !reflect.DeepEqual(gotEnv, wantEnv) {
+	if !reflect.DeepEqual(
+		gotEnv[:len(wantEnv)],
+		wantEnv,
+	) {
 		t.Fatalf(
-			"env = %#v, want %#v",
-			gotEnv,
+			"base environment = %#v, want %#v",
+			gotEnv[:len(wantEnv)],
 			wantEnv,
+		)
+	}
+
+	wantShellPathEnv := zellijShellPathEnv + "=/runtime/bin/bash"
+	if gotEnv[len(wantEnv)] != wantShellPathEnv {
+		t.Fatalf(
+			"shell path environment = %q, want %q",
+			gotEnv[len(wantEnv)],
+			wantShellPathEnv,
+		)
+	}
+
+	wantShellArgsEnv := zellijShellArgsEnv + "="
+	if gotEnv[len(wantEnv)+1] != wantShellArgsEnv {
+		t.Fatalf(
+			"shell args environment = %q, want %q",
+			gotEnv[len(wantEnv)+1],
+			wantShellArgsEnv,
 		)
 	}
 }
 
 func TestCreateUsesCloseOnExit(t *testing.T) {
-	var gotArgs []string
+	var gotArgs [][]string
 
 	resolver, configPath := testZellijConfigResolver(t)
 
@@ -241,7 +259,10 @@ func TestCreateUsesCloseOnExit(t *testing.T) {
 			args []string,
 			_ []string,
 		) error {
-			gotArgs = append([]string(nil), args...)
+			gotArgs = append(
+				gotArgs,
+				append([]string(nil), args...),
+			)
 			return nil
 		},
 	}
@@ -254,7 +275,14 @@ func TestCreateUsesCloseOnExit(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	want := []string{
+if len(gotArgs) != 1 {
+	t.Fatalf(
+		"Run() call count = %d, want 1",
+		len(gotArgs),
+	)
+}
+
+	wantCreate := []string{
 		"--config",
 		configPath,
 		"attach",
@@ -262,20 +290,20 @@ func TestCreateUsesCloseOnExit(t *testing.T) {
 		"--close-on-exit",
 		"work",
 		"--",
-		"/runtime/bin/bash",
+		zellijShellScript,
 	}
 
-	if !reflect.DeepEqual(gotArgs, want) {
+	if !reflect.DeepEqual(gotArgs[0], wantCreate) {
 		t.Fatalf(
-			"args = %#v, want %#v",
-			gotArgs,
-			want,
+			"create args = %#v, want %#v",
+			gotArgs[0],
+			wantCreate,
 		)
 	}
 }
 
 func TestCreateUsesSessionShellPath(t *testing.T) {
-	var gotArgs []string
+	var gotArgs [][]string
 
 	resolver, configPath := testZellijConfigResolver(t)
 
@@ -287,7 +315,10 @@ func TestCreateUsesSessionShellPath(t *testing.T) {
 			args []string,
 			_ []string,
 		) error {
-			gotArgs = append([]string(nil), args...)
+			gotArgs = append(
+				gotArgs,
+				append([]string(nil), args...),
+			)
 			return nil
 		},
 	}
@@ -300,7 +331,14 @@ func TestCreateUsesSessionShellPath(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	want := []string{
+if len(gotArgs) != 1 {
+	t.Fatalf(
+		"Run() call count = %d, want 1",
+		len(gotArgs),
+	)
+}
+
+	wantCreate := []string{
 		"--config",
 		configPath,
 		"attach",
@@ -308,20 +346,20 @@ func TestCreateUsesSessionShellPath(t *testing.T) {
 		"--close-on-exit",
 		"work",
 		"--",
-		"/runtime/bin/zsh",
+		zellijShellScript,
 	}
 
-	if !reflect.DeepEqual(gotArgs, want) {
+	if !reflect.DeepEqual(gotArgs[0], wantCreate) {
 		t.Fatalf(
-			"args = %#v, want %#v",
-			gotArgs,
-			want,
+			"create args = %#v, want %#v",
+			gotArgs[0],
+			wantCreate,
 		)
 	}
 }
 
 func TestCreateUsesSessionShellArgs(t *testing.T) {
-	var gotArgs []string
+	var gotArgs [][]string
 
 	resolver, configPath := testZellijConfigResolver(t)
 
@@ -333,7 +371,10 @@ func TestCreateUsesSessionShellArgs(t *testing.T) {
 			args []string,
 			_ []string,
 		) error {
-			gotArgs = append([]string(nil), args...)
+			gotArgs = append(
+				gotArgs,
+				append([]string(nil), args...),
+			)
 			return nil
 		},
 	}
@@ -351,7 +392,14 @@ func TestCreateUsesSessionShellArgs(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	want := []string{
+if len(gotArgs) != 1 {
+	t.Fatalf(
+		"Run() call count = %d, want 1",
+		len(gotArgs),
+	)
+}
+
+	wantCreate := []string{
 		"--config",
 		configPath,
 		"attach",
@@ -359,20 +407,355 @@ func TestCreateUsesSessionShellArgs(t *testing.T) {
 		"--close-on-exit",
 		"work",
 		"--",
-		"/runtime/bin/bash",
-		"--noprofile",
-		"--rcfile",
-		"/runtime/config/shell-generated/work.bash",
+		zellijShellScript,
 	}
 
-	if !reflect.DeepEqual(gotArgs, want) {
+	if !reflect.DeepEqual(gotArgs[0], wantCreate) {
 		t.Fatalf(
-			"zellij invocation args = %#v, want %#v",
-			gotArgs,
+			"create args = %#v, want %#v",
+			gotArgs[0],
+			wantCreate,
+		)
+	}
+}
+
+func TestCreatePropagatesShellProfileEnvironment(t *testing.T) {
+	var gotEnvs [][]string
+
+	runtime := t.TempDir()
+
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			_ []string,
+			env []string,
+		) error {
+			gotEnvs = append(
+				gotEnvs,
+				append([]string(nil), env...),
+			)
+			return nil
+		},
+	}
+
+	err := backend.Create(api.Session{
+		NativeName: "work",
+		Runtime:    runtime,
+		ShellPath:  "/runtime/bin/bash",
+		ShellArgs: []string{
+			"--noprofile",
+			"--rcfile",
+			"/runtime/config/shell-generated/work.bash",
+		},
+		Env: []string{
+			"PATH=/runtime/work/bin:/usr/bin",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+if len(gotEnvs) != 1 {
+	t.Fatalf(
+		"Run() call count = %d, want 1",
+		len(gotEnvs),
+	)
+}
+
+	want := []string{
+		"PATH=/runtime/work/bin:/usr/bin",
+		zellijShellPathEnv + "=/runtime/bin/bash",
+		zellijShellArgsEnv +
+			"='--noprofile' '--rcfile' " +
+			"'/runtime/config/shell-generated/work.bash'",
+	}
+
+	if !reflect.DeepEqual(gotEnvs[0], want) {
+		t.Fatalf(
+			"first invocation env = %#v, want %#v",
+			gotEnvs[0],
 			want,
 		)
 	}
 }
+
+func TestSerializeShellArgsQuotesArguments(t *testing.T) {
+	args := []string{
+		"--rcfile",
+		"/runtime/path/with space/main.bash",
+		"it's-a-value",
+	}
+
+	want :=
+		"'--rcfile' " +
+			"'/runtime/path/with space/main.bash' " +
+			"'it'\"'\"'s-a-value'"
+
+	got := serializeShellArgs(args)
+
+	if got != want {
+		t.Fatalf(
+			"serializeShellArgs() = %q, want %q",
+			got,
+			want,
+		)
+	}
+}
+
+func TestPrepareSessionConfigPreservesPortableConfig(t *testing.T) {
+	runtime := t.TempDir()
+
+	configPath := filepath.Join(
+		runtime,
+		"config",
+		"zellij",
+		"config.kdl",
+	)
+
+	if err := os.MkdirAll(
+		filepath.Dir(configPath),
+		0700,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	const portableConfig = "pane_frames false\n"
+
+	if err := os.WriteFile(
+		configPath,
+		[]byte(portableConfig),
+		0600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	session := api.Session{
+		Runtime:   runtime,
+		ShellPath: "/bin/bash",
+	}
+
+	got, err := prepareSessionConfig(
+		session,
+		configPath,
+	)
+	if err != nil {
+		t.Fatalf(
+			"prepareSessionConfig() returned error: %v",
+			err,
+		)
+	}
+
+	want := filepath.Join(
+		runtime,
+		"config",
+		"zellij",
+		"session-config.kdl",
+	)
+
+	if got != want {
+		t.Fatalf(
+			"config path = %q, want %q",
+			got,
+			want,
+		)
+	}
+
+	gotPortable, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read portable config: %v", err)
+	}
+
+	if string(gotPortable) != portableConfig {
+		t.Fatalf(
+			"portable config changed: %q",
+			string(gotPortable),
+		)
+	}
+
+	gotSession, err := os.ReadFile(got)
+	if err != nil {
+		t.Fatalf("read session config: %v", err)
+	}
+
+	wantDefaultShell := `default_shell "` +
+		filepath.Join(
+			runtime,
+			"scripts",
+			zellijShellScript,
+		) +
+		`"`
+
+	if !strings.Contains(
+		string(gotSession),
+		wantDefaultShell,
+	) {
+		t.Fatalf(
+			"session config does not contain %q:\n%s",
+			wantDefaultShell,
+			string(gotSession),
+		)
+	}
+}
+
+func TestPrepareSessionConfigReplacesDefaultShell(t *testing.T) {
+	runtime := t.TempDir()
+
+	configPath := filepath.Join(
+		runtime,
+		"config",
+		"zellij",
+		"config.kdl",
+	)
+
+	if err := os.MkdirAll(
+		filepath.Dir(configPath),
+		0700,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	const portableConfig = `pane_frames false
+default_shell "/bin/bash"
+`
+
+	if err := os.WriteFile(
+		configPath,
+		[]byte(portableConfig),
+		0600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	session := api.Session{
+		Runtime:   runtime,
+		ShellPath: "/bin/sh",
+	}
+
+	got, err := prepareSessionConfig(
+		session,
+		configPath,
+	)
+	if err != nil {
+		t.Fatalf(
+			"prepareSessionConfig() returned error: %v",
+			err,
+		)
+	}
+
+	data, err := os.ReadFile(got)
+	if err != nil {
+		t.Fatalf("read session config: %v", err)
+	}
+
+	content := string(data)
+
+	wantDefaultShell := `default_shell "` +
+		filepath.Join(
+			runtime,
+			"scripts",
+			zellijShellScript,
+		) +
+		`"`
+
+	if !strings.Contains(content, wantDefaultShell) {
+		t.Fatalf(
+			"session config does not contain %q:\n%s",
+			wantDefaultShell,
+			content,
+		)
+	}
+
+	if strings.Contains(
+		content,
+		`default_shell "/bin/bash"`,
+	) {
+		t.Fatalf(
+			"original default_shell remains in session config:\n%s",
+			content,
+		)
+	}
+}
+
+func TestPrepareSessionConfigIgnoresCommentedDefaultShell(t *testing.T) {
+	runtime := t.TempDir()
+
+	configPath := filepath.Join(
+		runtime,
+		"config",
+		"zellij",
+		"config.kdl",
+	)
+
+	if err := os.MkdirAll(
+		filepath.Dir(configPath),
+		0700,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	const portableConfig = `pane_frames false
+// default_shell "fish"
+`
+
+	if err := os.WriteFile(
+		configPath,
+		[]byte(portableConfig),
+		0600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	session := api.Session{
+		Runtime:   runtime,
+		ShellPath: "/bin/sh",
+	}
+
+	got, err := prepareSessionConfig(
+		session,
+		configPath,
+	)
+	if err != nil {
+		t.Fatalf(
+			"prepareSessionConfig() returned error: %v",
+			err,
+		)
+	}
+
+	data, err := os.ReadFile(got)
+	if err != nil {
+		t.Fatalf("read session config: %v", err)
+	}
+
+	content := string(data)
+
+	if !strings.Contains(
+		content,
+		`// default_shell "fish"`,
+	) {
+		t.Fatalf(
+			"commented default_shell was modified:\n%s",
+			content,
+		)
+	}
+
+	wantDefaultShell := `default_shell "` +
+		filepath.Join(
+			runtime,
+			"scripts",
+			zellijShellScript,
+		) +
+		`"`
+
+	if !strings.Contains(content, wantDefaultShell) {
+		t.Fatalf(
+			"session config does not contain %q:\n%s",
+			wantDefaultShell,
+			content,
+		)
+	}
+}
+
 
 func TestCreateRejectsEmptyShellPath(t *testing.T) {
 	backend := &Backend{
@@ -660,7 +1043,7 @@ func TestDestroyUsesSessionName(t *testing.T) {
 }
 
 func TestCreateUsesConfiguredOptions(t *testing.T) {
-	var gotArgs []string
+	var gotArgs [][]string
 
 	resolver, configPath := testZellijConfigResolver(t)
 
@@ -672,7 +1055,10 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 			args []string,
 			_ []string,
 		) error {
-			gotArgs = append([]string(nil), args...)
+			gotArgs = append(
+				gotArgs,
+				append([]string(nil), args...),
+			)
 			return nil
 		},
 	}
@@ -692,7 +1078,14 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	want := []string{
+if len(gotArgs) != 1 {
+	t.Fatalf(
+		"Run() call count = %d, want 1",
+		len(gotArgs),
+	)
+}
+
+	wantCreate := []string{
 		"--config",
 		configPath,
 		"attach",
@@ -701,14 +1094,14 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 		"--test-option",
 		"work",
 		"--",
-		"/runtime/bin/bash",
+		zellijShellScript,
 	}
 
-	if !reflect.DeepEqual(gotArgs, want) {
+	if !reflect.DeepEqual(gotArgs[0], wantCreate) {
 		t.Fatalf(
-			"args = %#v, want %#v",
-			gotArgs,
-			want,
+			"create args = %#v, want %#v",
+			gotArgs[0],
+			wantCreate,
 		)
 	}
 }
@@ -738,7 +1131,7 @@ func TestCreateUsesBundledConfig(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	var got []string
+	var got [][]string
 
 	backend := &Backend{
 		Binary: "fake-zellij",
@@ -747,7 +1140,10 @@ func TestCreateUsesBundledConfig(t *testing.T) {
 			args []string,
 			_ []string,
 		) error {
-			got = append([]string(nil), args...)
+			got = append(
+				got,
+				append([]string(nil), args...),
+			)
 			return nil
 		},
 	}
@@ -762,25 +1158,79 @@ func TestCreateUsesBundledConfig(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	wantPrefix := []string{
+if len(got) != 1 {
+	t.Fatalf(
+		"Run() call count = %d, want 1",
+		len(got),
+	)
+}
+
+	sessionConfig := filepath.Join(
+		runtime,
+		"config",
+		"zellij",
+		"session-config.kdl",
+	)
+
+	wantCreate := []string{
 		"--config",
-		config,
+		sessionConfig,
 		"attach",
 		"--create-background",
 		"--close-on-exit",
+		"work",
+		"--",
+		filepath.Join(
+			runtime,
+			"scripts",
+			zellijShellScript,
+		),
 	}
 
-	if len(got) < len(wantPrefix) ||
-		!reflect.DeepEqual(
-			got[:len(wantPrefix)],
-			wantPrefix,
-		) {
+	if !reflect.DeepEqual(got[0], wantCreate) {
 		t.Fatalf(
-			"args = %#v, want prefix %#v",
-			got,
-			wantPrefix,
+			"create args = %#v, want %#v",
+			got[0],
+			wantCreate,
 		)
 	}
+
+	portableConfig, err := os.ReadFile(config)
+	if err != nil {
+		t.Fatalf("read portable config: %v", err)
+	}
+
+	if string(portableConfig) != "pane_frames false\n" {
+		t.Fatalf(
+			"portable config changed: %q",
+			string(portableConfig),
+		)
+	}
+
+	sessionConfigData, err := os.ReadFile(sessionConfig)
+	if err != nil {
+		t.Fatalf("read session config: %v", err)
+	}
+
+	wantDefaultShell := `default_shell "` +
+		filepath.Join(
+			runtime,
+			"scripts",
+			zellijShellScript,
+		) +
+		`"`
+
+	if !strings.Contains(
+		string(sessionConfigData),
+		wantDefaultShell,
+	) {
+		t.Fatalf(
+			"session config does not contain %q:\n%s",
+			wantDefaultShell,
+			string(sessionConfigData),
+		)
+	}
+
 }
 
 func TestCreateRejectsLifecycleOptions(t *testing.T) {
@@ -826,7 +1276,7 @@ func TestCreateRejectsLifecycleOptions(t *testing.T) {
 }
 
 func TestCreateWithNativeNamePreservesExplicitName(t *testing.T) {
-	var gotArgs []string
+	var gotArgs [][]string
 
 	resolver, configPath := testZellijConfigResolver(t)
 
@@ -838,7 +1288,10 @@ func TestCreateWithNativeNamePreservesExplicitName(t *testing.T) {
 			args []string,
 			_ []string,
 		) error {
-			gotArgs = append([]string(nil), args...)
+			gotArgs = append(
+				gotArgs,
+				append([]string(nil), args...),
+			)
 			return nil
 		},
 		RunQuiet: func(
@@ -872,7 +1325,14 @@ func TestCreateWithNativeNamePreservesExplicitName(t *testing.T) {
 		)
 	}
 
-	want := []string{
+if len(gotArgs) != 1 {
+	t.Fatalf(
+		"Run() call count = %d, want 1",
+		len(gotArgs),
+	)
+}
+
+	wantCreate := []string{
 		"--config",
 		configPath,
 		"attach",
@@ -880,14 +1340,14 @@ func TestCreateWithNativeNamePreservesExplicitName(t *testing.T) {
 		"--close-on-exit",
 		"work",
 		"--",
-		"/bin/bash",
+		zellijShellScript,
 	}
 
-	if !reflect.DeepEqual(gotArgs, want) {
+	if !reflect.DeepEqual(gotArgs[0], wantCreate) {
 		t.Fatalf(
-			"args = %#v, want %#v",
-			gotArgs,
-			want,
+			"create args = %#v, want %#v",
+			gotArgs[0],
+			wantCreate,
 		)
 	}
 }
@@ -895,7 +1355,7 @@ func TestCreateWithNativeNamePreservesExplicitName(t *testing.T) {
 func TestCreateWithNativeNameGeneratesNativeName(
 	t *testing.T,
 ) {
-	var gotArgs []string
+	var gotArgs [][]string
 
 	resolver, configPath := testZellijConfigResolver(t)
 
@@ -907,7 +1367,10 @@ func TestCreateWithNativeNameGeneratesNativeName(
 			args []string,
 			_ []string,
 		) error {
-			gotArgs = append([]string(nil), args...)
+			gotArgs = append(
+				gotArgs,
+				append([]string(nil), args...),
+			)
 			return nil
 		},
 	}
@@ -929,7 +1392,14 @@ func TestCreateWithNativeNameGeneratesNativeName(
 		)
 	}
 
-	wantPrefix := []string{
+if len(gotArgs) != 1 {
+	t.Fatalf(
+		"Run() call count = %d, want 1",
+		len(gotArgs),
+	)
+}
+
+	wantCreatePrefix := []string{
 		"--config",
 		configPath,
 		"attach",
@@ -937,40 +1407,46 @@ func TestCreateWithNativeNameGeneratesNativeName(
 		"--close-on-exit",
 	}
 
-	if len(gotArgs) < len(wantPrefix)+3 {
+	if len(gotArgs[0]) < len(wantCreatePrefix)+3 {
 		t.Fatalf(
-			"args = %#v, want generated session name and shell",
-			gotArgs,
+			"create args = %#v, want generated session name and shell",
+			gotArgs[0],
 		)
 	}
 
 	if !reflect.DeepEqual(
-		gotArgs[:len(wantPrefix)],
-		wantPrefix,
+		gotArgs[0][:len(wantCreatePrefix)],
+		wantCreatePrefix,
 	) {
 		t.Fatalf(
-			"args prefix = %#v, want %#v",
-			gotArgs[:len(wantPrefix)],
-			wantPrefix,
+			"create args prefix = %#v, want %#v",
+			gotArgs[0][:len(wantCreatePrefix)],
+			wantCreatePrefix,
 		)
 	}
 
-	if gotArgs[5] != got {
+	if gotArgs[0][5] != got {
 		t.Fatalf(
 			"session name argument = %q, want %q",
-			gotArgs[5],
+			gotArgs[0][5],
 			got,
 		)
 	}
 
 	if !reflect.DeepEqual(
-		gotArgs[6:],
-		[]string{"--", "/bin/bash"},
+		gotArgs[0][6:],
+		[]string{
+			"--",
+			zellijShellScript,
+		},
 	) {
 		t.Fatalf(
-			"shell args = %#v, want %#v",
-			gotArgs[6:],
-			[]string{"--", "/bin/bash"},
+			"create shell args = %#v, want %#v",
+			gotArgs[0][6:],
+			[]string{
+				"--",
+				zellijShellScript,
+			},
 		)
 	}
 }
