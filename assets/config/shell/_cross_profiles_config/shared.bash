@@ -1,4 +1,3 @@
-
 ################################################
 ## SHELL PRE-INIT STEPS
 ################################################
@@ -15,9 +14,9 @@ if [ -f /etc/bashrc ]; then
     . /etc/bashrc
 fi
 ################################################
-if getconf GNU_LIBC_VERSION >/dev/null 2>&1; then
-    enable flyline 2>/dev/null || enable -f "$UNISHELL_SESSION_RUNTIME_DIR/bin/libflyline.so.1.8.0" flyline
-fi
+
+
+
 ################################################
 ## VARIABLES
 ################################################
@@ -32,14 +31,12 @@ for cmd in "${!TERMVIEWERS[@]}"; do
     command -v "$cmd" >/dev/null 2>&1 && eval "${TERMVIEWERS[$cmd]}"
 done
 
-export UNISHELL_CONFIG="$(eval echo "$UNISHELL_CONFIG_PATH")"
-export SHELL_CONFIG="$UNISHELL_CONFIG/shell"
-
 # `sudo -E` ALTERMATIVE
-export SUDO_PRESERVED_VARIABLES="EDITOR,MANPAGER,PAGER,PATH,TMUX,SSH_AUTH_SOCK,UNISHELL_SESSION_RUNTIME_DIR"
-
-# export VIM_CACHE_HOME="/tmp/.vim-private-tmp"
+UNISHELL_ENVS=$(IFS=,; echo "${!UNISHELL_*}")
+export SUDO_PRESERVED_VARIABLES="$SUDO_INITIAL_PRESERVED_VARIABLES,$UNISHELL_ENVS"
 ################################################
+
+
 
 ################################################
 ## EVALS & COMPLETIONS
@@ -59,7 +56,7 @@ do
 done
 
 # STATIC COMPLETION FILES
-for file in $(fd -e bash -t f . "${SHELL_CONFIG}/_completions"); do
+for file in $(fd -e bash -t f . "${UNISHELL_CONFIG_SHELL_PATH}/_completions"); do
     source "$file"
 done
 
@@ -109,10 +106,12 @@ eval "$(fzf --bash)"
 eval "$(zoxide init bash)"
 ################################################
 
+
+
 ################################################
 ## FUNCTIONS
 ################################################
-for file in $(fd -e bash -t f . "${SHELL_CONFIG}/_functions"); do
+for file in $(fd -e bash -t f . "${UNISHELL_CONFIG_SHELL_PATH}/_functions"); do
     source "$file"
 done
 
@@ -128,10 +127,12 @@ mkcd() {
 ################################################
 ## KEYBINDS
 ################################################
-for file in $(fd -e bash -t f . "${SHELL_CONFIG}/_keybinds"); do
+for file in $(fd -e bash -t f . "${UNISHELL_CONFIG_SHELL_PATH}/_keybinds"); do
     source "$file"
 done
 ################################################
+
+
 
 ################################################
 ## SHELL OPTS
@@ -177,12 +178,14 @@ shopt -s checkhash                          # Re-check hashed command paths if c
 
 ################################################
 
+
+
 ################################################
 ## PROGRAMS-RELATED CONFIG
 ################################################
 
 ### VIM
-vimrc="$UNISHELL_CONFIG/vim/vimrc"
+vimrc="$UNISHELL_CONFIG_PATH/vim/vimrc"
 
 if [[ -f $vimrc ]]; then
     for a in v vi vim; do
@@ -193,39 +196,8 @@ else
     echo -e "\nFailed to set VIM aliases. VIMRC file not found\n" >&2
 fi
 
-### GIT
-export GIT_CONFIG_PARAMETERS="'core.sshCommand'='ssh -o StrictHostKeyChecking=no' 'color.ui'='auto' 'diff.mnemonicPrefix'='true' 'diff.renames'='true' 'diff.tool'='vimdiff' 'status.submoduleSummary'='true' 'status.showUntrackedFiles'='all' 'color.branch.upstream'='cyan' 'init.defaultBranch'='main' "
-
-### FZF
-if command -v fzf &>/dev/null; then
-    export FZF_DEFAULT_COMMAND="fd --hidden --exclude \".(git|cache)\""
-    export FZF_DEFAULT_OPTS="--ansi --info=default  --color  --multi  --margin=5%  --padding=2%  --height 80%  --prompt='❯❯❯ ' --marker='✓ ' --pointer='▶' --header-first --layout=reverse  --border=rounded  --preview '[[ -d {} ]] && eza --group-directories-first -AMlF --no-permissions --no-user --no-time --total-size --tree --level=2 --color=always --icons=auto {} || bat --style=full --color=always --paging=never --line-range :500 {}' --bind 'ctrl-/:toggle-preview'"
-
-    export FZF_CTRL_R_OPTS="--border-label 'SHELL HISTORY' --preview 'echo {}' --preview-window='down:25%:wrap' --layout=default"
-
-    export FZF_ALT_C_OPTS="--border-label 'FIND DIRECTORIES' --preview 'eza --group-directories-first -AMlF --no-permissions --no-user --no-time --total-size --tree --level=2 --color=always --icons=auto {}' --preview-window='right:50%:wrap'"
-    export FZF_ALT_C_COMMAND="fd --type d --hidden --exclude '.git' --exclude '.cache'"
-
-    export FZF_CTRL_T_OPTS="--border-label 'FIND FILES' --preview 'bat --style=full --color=always --paging=never --line-range :500 {}' --preview-window='right:60%:wrap'"
-    export FZF_CTRL_T_COMMAND="fd --type f --hidden --exclude '.git' --exclude '.cache'"
-
-
-    export _ZO_FZF_OPTS="--border-label 'ZOXIDE RECENT DIRECTORIES' --ansi --info=default  --color  --margin=5%  --padding=2%  --height 80%  --prompt='❯❯❯ ' --marker='✓ ' --pointer='▶' --header-first --layout=reverse  --border=rounded  --delimiter='\t' --preview 'eza --group-directories-first -AMlF --no-permissions --no-user --no-time --total-size --tree --level=2 --color=always --icons=auto {2}' --preview-window='right:60%:wrap' --bind 'ctrl-/:toggle-preview'"
-fi
 ################################################
 
-################################################
-## Initialization Command
-################################################
-
-## function tx() {
-##   [ -x "$(command -v tmux)" ] && [ -z "${TMUX}" ] && { [ -f "$usHOME/.tmux.conf" ] && (tmux -S "$us_TMUX_SOCKET" -f "$usHOME/.tmux.conf" attach || tmux -S "$us_TMUX_SOCKET" -f "$usHOME/.tmux.conf") || (tmux -S "$us_TMUX_SOCKET" attach || tmux -S "$us_TMUX_SOCKET"); } >/dev/null 2>&1
-## }
-
-## if [ -z "$TMUX" ] && [ $EUID -ne 0 ]; then
-## 	trap "rm -rf $TOOLS_DIR $usHOME/.tmux.conf $usHOME/.vimrc && if ! tmux -S "$us_TMUX_SOCKET" list-sessions &>/dev/null; then rm -rf "$us_TMUX_SOCKET"; fi" EXIT
-## fi
-## # echo "Configuration loaded successfully!"
 
 
 # vim: set ft=bash:

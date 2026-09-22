@@ -1,39 +1,100 @@
 [environment]
+###############################
+## GENERIC VARIABLES
+###############################
 LANG = "en_US.UTF-8"
 LANGUAGE = "en_US.UTF-8"
 LC_ALL = "en_US.UTF-8"
 
 USER_PROMPT = '\[\033[01;37m\][\[\033[01;32m\]\u\[\033[37m\]@\[\033[38;5;214m\]\h \[\033[01;34m\]\w\[\033[01;37m\]] \[\033[48;5;17m\033[48;5;52m\] \$ \[\033[00m\] '
-ROOT_PROMPT = '\[\033[01;37m\][\[\033[01;31m\]\u\[\033[37m\]@\[\033[38;5;214m\]\h \[\033[01;34m\]\w\[\033[01;37m\]] \[\033[48;5;17m\033[48;5;52m\] \$ \[\033[00m\] '
+ROOT_PROMPT = '\[\033[01;37m\][\[\033[01;31m\]\u\[\033[37m\]@\[\033[38;5;214m\]\h \[\033[01;34m\]\w\[\033[01;37m\]] ⚠️ \[\033[48;5;17m\033[48;5;52m\] \$ \[\033[00m\] '
 
+
+
+###############################
+## UNISHELL VARIABLES
+###############################
 UNISHELL_CONFIG_PATH = "${UNISHELL_SESSION_RUNTIME_DIR}/config"
+UNISHELL_CONFIG_SHELL_PATH = "${UNISHELL_CONFIG_PATH}/shell"
 
-# [path]
-# add = [
-# ]
+
+
+###############################
+## PROGRAM-SPECIFIC VARIABLES
+###############################
+### GIT
+GIT_CONFIG_PARAMETERS="'core.sshCommand'='ssh -o StrictHostKeyChecking=no' 'color.ui'='auto' 'diff.mnemonicPrefix'='true' 'diff.renames'='true' 'diff.tool'='vimdiff' 'status.submoduleSummary'='true' 'status.showUntrackedFiles'='all' 'color.branch.upstream'='cyan' 'init.defaultBranch'='main' "
+
+
+### FZF
+###### DEFAULT COMMAND
+FZF_DEFAULT_COMMAND = 'fd --hidden --exclude ".(git|cache)"'
+FZF_DEFAULT_OPTS = '--ansi --info=default  --color  --multi  --margin=5%  --padding=2%  --height 80%  --prompt="❯❯❯ " --marker="✓ " --pointer="▶ " --header-first --layout=reverse  --border=rounded  --preview "[[ -d {} ]] && eza --group-directories-first -AMlF --no-permissions --no-user --no-time --total-size --tree --level=2 --color=always --icons=auto {} || bat --style=full --color=always --paging=never --line-range :500 {}" --bind "ctrl-/:toggle-preview"'
+
+###### CTRL_R
+FZF_CTRL_R_OPTS = '--border-label "SHELL HISTORY" --preview "echo {}" --preview-window="down:25%:wrap" --layout=default'
+
+###### CTRL_T
+FZF_CTRL_T_COMMAND = 'fd --type f --hidden --exclude ".git" --exclude ".cache"'
+FZF_CTRL_T_OPTS = '--border-label "FIND FILES" --preview "bat --style=full --color=always --paging=never --line-range :500 {}" --preview-window="right:60%:wrap"'
+
+###### ALT_C
+FZF_ALT_C_COMMAND = 'fd --type d --hidden --exclude ".git" --exclude ".cache"'
+FZF_ALT_C_OPTS = '--border-label "FIND DIRECTORIES" --preview "eza --group-directories-first -AMlF --no-permissions --no-user --no-time --total-size --tree --level=2 --color=always --icons=auto {}" --preview-window="right:50%:wrap"'
+
+###### ZOXIDE
+_ZO_FZF_OPTS = '--border-label "ZOXIDE RECENT DIRECTORIES" --ansi --info=default  --color  --margin=5%  --padding=2%  --height 80%  --prompt="❯❯❯ " --marker="✓ " --pointer="▶ " --header-first --layout=reverse  --border=rounded  --delimiter="\t" --preview "eza --group-directories-first -AMlF --no-permissions --no-user --no-time --total-size --tree --level=2 --color=always --icons=auto {2}" --preview-window="right:60%:wrap" --bind "ctrl-/:toggle-preview"'
+
+
+### SUDO
+SUDO_INITIAL_PRESERVED_VARIABLES = "EDITOR,MANPAGER,PAGER,PATH,TMUX,SSH_AUTH_SOCK"
+
+
+### VIM
+# VIM_CACHE_HOME = "/tmp/.vim-private-tmp"
+
+
 
 [aliases]
-
-# LINIX TOOLS
+###############################
+## GENERIC ALIASES
+###############################
 ssh = "ssh -o StrictHostKeyChecking=no"
-ports = "sudo lsof -i -P -n | grep LISTEN"
-cd = "z"
+# ports = "sudo lsof -i -P -n | grep LISTEN"
 
-# BAT
-cat = "bat -p"
+
+
+###############################
+## PROGRAM-SPECIFIC ALIASES
+###############################
+### BAT
 less = "bat --paging=always"
+cat = "bat -p"
 
-# EZA
+
+### EZA
 l1 = "eza --icons=auto --classify --almost-all --sort changed --time-style relative -l --no-user --no-permissions --total-size"
-
 l = "eza --icons=auto --classify --group-directories-first"
 ls = "eza --icons=auto --classify --group-directories-first"
 la = "eza --icons=auto --classify --almost-all --group-directories-first"
 ll = "eza --icons=auto --classify --group-directories-first -l --group"
 lla = "eza --icons=auto --classify --almost-all --group-directories-first -l --group"
 
+
+### HAVN
+ports = "havn -a localhost"
+
 # NGINX
 ngxt = "sudo nginx -t"
 ngxr = "sudo nginx -s reload"
 
+
+### ZOXIDE
+cd = "z"
 zz = "zi"
+
+
+# [path]
+# add = [
+# ]
+

@@ -1,8 +1,7 @@
 
 # Elivate safely
 es() {
-    local rcfile="$(fd -e bash -t f . $UNISHELL_SESSION_RUNTIME_DIR/config/shell-generated/)"
-    sudo --preserve-env=$SUDO_PRESERVED_VARIABLES bash --rcfile "$rcfile"
+    sudo --preserve-env=$SUDO_PRESERVED_VARIABLES bash --rcfile "$UNISHELL_CONFIG_PATH/shell-generated/$UNISHELL_SESSION_SHELL_PROFILE.bash"
 }
 
 ### DOUPLE ESC = SUDO <previous command>

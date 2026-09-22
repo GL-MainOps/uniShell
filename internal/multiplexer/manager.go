@@ -138,18 +138,18 @@ func (m *Manager) Create(
 		)
 	}
 
-    runtimeSessionName := existingMetadata.Name
-    if runtimeSessionName == "" {
-        runtimeSessionName = sessionName
-    }
+	runtimeSessionName := existingMetadata.Name
+	if runtimeSessionName == "" {
+		runtimeSessionName = sessionName
+	}
 
-    var sessionMetadata = sessionmeta.Metadata{
-        ID:                     id,
-        Version:                filepath.Base(filepath.Dir(runtimePath)),
-        Mode:                   sessionmeta.ModeMultiplexer,
-        Name:                   runtimeSessionName,
-        NativeName:              nativeName,
-        MultiplexerSessionName: sessionName,
+	var sessionMetadata = sessionmeta.Metadata{
+		ID:                     id,
+		Version:                filepath.Base(filepath.Dir(runtimePath)),
+		Mode:                   sessionmeta.ModeMultiplexer,
+		Name:                   runtimeSessionName,
+		NativeName:             nativeName,
+		MultiplexerSessionName: sessionName,
 		Multiplexer:            backendName,
 		Endpoint:               endpoint,
 		ShellName:              shellName,
