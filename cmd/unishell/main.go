@@ -548,6 +548,11 @@ func runMultiplexerShell(
 		return cleanupRuntime(err)
 	}
 
+	startup = setSessionEnvironment(
+		startup,
+		sessionEnvironment,
+	)
+
 	session, err = application.CreateMultiplexerSession(
 		runtimeSession,
 		multiplexerName,
