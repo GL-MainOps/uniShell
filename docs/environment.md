@@ -8,6 +8,94 @@ Command-line flags take precedence over environment variables.
 Some environment variables are configuration inputs, while others are
 provided by uniShell to describe the active runtime session.
 
+## Shell Configuration Interpolation
+
+Shared shell configuration supports variable interpolation using the
+`${NAME}` syntax.
+
+Interpolation is resolved before shell-specific adapters render the
+configuration. The same resolved values are therefore used by Bash, Zsh,
+Fish, and Nushell.
+
+Interpolation is supported in:
+
+- `[environment]` values;
+- `[path]` entries;
+- `[aliases]` values.
+
+For example:
+
+```toml
+[environment]
+BASE_DIR = "${HOME}/.local"
+BIN_DIR = "${BASE_DIR}/bin"
+
+[path]
+add = [
+    "${BIN_DIR}",
+]
+
+[aliases]
+work = "cd ${BASE_DIR}"
+```
+
+`${NAME}` references are resolved using the following precedence:
+
+```text
+[environment] configuration
+        ↓
+uniShell session environment
+        ↓
+process/system environment
+        ↓
+error
+```
+
+Configuration variables may reference other configuration variables.
+References are resolved recursively.
+
+For example:
+
+```toml
+[environment]
+BASE_DIR = "${HOME}/.local"
+BIN_DIR = "${BASE_DIR}/bin"
+```
+
+If `HOME` is `/home/example`, `BIN_DIR` resolves to:
+
+```text
+/home/example/.local/bin
+```
+
+Unknown variables are errors. Circular references between configuration
+variables are also errors.
+
+Interpolation only recognizes `${NAME}` references. Shell expansion is
+not performed by the interpolation resolver.
+
+Therefore, expressions such as:
+
+```text
+$HOME
+$(whoami)
+```
+
+remain literal configuration values.
+
+The resolver does not execute shell code or perform command substitution.
+
+`UNISHELL_SESSION_RUNTIME_DIR` is provided by uniShell for the active
+session and can therefore be referenced from shared shell configuration:
+
+```toml
+[environment]
+CONFIG_DIR = "${UNISHELL_SESSION_RUNTIME_DIR}/config"
+```
+
+The session runtime directory is supplied when the shell starts and is
+not persisted as part of the session metadata.
+
 ## Global Configuration
 
 ### `UNISHELL_AUTH_TOKEN`

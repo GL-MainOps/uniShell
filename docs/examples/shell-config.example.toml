@@ -31,9 +31,35 @@
 # Set environment variables in the generated shell configuration.
 #
 # EDITOR = "vim"
-# VISUAL = "$EDITOR"
 # PAGER = "less"
 # FZF_DEFAULT_OPTS = "--height=40%"
+#
+# Values support uniShell interpolation using the `${NAME}` syntax.
+# References can resolve from:
+#   1. [environment] configuration values
+#   2. the active uniShell session environment
+#   3. the process/system environment
+#
+# Example:
+#
+# BASE_DIR = "${HOME}/.local"
+# BIN_DIR = "${BASE_DIR}/bin"
+#
+# Interpolation also works in PATH entries and aliases.
+#
+# [path]
+# add = [
+#     "${BIN_DIR}",
+# ]
+#
+# [aliases]
+# work = "cd ${BASE_DIR}"
+#
+# Only `${NAME}` is interpreted by uniShell.
+# Shell expansion and command substitution are not performed.
+#
+# `$HOME` remains literal.
+# `$(whoami)` remains literal.
 
 # ---------------------------------------------------------------------------
 # PATH
@@ -45,16 +71,16 @@
 #
 # [path]
 # add = [
-#     "$HOME/.local/bin",
-#     "$HOME/bin",
+#     "${HOME}/.local/bin",
+#     "${HOME}/bin",
 # ]
 
 # Multiple entries are supported and retain their declared order.
 #
 # add = [
-#     "$HOME/.local/bin",
-#     "$HOME/bin",
-#     "$UNISHELL_BIN",
+#     "${HOME}/.local/bin",
+#     "${HOME}/bin",
+#     "${UNISHELL_BIN}",
 # ]
 
 # ---------------------------------------------------------------------------
@@ -76,12 +102,12 @@
 
 # [environment]
 # EDITOR = "vim"
-# VISUAL = "$EDITOR"
+# BASE_DIR = "${HOME}/.local"
+# BIN_DIR = "${BASE_DIR}/bin"
 #
 # [path]
 # add = [
-#     "$HOME/.local/bin",
-#     "$HOME/bin",
+#     "${BIN_DIR}",
 # ]
 #
 # [aliases]
