@@ -199,12 +199,12 @@ func TestCreateUsesBackgroundSession(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-if len(gotEnvs) != 1 {
-	t.Fatalf(
-		"Run() call count = %d, want 1",
-		len(gotEnvs),
-	)
-}
+	if len(gotEnvs) != 1 {
+		t.Fatalf(
+			"Run() call count = %d, want 1",
+			len(gotEnvs),
+		)
+	}
 
 	gotEnv := gotEnvs[0]
 
@@ -275,12 +275,12 @@ func TestCreateUsesCloseOnExit(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-if len(gotArgs) != 1 {
-	t.Fatalf(
-		"Run() call count = %d, want 1",
-		len(gotArgs),
-	)
-}
+	if len(gotArgs) != 1 {
+		t.Fatalf(
+			"Run() call count = %d, want 1",
+			len(gotArgs),
+		)
+	}
 
 	wantCreate := []string{
 		"--config",
@@ -331,12 +331,12 @@ func TestCreateUsesSessionShellPath(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-if len(gotArgs) != 1 {
-	t.Fatalf(
-		"Run() call count = %d, want 1",
-		len(gotArgs),
-	)
-}
+	if len(gotArgs) != 1 {
+		t.Fatalf(
+			"Run() call count = %d, want 1",
+			len(gotArgs),
+		)
+	}
 
 	wantCreate := []string{
 		"--config",
@@ -392,12 +392,12 @@ func TestCreateUsesSessionShellArgs(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-if len(gotArgs) != 1 {
-	t.Fatalf(
-		"Run() call count = %d, want 1",
-		len(gotArgs),
-	)
-}
+	if len(gotArgs) != 1 {
+		t.Fatalf(
+			"Run() call count = %d, want 1",
+			len(gotArgs),
+		)
+	}
 
 	wantCreate := []string{
 		"--config",
@@ -456,12 +456,12 @@ func TestCreatePropagatesShellProfileEnvironment(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-if len(gotEnvs) != 1 {
-	t.Fatalf(
-		"Run() call count = %d, want 1",
-		len(gotEnvs),
-	)
-}
+	if len(gotEnvs) != 1 {
+		t.Fatalf(
+			"Run() call count = %d, want 1",
+			len(gotEnvs),
+		)
+	}
 
 	want := []string{
 		"PATH=/runtime/work/bin:/usr/bin",
@@ -755,7 +755,6 @@ func TestPrepareSessionConfigIgnoresCommentedDefaultShell(t *testing.T) {
 		)
 	}
 }
-
 
 func TestCreateRejectsEmptyShellPath(t *testing.T) {
 	backend := &Backend{
@@ -1078,12 +1077,12 @@ func TestCreateUsesConfiguredOptions(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-if len(gotArgs) != 1 {
-	t.Fatalf(
-		"Run() call count = %d, want 1",
-		len(gotArgs),
-	)
-}
+	if len(gotArgs) != 1 {
+		t.Fatalf(
+			"Run() call count = %d, want 1",
+			len(gotArgs),
+		)
+	}
 
 	wantCreate := []string{
 		"--config",
@@ -1158,12 +1157,12 @@ func TestCreateUsesBundledConfig(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-if len(got) != 1 {
-	t.Fatalf(
-		"Run() call count = %d, want 1",
-		len(got),
-	)
-}
+	if len(got) != 1 {
+		t.Fatalf(
+			"Run() call count = %d, want 1",
+			len(got),
+		)
+	}
 
 	sessionConfig := filepath.Join(
 		runtime,
@@ -1325,12 +1324,12 @@ func TestCreateWithNativeNamePreservesExplicitName(t *testing.T) {
 		)
 	}
 
-if len(gotArgs) != 1 {
-	t.Fatalf(
-		"Run() call count = %d, want 1",
-		len(gotArgs),
-	)
-}
+	if len(gotArgs) != 1 {
+		t.Fatalf(
+			"Run() call count = %d, want 1",
+			len(gotArgs),
+		)
+	}
 
 	wantCreate := []string{
 		"--config",
@@ -1352,7 +1351,40 @@ if len(gotArgs) != 1 {
 	}
 }
 
-func TestCreateWithNativeNameGeneratesNativeName(
+func TestCreateWithNativeNameRejectsEmptyNativeAndSessionName(
+	t *testing.T,
+) {
+	backend := &Backend{
+		Binary: "fake-zellij",
+		Run: func(
+			_ string,
+			_ []string,
+			_ []string,
+		) error {
+			t.Fatal("Run() must not be called")
+			return nil
+		},
+	}
+
+	_, err := backend.CreateWithNativeName(api.Session{
+		ShellPath: "/bin/bash",
+	})
+	if err == nil {
+		t.Fatal(
+			"CreateWithNativeName() returned nil error, want empty native name error",
+		)
+	}
+
+	if err.Error() != "zellij native session name cannot be empty" {
+		t.Fatalf(
+			"CreateWithNativeName() error = %q, want %q",
+			err.Error(),
+			"zellij native session name cannot be empty",
+		)
+	}
+}
+
+func TestCreateWithNativeNameUsesSessionNameWhenNativeNameIsEmpty(
 	t *testing.T,
 ) {
 	var gotArgs [][]string
@@ -1375,7 +1407,10 @@ func TestCreateWithNativeNameGeneratesNativeName(
 		},
 	}
 
+	const sessionName = "work@xyz"
+
 	got, err := backend.CreateWithNativeName(api.Session{
+		Name:      sessionName,
 		ShellPath: "/bin/bash",
 	})
 	if err != nil {
@@ -1385,68 +1420,37 @@ func TestCreateWithNativeNameGeneratesNativeName(
 		)
 	}
 
-	if !strings.HasPrefix(got, "unishell-") {
+	if got != sessionName {
 		t.Fatalf(
-			"native name = %q, want unishell- prefix",
+			"native name = %q, want %q",
 			got,
+			sessionName,
 		)
 	}
 
-if len(gotArgs) != 1 {
-	t.Fatalf(
-		"Run() call count = %d, want 1",
-		len(gotArgs),
-	)
-}
+	if len(gotArgs) != 1 {
+		t.Fatalf(
+			"Run() call count = %d, want 1",
+			len(gotArgs),
+		)
+	}
 
-	wantCreatePrefix := []string{
+	wantCreate := []string{
 		"--config",
 		configPath,
 		"attach",
 		"--create-background",
 		"--close-on-exit",
+		sessionName,
+		"--",
+		zellijShellScript,
 	}
 
-	if len(gotArgs[0]) < len(wantCreatePrefix)+3 {
+	if !reflect.DeepEqual(gotArgs[0], wantCreate) {
 		t.Fatalf(
-			"create args = %#v, want generated session name and shell",
+			"create args = %#v, want %#v",
 			gotArgs[0],
-		)
-	}
-
-	if !reflect.DeepEqual(
-		gotArgs[0][:len(wantCreatePrefix)],
-		wantCreatePrefix,
-	) {
-		t.Fatalf(
-			"create args prefix = %#v, want %#v",
-			gotArgs[0][:len(wantCreatePrefix)],
-			wantCreatePrefix,
-		)
-	}
-
-	if gotArgs[0][5] != got {
-		t.Fatalf(
-			"session name argument = %q, want %q",
-			gotArgs[0][5],
-			got,
-		)
-	}
-
-	if !reflect.DeepEqual(
-		gotArgs[0][6:],
-		[]string{
-			"--",
-			zellijShellScript,
-		},
-	) {
-		t.Fatalf(
-			"create shell args = %#v, want %#v",
-			gotArgs[0][6:],
-			[]string{
-				"--",
-				zellijShellScript,
-			},
+			wantCreate,
 		)
 	}
 }

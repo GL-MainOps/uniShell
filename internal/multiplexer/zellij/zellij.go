@@ -1,8 +1,6 @@
 package zellij
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -330,6 +328,10 @@ func (b *Backend) create(
 		session.Options.Zellij.CreateArgs...,
 	)
 
+	if session.NativeName == "" {
+		session.NativeName = session.Name
+	}
+
 	if session.NativeName != "" {
 		args = append(
 			args,
@@ -349,42 +351,9 @@ func (b *Backend) create(
 		return session.NativeName, nil
 	}
 
-	nativeName, err := generateNativeName()
-	if err != nil {
-		return "", fmt.Errorf(
-			"generate zellij native session name: %w",
-			err,
-		)
-	}
-
-	args = append(
-		args,
-		nativeName,
-		"--",
-		b.shellScriptPath(session),
+	return "", fmt.Errorf(
+		"zellij native session name cannot be empty",
 	)
-
-	if err := b.Run(
-		b.binaryPath(session),
-		args,
-		zellijShellEnvironment(session),
-	); err != nil {
-		return "", err
-	}
-
-	return nativeName, nil
-}
-
-func generateNativeName() (string, error) {
-	const size = 16
-
-	data := make([]byte, size)
-
-	if _, err := rand.Read(data); err != nil {
-		return "", err
-	}
-
-	return "unishell-" + hex.EncodeToString(data), nil
 }
 
 func (b *Backend) Attach(session api.Session) error {
