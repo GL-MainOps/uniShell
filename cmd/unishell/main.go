@@ -41,6 +41,36 @@ func newApplication(options cliOptions) (*app.App, error) {
 	})
 }
 
+func environmentMap(entries []string) map[string]string {
+	result := make(map[string]string, len(entries))
+
+	for _, entry := range entries {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || key == "" {
+			continue
+		}
+
+		result[key] = value
+	}
+
+	return result
+}
+
+func interpolationEnvironment(
+	sessionEnvironment map[string]string,
+	runtimeDir string,
+) (map[string]string, map[string]string) {
+	if sessionEnvironment == nil {
+		sessionEnvironment = make(map[string]string)
+	}
+
+	sessionEnvironment[shell.SessionRuntimeDirEnvName] = runtimeDir
+
+	systemEnvironment := environmentMap(os.Environ())
+
+	return sessionEnvironment, systemEnvironment
+}
+
 func main() {
 	options, args, err := parseCLIArgs(os.Args[1:])
 	if err != nil {
@@ -228,6 +258,8 @@ func prepareShellStartup(
 	application shellApplication,
 	selected shell.Shell,
 	runtimeDir string,
+	sessionEnvironment map[string]string,
+	systemEnvironment map[string]string,
 ) (shell.Startup, error) {
 
 	profileName := application.RequestedShellProfile()
@@ -264,8 +296,8 @@ func prepareShellStartup(
 		profileName,
 		loaded,
 		includeShared,
-		nil,
-		nil,
+		sessionEnvironment,
+		systemEnvironment,
 	)
 	if err != nil {
 		return shell.Startup{}, fmt.Errorf(
@@ -358,15 +390,6 @@ func runDirectShell(
 		)
 	}
 
-	startup, err := prepareShellStartup(
-		application,
-		resolved,
-		runtimeSession.Paths.Runtime,
-	)
-	if err != nil {
-		return cleanupRuntime(err)
-	}
-
 	sessionEnvironment, err := runtimeSession.Environment()
 	if err != nil {
 		return cleanupRuntime(
@@ -375,6 +398,23 @@ func runDirectShell(
 				err,
 			),
 		)
+	}
+
+	sessionEnvironment, systemEnvironment :=
+		interpolationEnvironment(
+			sessionEnvironment,
+			runtimeSession.Paths.Runtime,
+		)
+
+	startup, err := prepareShellStartup(
+		application,
+		resolved,
+		runtimeSession.Paths.Runtime,
+		sessionEnvironment,
+		systemEnvironment,
+	)
+	if err != nil {
+		return cleanupRuntime(err)
 	}
 
 	startup = setSessionEnvironment(
@@ -481,10 +521,28 @@ func runMultiplexerShell(
 		)
 	}
 
+	sessionEnvironment, err := runtimeSession.Environment()
+	if err != nil {
+		return cleanupRuntime(
+			fmt.Errorf(
+				"prepare session environment: %w",
+				err,
+			),
+		)
+	}
+
+	sessionEnvironment, systemEnvironment :=
+		interpolationEnvironment(
+			sessionEnvironment,
+			runtimeSession.Paths.Runtime,
+		)
+
 	startup, err := prepareShellStartup(
 		application,
 		resolved,
 		runtimeSession.Paths.Runtime,
+		sessionEnvironment,
+		systemEnvironment,
 	)
 	if err != nil {
 		return cleanupRuntime(err)

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -183,11 +184,31 @@ func TestPrintErrorSuppressesSIGINTStatus(t *testing.T) {
 func shellTestRuntime(t *testing.T) *runtime.Session {
 	t.Helper()
 
-	runtimeDir := t.TempDir()
-	sharedDir := filepath.Join(runtimeDir, "config", "shell", "shared")
+	root := t.TempDir()
+
+	paths, err := runtime.NewPaths(root, "1.0.0")
+	if err != nil {
+		t.Fatalf("NewPaths() returned error: %v", err)
+	}
+
+	session, err := runtime.NewSession(paths)
+	if err != nil {
+		t.Fatalf("NewSession() returned error: %v", err)
+	}
+
+	if err := session.Prepare(); err != nil {
+		t.Fatalf("Prepare() returned error: %v", err)
+	}
+
+	sharedDir := filepath.Join(
+		session.Paths.Runtime,
+		"config",
+		"shell",
+		"shared",
+	)
 
 	if err := os.MkdirAll(sharedDir, 0o755); err != nil {
-		t.Fatalf("create shared shell config directory: %v", err)
+		t.Fatalf("MkdirAll() returned error: %v", err)
 	}
 
 	if err := os.WriteFile(
@@ -195,14 +216,10 @@ func shellTestRuntime(t *testing.T) *runtime.Session {
 		[]byte("[environment]\n"),
 		0o644,
 	); err != nil {
-		t.Fatalf("write shared shell configuration: %v", err)
+		t.Fatalf("WriteFile() returned error: %v", err)
 	}
 
-	return &runtime.Session{
-		Paths: runtime.Paths{
-			Runtime: runtimeDir,
-		},
-	}
+	return session
 }
 
 func TestSetSessionEnvironmentInitializesNilEnvironment(
@@ -2486,4 +2503,53 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 
 	return string(output)
+}
+
+func TestEnvironmentMap(t *testing.T) {
+	got := environmentMap([]string{
+		"HOME=/home/test",
+		"EMPTY=",
+		"INVALID",
+		"PATH=/usr/bin",
+	})
+
+	want := map[string]string{
+		"HOME":  "/home/test",
+		"EMPTY": "",
+		"PATH":  "/usr/bin",
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf(
+			"environmentMap() = %#v, want %#v",
+			got,
+			want,
+		)
+	}
+}
+
+func TestInterpolationEnvironmentIncludesRuntimeDirectory(
+	t *testing.T,
+) {
+	runtimeDir := filepath.Join(t.TempDir(), "session")
+
+	sessionEnvironment, systemEnvironment :=
+		interpolationEnvironment(
+			map[string]string{
+				"UNISHELL_SESSION_ID": "test-session",
+			},
+			runtimeDir,
+		)
+
+	if got := sessionEnvironment[shell.SessionRuntimeDirEnvName]; got != runtimeDir {
+		t.Fatalf(
+			"session runtime directory = %q, want %q",
+			got,
+			runtimeDir,
+		)
+	}
+
+	if systemEnvironment == nil {
+		t.Fatal("system environment is nil")
+	}
 }
