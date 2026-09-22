@@ -15,6 +15,8 @@ func PrepareProfileStartup(
 	profileName string,
 	loaded profile.Loaded,
 	includeShared bool,
+	sessionEnvironment map[string]string,
+	systemEnvironment map[string]string,
 ) (Startup, error) {
 	if runtimeDir == "" {
 		return Startup{}, fmt.Errorf(
@@ -37,10 +39,26 @@ func PrepareProfileStartup(
 		)
 	}
 
+	resolvedShared := loaded.Shared
+
+	if includeShared {
+		resolvedShared, err = config.Resolve(
+			loaded.Shared,
+			sessionEnvironment,
+			systemEnvironment,
+		)
+		if err != nil {
+			return Startup{}, fmt.Errorf(
+				"resolve shared shell configuration: %w",
+				err,
+			)
+		}
+	}
+
 	renderedShared := ""
 
 	if includeShared {
-		renderedShared, err = adapter.Render(loaded.Shared)
+		renderedShared, err = adapter.Render(resolvedShared)
 		if err != nil {
 			return Startup{}, fmt.Errorf(
 				"render shared shell configuration: %w",

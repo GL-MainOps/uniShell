@@ -264,6 +264,8 @@ func prepareShellStartup(
 		profileName,
 		loaded,
 		includeShared,
+		nil,
+		nil,
 	)
 	if err != nil {
 		return shell.Startup{}, fmt.Errorf(
