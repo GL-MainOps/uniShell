@@ -1,8 +1,7 @@
 [[tools]]
 name = "superfile"
 profiles = [
-    "full",
-    "slim"
+    "full"
 ]
 
 [[tools.artifacts]]
