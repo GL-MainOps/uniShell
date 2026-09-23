@@ -26,11 +26,11 @@ build:
     policy: pull-push
 
   variables:
-    UNISHELL_PROFILE: "slim,full,k8s"
+    UNISHELL_PROFILE: "slim,full"
     UNISHELL_VERSION: "$CI_COMMIT_TAG"
 
   script:
-    - ./scripts/build.sh --profile "$UNISHELL_PROFILE" --version "$UNISHELL_VERSION"
+    - ./scripts/build.sh --compress false --profile "$UNISHELL_PROFILE" --version "$UNISHELL_VERSION"
 
   artifacts:
     name: "unishell-release-binaries"
