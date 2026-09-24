@@ -6,6 +6,18 @@ import (
 	"testing"
 )
 
+func TestZstdCompressorDefersEncoderInitialization(t *testing.T) {
+	compressor, err := newZstdCompressor()
+	if err != nil {
+		t.Fatalf("create compressor: %v", err)
+	}
+	defer compressor.Close()
+
+	if compressor.encoder != nil {
+		t.Fatal("compressor initialized encoder before compression was requested")
+	}
+}
+
 func TestZstdCompressorStreamingRoundTrip(t *testing.T) {
 	compressor, err := newZstdCompressor()
 	if err != nil {

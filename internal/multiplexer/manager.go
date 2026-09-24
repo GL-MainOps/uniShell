@@ -77,6 +77,7 @@ func (m *Manager) Create(
 	shellArgs []string,
 	env []string,
 	options api.Options,
+	metadataHint ...sessionmeta.Metadata,
 ) (*ManagedSession, error) {
 	backend, ok := m.registry.Get(backendName)
 	if !ok {
@@ -129,13 +130,16 @@ func (m *Manager) Create(
 	}
 
 	var existingMetadata sessionmeta.Metadata
-
-	existingMetadata, err = sessionmeta.ReadMetadata(runtimePath)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf(
-			"read existing session metadata: %w",
-			err,
-		)
+	if len(metadataHint) > 0 && metadataHint[0].ID != "" {
+		existingMetadata = metadataHint[0]
+	} else {
+		existingMetadata, err = sessionmeta.ReadMetadata(runtimePath)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf(
+				"read existing session metadata: %w",
+				err,
+			)
+		}
 	}
 
 	runtimeSessionName := existingMetadata.Name

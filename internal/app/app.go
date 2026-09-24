@@ -2,7 +2,9 @@ package app
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"gitlab.com/mainops/uniShell/internal/bundle"
 	"gitlab.com/mainops/uniShell/internal/credentials"
@@ -77,7 +79,7 @@ func New(options Options) (*App, error) {
 
 	source := options.Bundle
 	if source == nil {
-		source = bundle.Embedded
+		source = bundle.EmbeddedView
 	}
 
 	manager := options.Multiplexer
@@ -142,6 +144,9 @@ func (a *App) RequestedMultiplexer() string {
 }
 
 func (a *App) ValidateAuthentication() error {
+	started := time.Now()
+	defer traceStartup("bundle verification", started)
+
 	data, err := a.Bundle()
 	if err != nil {
 		return fmt.Errorf(
@@ -193,13 +198,69 @@ func (a *App) authenticatedBundle() ([]byte, error) {
 	return authenticated, nil
 }
 
+func extractAuthenticatedRuntime(
+	authenticated []byte,
+	destination string,
+	version string,
+	cacheDir string,
+) error {
+	cacheStarted := time.Now()
+	cached, err := bundle.OpenArchiveCache(authenticated, version, cacheDir)
+	if err == nil {
+		defer cached.File.Close()
+		traceStartupDuration("decompress runtime", cached.DecompressionElapsed)
+		cacheStage := "runtime archive cache build"
+		if cached.Hit {
+			cacheStage = "runtime archive cache hit"
+		}
+		traceStartup(cacheStage, cacheStarted)
+
+		extractStarted := time.Now()
+		err = bundle.ExtractArchive(cached.File, destination)
+		traceStartup("extract runtime", extractStarted)
+		if err != nil {
+			return fmt.Errorf("extract runtime bundle: %w", err)
+		}
+		return nil
+	}
+
+	// The cache is an optimization. If its directory is unavailable or cannot
+	// be written, keep the original streaming launch path.
+	decompressStarted := time.Now()
+	archiveReader, err := bundle.DecompressAuthenticatedReader(authenticated)
+	if err != nil {
+		return fmt.Errorf("decompress runtime bundle: %w", err)
+	}
+	decompressSetup := time.Since(decompressStarted)
+	defer archiveReader.Close()
+
+	timedReader := &startupTimedReader{reader: archiveReader}
+	extractStarted := time.Now()
+	err = bundle.ExtractArchive(timedReader, destination)
+	extractElapsed := time.Since(extractStarted)
+	traceStartupDuration(
+		"decompress runtime",
+		decompressSetup+timedReader.elapsed,
+	)
+	traceStartupDuration(
+		"extract runtime",
+		extractElapsed-timedReader.elapsed,
+	)
+	if err != nil {
+		return fmt.Errorf("extract runtime bundle: %w", err)
+	}
+	return nil
+}
+
 func (a *App) StartSession() (*runtime.Session, error) {
+	cleanupStarted := time.Now()
 	if err := runtime.CleanupStale(a.Paths); err != nil {
 		return nil, fmt.Errorf(
 			"clean stale runtime sessions: %w",
 			err,
 		)
 	}
+	traceStartup("stale-session cleanup", cleanupStarted)
 
 	session, err := runtime.NewSession(a.Paths)
 	if err != nil {
@@ -226,12 +287,14 @@ func (a *App) StartSession() (*runtime.Session, error) {
 			err,
 		)
 	}
+	prepareStarted := time.Now()
 	if err := session.Prepare(); err != nil {
 		return nil, fmt.Errorf(
 			"prepare runtime session: %w",
 			err,
 		)
 	}
+	traceStartup("runtime setup", prepareStarted)
 
 	cleanupOnError := func(err error) (*runtime.Session, error) {
 		_ = session.Cleanup()
@@ -243,29 +306,13 @@ func (a *App) StartSession() (*runtime.Session, error) {
 		return cleanupOnError(err)
 	}
 
-	archiveReader, err := bundle.DecompressAuthenticatedReader(
+	if err := extractAuthenticatedRuntime(
 		authenticated,
-	)
-	if err != nil {
-		return cleanupOnError(
-			fmt.Errorf(
-				"decompress runtime bundle: %w",
-				err,
-			),
-		)
-	}
-	defer archiveReader.Close()
-
-	if err := bundle.ExtractArchive(
-		archiveReader,
 		session.Paths.Runtime,
+		a.Version,
+		filepath.Join(filepath.Dir(a.Paths.Runtime), ".cache"),
 	); err != nil {
-		return cleanupOnError(
-			fmt.Errorf(
-				"extract runtime bundle: %w",
-				err,
-			),
-		)
+		return cleanupOnError(err)
 	}
 
 	return session, nil
@@ -277,13 +324,16 @@ func (a *App) StartSession() (*runtime.Session, error) {
 // pass it to CreateMultiplexerSession and eventually clean it up, or clean
 // it directly when startup is abandoned.
 func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
+	cleanupStarted := time.Now()
 	if err := runtime.CleanupStale(a.Paths); err != nil {
 		return nil, fmt.Errorf(
 			"clean stale runtime sessions: %w",
 			err,
 		)
 	}
+	traceStartup("stale-session cleanup", cleanupStarted)
 
+	reconcileStarted := time.Now()
 	if err := a.Multiplexer.Reconcile(
 		a.Paths.Runtime,
 	); err != nil {
@@ -292,6 +342,7 @@ func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
 			err,
 		)
 	}
+	traceStartup("multiplexer reconciliation", reconcileStarted)
 
 	runtimeSession, err := runtime.NewSessionWithMode(
 		a.Paths,
@@ -323,12 +374,14 @@ func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
 		)
 	}
 
+	prepareStarted := time.Now()
 	if err := runtimeSession.Prepare(); err != nil {
 		return nil, fmt.Errorf(
 			"prepare multiplexer runtime session: %w",
 			err,
 		)
 	}
+	traceStartup("runtime setup", prepareStarted)
 
 	cleanupOnError := func(err error) (*runtime.Session, error) {
 		_ = runtimeSession.Cleanup()
@@ -340,29 +393,13 @@ func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
 		return cleanupOnError(err)
 	}
 
-	archiveReader, err := bundle.DecompressAuthenticatedReader(
+	if err := extractAuthenticatedRuntime(
 		authenticated,
-	)
-	if err != nil {
-		return cleanupOnError(
-			fmt.Errorf(
-				"decompress runtime bundle: %w",
-				err,
-			),
-		)
-	}
-	defer archiveReader.Close()
-
-	if err := bundle.ExtractArchive(
-		archiveReader,
 		runtimeSession.Paths.Runtime,
+		a.Version,
+		filepath.Join(filepath.Dir(a.Paths.Runtime), ".cache"),
 	); err != nil {
-		return cleanupOnError(
-			fmt.Errorf(
-				"extract runtime bundle: %w",
-				err,
-			),
-		)
+		return cleanupOnError(err)
 	}
 
 	return runtimeSession, nil
@@ -407,9 +444,23 @@ func (a *App) CreateMultiplexerSession(
 	startup shell.Startup,
 ) (*Session, error) {
 	if runtimeSession == nil {
-		return nil, fmt.Errorf(
-			"multiplexer runtime session is nil",
-		)
+		return nil, fmt.Errorf("multiplexer runtime session is nil")
+	}
+	selectedShell, err := shell.Resolve(shellName, runtimeSession.Paths.Bin)
+	if err != nil {
+		return nil, fmt.Errorf("resolve shell: %w", err)
+	}
+	return a.CreateMultiplexerSessionResolved(runtimeSession, multiplexerName, selectedShell, startup)
+}
+
+func (a *App) CreateMultiplexerSessionResolved(
+	runtimeSession *runtime.Session,
+	multiplexerName string,
+	selectedShell shell.Shell,
+	startup shell.Startup,
+) (*Session, error) {
+	if runtimeSession == nil {
+		return nil, fmt.Errorf("multiplexer runtime session is nil")
 	}
 
 	multiplexerSessionName, err := multiplexerSessionNameForRuntime(
@@ -423,18 +474,7 @@ func (a *App) CreateMultiplexerSession(
 		)
 	}
 
-	selectedShell, err := shell.Resolve(
-		shellName,
-		runtimeSession.Paths.Bin,
-	)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"resolve shell: %w",
-			err,
-		)
-	}
-
-	if err := runtimeSession.SetShellSelection(
+	if err := runtimeSession.RecordShellSelection(
 		selectedShell.Name,
 		selectedShell.Path,
 		a.ShellProfile,
@@ -475,6 +515,7 @@ func (a *App) CreateMultiplexerSession(
 		startup.Args,
 		environment,
 		a.MultiplexerOptions,
+		runtimeSession.Metadata(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf(

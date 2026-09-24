@@ -27,22 +27,20 @@ func ExtractArchive(reader io.Reader, destination string) error {
 		return fmt.Errorf("resolve extraction destination: %w", err)
 	}
 
-	info, err := os.Stat(destination)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			if err := os.MkdirAll(destination, defaultDirectoryMode); err != nil {
-				return fmt.Errorf("create extraction destination: %w", err)
-			}
-		} else {
-			return fmt.Errorf("stat extraction destination: %w", err)
+	if err := os.MkdirAll(destination, defaultDirectoryMode); err != nil {
+		if info, statErr := os.Stat(destination); statErr == nil && !info.IsDir() {
+			return fmt.Errorf(
+				"%w: extraction destination is not a directory",
+				ErrInvalidSource,
+			)
 		}
-	} else if !info.IsDir() {
-		return fmt.Errorf(
-			"%w: extraction destination is not a directory",
-			ErrInvalidSource,
-		)
+		return fmt.Errorf("create extraction destination: %w", err)
 	}
 
+	directories := directoryCache{
+		root:    destination,
+		ensured: map[string]struct{}{destination: {}},
+	}
 	tarReader := tar.NewReader(reader)
 
 	for {
@@ -64,7 +62,7 @@ func ExtractArchive(reader io.Reader, destination string) error {
 			return fmt.Errorf("archive entry %q: %w", header.Name, err)
 		}
 
-		if err := extractEntry(tarReader, header, target); err != nil {
+		if err := extractEntry(tarReader, header, target, &directories); err != nil {
 			return fmt.Errorf(
 				"extract archive entry %q: %w",
 				header.Name,
@@ -106,17 +104,76 @@ func secureArchivePath(destination, archivePath string) (string, error) {
 	return target, nil
 }
 
+type directoryCache struct {
+	root    string
+	ensured map[string]struct{}
+}
+
+func (cache *directoryCache) ensure(target string) error {
+	if _, ok := cache.ensured[target]; ok {
+		return nil
+	}
+	relative, err := filepath.Rel(cache.root, target)
+	if err != nil {
+		return fmt.Errorf("calculate directory path: %w", err)
+	}
+	if relative == "." {
+		return nil
+	}
+
+	current := cache.root
+	for _, component := range splitPath(relative) {
+		current = filepath.Join(current, component)
+		if _, ok := cache.ensured[current]; ok {
+			continue
+		}
+
+		err := os.Mkdir(current, defaultDirectoryMode)
+		if err != nil && !errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("create directory %q: %w", current, err)
+		}
+		if errors.Is(err, os.ErrExist) {
+			info, statErr := os.Stat(current)
+			if statErr != nil {
+				return fmt.Errorf("inspect directory %q: %w", current, statErr)
+			}
+			if !info.IsDir() {
+				return fmt.Errorf("path %q is not a directory", current)
+			}
+		}
+		cache.ensured[current] = struct{}{}
+	}
+	return nil
+}
+
+func splitPath(path string) []string {
+	var components []string
+	for path != "." && path != string(filepath.Separator) {
+		parent, component := filepath.Split(path)
+		if component == "" {
+			break
+		}
+		components = append(components, component)
+		path = filepath.Clean(parent)
+	}
+	for left, right := 0, len(components)-1; left < right; left, right = left+1, right-1 {
+		components[left], components[right] = components[right], components[left]
+	}
+	return components
+}
+
 func extractEntry(
 	reader *tar.Reader,
 	header *tar.Header,
 	target string,
+	directories *directoryCache,
 ) error {
 	switch header.Typeflag {
 	case tar.TypeDir:
-		return extractDirectory(header, target)
+		return extractDirectory(header, target, directories)
 
 	case tar.TypeReg, tar.TypeRegA:
-		return extractFile(reader, header, target)
+		return extractFile(reader, header, target, directories)
 
 	default:
 		return fmt.Errorf(
@@ -127,8 +184,8 @@ func extractEntry(
 	}
 }
 
-func extractDirectory(header *tar.Header, target string) error {
-	if err := os.MkdirAll(target, defaultDirectoryMode); err != nil {
+func extractDirectory(header *tar.Header, target string, directories *directoryCache) error {
+	if err := directories.ensure(target); err != nil {
 		return fmt.Errorf("create directory: %w", err)
 	}
 
@@ -143,10 +200,11 @@ func extractFile(
 	reader *tar.Reader,
 	header *tar.Header,
 	target string,
+	directories *directoryCache,
 ) error {
 	parent := filepath.Dir(target)
 
-	if err := os.MkdirAll(parent, defaultDirectoryMode); err != nil {
+	if err := directories.ensure(parent); err != nil {
 		return fmt.Errorf("create parent directory: %w", err)
 	}
 
@@ -164,12 +222,13 @@ func extractFile(
 		return fmt.Errorf("write file: %w", err)
 	}
 
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close file: %w", err)
+	if err := file.Chmod(header.FileInfo().Mode().Perm()); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("set file permissions: %w", err)
 	}
 
-	if err := os.Chmod(target, header.FileInfo().Mode().Perm()); err != nil {
-		return fmt.Errorf("set file permissions: %w", err)
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close file: %w", err)
 	}
 
 	return nil

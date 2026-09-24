@@ -883,6 +883,7 @@ func TestCreateMultiplexerSessionUsesProvidedMultiplexer(
 func TestCreateMultiplexerSessionPassesShellStartup(
 	t *testing.T,
 ) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
 	runtimePath := filepath.Join(
 		t.TempDir(),
 		"runtime",

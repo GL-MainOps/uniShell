@@ -13,3 +13,9 @@ var ErrEmbeddedBundleUnavailable = errors.New(
 func Embedded() ([]byte, error) {
 	return nil, ErrEmbeddedBundleUnavailable
 }
+
+// EmbeddedView returns an error because no production runtime bundle
+// is embedded in non-bundle builds.
+func EmbeddedView() ([]byte, error) {
+	return nil, ErrEmbeddedBundleUnavailable
+}

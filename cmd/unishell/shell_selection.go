@@ -25,19 +25,19 @@ type shellSelectionInput struct {
 	err   error
 }
 
-func selectShell(
+func selectResolvedShell(
 	ctx context.Context,
 	runtimeBin string,
 	requested string,
 	in io.Reader,
 	out io.Writer,
-) (string, error) {
+) (shell.Shell, error) {
 	selected, err := shell.Resolve(
 		requested,
 		runtimeBin,
 	)
 	if err == nil {
-		return selected.Name, nil
+		return selected, nil
 	}
 
 	fmt.Fprintf(
@@ -48,7 +48,7 @@ func selectShell(
 
 	available := availableShells(runtimeBin)
 	if len(available) == 0 {
-		return "", fmt.Errorf(
+		return shell.Shell{}, fmt.Errorf(
 			"no supported shells are available; install or provide one of: %s",
 			strings.Join(shell.SupportedShells(), ", "),
 		)
@@ -56,22 +56,42 @@ func selectShell(
 
 	printAvailableShells(out, available)
 
+	var selectedName string
 	if file, ok := in.(*os.File); ok &&
 		term.IsTerminal(int(file.Fd())) {
-		return selectShellFromTerminal(
+		selectedName, err = selectShellFromTerminal(
 			ctx,
 			file,
 			out,
 			available,
 		)
+	} else {
+		selectedName, err = selectShellFromReader(
+			ctx,
+			in,
+			out,
+			available,
+		)
 	}
+	if err != nil {
+		return shell.Shell{}, err
+	}
+	return shell.Resolve(selectedName, runtimeBin)
+}
 
-	return selectShellFromReader(
-		ctx,
-		in,
-		out,
-		available,
-	)
+// selectShell preserves the name-returning helper for existing callers.
+func selectShell(
+	ctx context.Context,
+	runtimeBin string,
+	requested string,
+	in io.Reader,
+	out io.Writer,
+) (string, error) {
+	selected, err := selectResolvedShell(ctx, runtimeBin, requested, in, out)
+	if err != nil {
+		return "", err
+	}
+	return selected.Name, nil
 }
 
 func printAvailableShells(

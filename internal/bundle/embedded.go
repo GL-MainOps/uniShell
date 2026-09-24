@@ -14,7 +14,7 @@ var ErrEmbeddedBundleUnavailable = errors.New(
 //go:embed runtime.bundle
 var embeddedBundle []byte
 
-// Embedded returns a copy of the encrypted runtime bundle embedded
+// Embedded returns a copy of the runtime bundle embedded
 // during the build process.
 func Embedded() ([]byte, error) {
 	if len(embeddedBundle) == 0 {
@@ -25,4 +25,14 @@ func Embedded() ([]byte, error) {
 	copy(result, embeddedBundle)
 
 	return result, nil
+}
+
+// EmbeddedView returns the runtime bundle without copying it.
+// The returned bytes refer to read-only embedded data and must not be modified.
+func EmbeddedView() ([]byte, error) {
+	if len(embeddedBundle) == 0 {
+		return nil, ErrEmbeddedBundleUnavailable
+	}
+
+	return embeddedBundle, nil
 }

@@ -11,6 +11,20 @@ import (
 	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
 
+func TestMain(m *testing.M) {
+	home, err := os.MkdirTemp("", "unishell-tmux-test-home-")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("HOME", home); err != nil {
+		_ = os.RemoveAll(home)
+		panic(err)
+	}
+	code := m.Run()
+	_ = os.RemoveAll(home)
+	os.Exit(code)
+}
+
 func TestBinaryPathUsesSessionRuntime(t *testing.T) {
 	runtime := t.TempDir()
 	backend := &Backend{Binary: "fake-tmux"}

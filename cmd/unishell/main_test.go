@@ -49,6 +49,7 @@ func writeShellTestSharedConfig(
 func TestNewApplicationPropagatesShellConfigurationOptions(
 	t *testing.T,
 ) {
+	t.Setenv("UNISHELL_AUTH_TOKEN", "test-token")
 	options := cliOptions{
 		RuntimeDir:             t.TempDir(),
 		Shell:                  "bash",
@@ -366,6 +367,17 @@ func (a *shellTestApplication) PrepareMultiplexerSession() (
 	error,
 ) {
 	return a.preparedSession, a.preparedErr
+}
+
+func (a *shellTestApplication) CreateMultiplexerSessionResolved(
+	runtimeSession *runtime.Session,
+	multiplexerName string,
+	selectedShell shell.Shell,
+	startup shell.Startup,
+) (*app.Session, error) {
+	a.createdMultiplexer = multiplexerName
+	a.createdStartup = startup
+	return a.createdSession, a.createdErr
 }
 
 func (a *shellTestApplication) CreateMultiplexerSession(

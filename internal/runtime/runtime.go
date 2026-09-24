@@ -23,10 +23,11 @@ const (
 
 // Session represents one isolated temporary uniShell runtime session.
 type Session struct {
-	Paths Paths
-	ID    string
-	Mode  SessionMode
-	Name  string
+	Paths    Paths
+	ID       string
+	Mode     SessionMode
+	Name     string
+	metadata sessionmeta.Metadata
 }
 
 // NewSession creates a new isolated runtime session.
@@ -67,58 +68,72 @@ func (s *Session) SetShellSelection(
 	shellPath string,
 	shellProfile string,
 ) error {
+	return s.recordShellSelection(shellName, shellPath, shellProfile, true)
+}
+
+// RecordShellSelection updates the in-memory metadata for a multiplexer
+// startup. The manager persists it with the final multiplexer metadata.
+func (s *Session) RecordShellSelection(
+	shellName string,
+	shellPath string,
+	shellProfile string,
+) error {
+	return s.recordShellSelection(shellName, shellPath, shellProfile, false)
+}
+
+func (s *Session) recordShellSelection(
+	shellName string,
+	shellPath string,
+	shellProfile string,
+	persist bool,
+) error {
 	if shellName == "" {
 		return errors.New("runtime session shell name cannot be empty")
 	}
-
 	if shellPath == "" {
 		return errors.New("runtime session shell path cannot be empty")
 	}
-
 	if shellProfile == "" {
 		shellProfile = "none"
 	}
 
-	metadata, err := sessionmeta.ReadMetadata(
-		s.Paths.Runtime,
-	)
-	if err != nil {
-		return fmt.Errorf(
-			"read runtime session metadata: %w",
-			err,
-		)
+	metadata := s.metadata
+	if metadata.ID == "" {
+		var err error
+		metadata, err = sessionmeta.ReadMetadata(s.Paths.Runtime)
+		if err != nil {
+			return fmt.Errorf("read runtime session metadata: %w", err)
+		}
 	}
-
 	metadata.ShellName = shellName
 	metadata.ShellPath = shellPath
 	metadata.ShellProfile = shellProfile
 
-	if err := sessionmeta.WriteMetadata(
-		s.Paths.Runtime,
-		metadata,
-	); err != nil {
-		return fmt.Errorf(
-			"write runtime session metadata: %w",
-			err,
-		)
+	if persist {
+		if err := sessionmeta.WriteMetadata(s.Paths.Runtime, metadata); err != nil {
+			return fmt.Errorf("write runtime session metadata: %w", err)
+		}
 	}
-
+	s.metadata = metadata
 	return nil
 }
 
-// Environment returns the environment variables represented by the
-// persisted session metadata.
-func (s *Session) Environment() (map[string]string, error) {
-	metadata, err := sessionmeta.ReadMetadata(
-		s.Paths.Runtime,
-	)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"read runtime session metadata: %w",
-			err,
-		)
-	}
+// Metadata returns the in-memory session metadata prepared for this session.
+func (s *Session) Metadata() sessionmeta.Metadata {
+	return s.metadata
+}
 
+// Environment returns the environment variables represented by the
+// session metadata, using the in-memory copy when available.
+func (s *Session) Environment() (map[string]string, error) {
+	metadata := s.metadata
+	if metadata.ID == "" {
+		var err error
+		metadata, err = sessionmeta.ReadMetadata(s.Paths.Runtime)
+		if err != nil {
+			return nil, fmt.Errorf("read runtime session metadata: %w", err)
+		}
+	}
 	return metadata.Environment(), nil
 }
 
@@ -200,6 +215,7 @@ func (s *Session) Prepare() error {
 		_ = os.RemoveAll(s.Paths.Runtime)
 		return err
 	}
+	s.metadata = metadata
 
 	return nil
 }

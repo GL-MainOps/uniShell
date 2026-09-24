@@ -193,10 +193,10 @@ type shellApplication interface {
 	RequestedNoSharedRC() bool
 	RequestedMultiplexer() string
 	PrepareMultiplexerSession() (*runtime.Session, error)
-	CreateMultiplexerSession(
+	CreateMultiplexerSessionResolved(
 		*runtime.Session,
 		string,
-		string,
+		shell.Shell,
 		shell.Startup,
 	) (*app.Session, error)
 }
@@ -348,7 +348,7 @@ func runDirectShell(
 		return err
 	}
 
-	selected, err := selectShell(
+	selected, err := selectResolvedShell(
 		ctx,
 		runtimeSession.Paths.Bin,
 		application.RequestedShell(),
@@ -364,22 +364,9 @@ func runDirectShell(
 		)
 	}
 
-	resolved, err := shell.Resolve(
-		selected,
-		runtimeSession.Paths.Bin,
-	)
-	if err != nil {
-		return cleanupRuntime(
-			fmt.Errorf(
-				"resolve shell: %w",
-				err,
-			),
-		)
-	}
-
 	if err := runtimeSession.SetShellSelection(
-		resolved.Name,
-		resolved.Path,
+		selected.Name,
+		selected.Path,
 		application.RequestedShellProfile(),
 	); err != nil {
 		return cleanupRuntime(
@@ -408,7 +395,7 @@ func runDirectShell(
 
 	startup, err := prepareShellStartup(
 		application,
-		resolved,
+		selected,
 		runtimeSession.Paths.Runtime,
 		sessionEnvironment,
 		systemEnvironment,
@@ -423,7 +410,7 @@ func runDirectShell(
 	)
 
 	command, err := shell.NewCommand(
-		resolved,
+		selected,
 		runtimeSession.Paths.Bin,
 		runtimeSession.Paths.Runtime,
 		startup,
@@ -484,7 +471,7 @@ func runMultiplexerShell(
 		return err
 	}
 
-	selected, err := selectShell(
+	selected, err := selectResolvedShell(
 		ctx,
 		runtimeSession.Paths.Bin,
 		application.RequestedShell(),
@@ -508,19 +495,6 @@ func runMultiplexerShell(
 		)
 	}
 
-	resolved, err := shell.Resolve(
-		selected,
-		runtimeSession.Paths.Bin,
-	)
-	if err != nil {
-		return cleanupRuntime(
-			fmt.Errorf(
-				"resolve shell: %w",
-				err,
-			),
-		)
-	}
-
 	sessionEnvironment, err := runtimeSession.Environment()
 	if err != nil {
 		return cleanupRuntime(
@@ -539,7 +513,7 @@ func runMultiplexerShell(
 
 	startup, err := prepareShellStartup(
 		application,
-		resolved,
+		selected,
 		runtimeSession.Paths.Runtime,
 		sessionEnvironment,
 		systemEnvironment,
@@ -553,7 +527,7 @@ func runMultiplexerShell(
 		sessionEnvironment,
 	)
 
-	session, err = application.CreateMultiplexerSession(
+	session, err = application.CreateMultiplexerSessionResolved(
 		runtimeSession,
 		multiplexerName,
 		selected,

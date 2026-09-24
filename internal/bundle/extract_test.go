@@ -169,6 +169,18 @@ func TestExtractArchiveRejectsUnsupportedEntry(t *testing.T) {
 	}
 }
 
+func TestExtractArchiveRejectsNonDirectoryDestination(t *testing.T) {
+	destination := filepath.Join(t.TempDir(), "runtime")
+	if err := os.WriteFile(destination, []byte("file"), 0600); err != nil {
+		t.Fatalf("create destination file: %v", err)
+	}
+
+	err := ExtractArchive(bytes.NewReader(nil), destination)
+	if !errors.Is(err, ErrInvalidSource) {
+		t.Fatalf("ExtractArchive() error = %v, want ErrInvalidSource", err)
+	}
+}
+
 func TestExtractArchiveCreatesDestination(t *testing.T) {
 	destination := filepath.Join(t.TempDir(), "nested", "runtime")
 
