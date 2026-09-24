@@ -10,6 +10,7 @@ import (
 type Session struct {
 	Runtime     *runtime.Session
 	Multiplexer *multiplexer.ManagedSession
+	Persistent  bool
 }
 
 func (s *Session) Attach() error {
@@ -35,6 +36,10 @@ func (s *Session) Attach() error {
 			"attach multiplexer session: %w",
 			err,
 		)
+	}
+
+	if s.Persistent {
+		return nil
 	}
 
 	runtimePath := s.Multiplexer.Session.Runtime
@@ -85,7 +90,7 @@ func (s *Session) Detach() error {
 }
 
 func (s *Session) Cleanup() error {
-	if s == nil {
+	if s == nil || s.Persistent {
 		return nil
 	}
 

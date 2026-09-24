@@ -2452,6 +2452,43 @@ func TestRunCleanRejectsArguments(t *testing.T) {
 	}
 }
 
+func TestParseCleanArgsUsesInstalled(t *testing.T) {
+	options, err := parseCleanArgs([]string{"--installed"})
+	if err != nil {
+		t.Fatalf("parseCleanArgs() returned error: %v", err)
+	}
+	if !options.Installed {
+		t.Fatal("--installed was not recorded")
+	}
+}
+
+func TestParseCleanArgsRejectsInstalledWithTarget(t *testing.T) {
+	_, err := parseCleanArgs([]string{"--installed", "--target", "development"})
+	if err == nil {
+		t.Fatal("parseCleanArgs() accepted --installed with --target")
+	}
+}
+
+func TestConfirmCleanPersistentRuntimeRequiresPathConfirmation(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "home", "user", ".local", "unishell")
+
+	confirmed, err := confirmCleanPersistentRuntime(bufio.NewReader(strings.NewReader("yes\n"+root+"\n")), root)
+	if err != nil {
+		t.Fatalf("confirmCleanPersistentRuntime() returned error: %v", err)
+	}
+	if !confirmed {
+		t.Fatal("confirmCleanPersistentRuntime() rejected matching path confirmation")
+	}
+
+	confirmed, err = confirmCleanPersistentRuntime(bufio.NewReader(strings.NewReader("yes\nwrong\n")), root)
+	if err != nil {
+		t.Fatalf("confirmCleanPersistentRuntime() returned error: %v", err)
+	}
+	if confirmed {
+		t.Fatal("confirmCleanPersistentRuntime() accepted a different path")
+	}
+}
+
 func TestParseCleanArgsUsesTarget(t *testing.T) {
 	options, err := parseCleanArgs([]string{
 		"--target",

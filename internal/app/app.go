@@ -1,7 +1,12 @@
 package app
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -10,6 +15,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
+	"gitlab.com/mainops/uniShell/internal/persistence"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 	"gitlab.com/mainops/uniShell/internal/shell"
 )
@@ -31,6 +37,7 @@ type Options struct {
 	Shell                  string
 	ShellProfile           string
 	NoSharedRC             bool
+	Persistent             bool
 }
 
 type App struct {
@@ -50,6 +57,8 @@ type App struct {
 	Shell                  string
 	ShellProfile           string
 	NoSharedRC             bool
+	Persistent             bool
+	AuthTokenFromStore     bool
 }
 
 func New(options Options) (*App, error) {
@@ -71,7 +80,10 @@ func New(options Options) (*App, error) {
 		)
 	}
 
-	token, err := credentials.Resolve()
+	token, tokenFromStore, err := credentials.ResolveForRuntime(
+		paths.Root,
+		options.Persistent,
+	)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"resolve authentication token: %w",
@@ -127,6 +139,8 @@ func New(options Options) (*App, error) {
 		Shell:                  options.Shell,
 		ShellProfile:           options.ShellProfile,
 		NoSharedRC:             options.NoSharedRC,
+		Persistent:             options.Persistent,
+		AuthTokenFromStore:     tokenFromStore,
 	}, nil
 }
 
@@ -150,7 +164,26 @@ func (a *App) RequestedNewSession() bool {
 	return a.NewSession
 }
 
+func (a *App) SaveFirstLaunch(shellName, multiplexerName string) error {
+	if !a.Persistent {
+		return nil
+	}
+	return persistence.SaveFirstLaunch(a.Paths.Root, persistence.LaunchConfig{
+		Shell:                  shellName,
+		ShellProfile:           a.ShellProfile,
+		NoSharedRC:             a.NoSharedRC,
+		Multiplexer:            multiplexerName,
+		SessionName:            a.SessionName,
+		MultiplexerSessionName: a.MultiplexerSessionName,
+		NewSession:             a.NewSession,
+	})
+}
+
 func (a *App) ValidateAuthentication() error {
+	if len(a.AuthenticatedBundle) > 0 {
+		return nil
+	}
+
 	started := time.Now()
 	defer traceStartup("bundle verification", started)
 
@@ -162,19 +195,28 @@ func (a *App) ValidateAuthentication() error {
 		)
 	}
 
-	authenticated, err := bundle.OpenAuthenticated(
-		data,
-		a.AuthToken,
-	)
+	authenticated, err := bundle.OpenAuthenticated(data, a.AuthToken)
+	if errors.Is(err, credentials.ErrAuthenticationFailed) && a.AuthTokenFromStore {
+		token, resolveErr := credentials.Resolve()
+		if resolveErr != nil {
+			return fmt.Errorf("saved token was rejected and no replacement token was available: %w", resolveErr)
+		}
+		a.AuthToken = token
+		a.AuthTokenFromStore = false
+		authenticated, err = bundle.OpenAuthenticated(data, token)
+	}
 	if err != nil {
-		return fmt.Errorf(
-			"authenticate runtime bundle: %w",
-			err,
-		)
+		return fmt.Errorf("authenticate runtime bundle: %w", err)
+	}
+
+	if a.Persistent && !a.AuthTokenFromStore {
+		if err := credentials.StoreToken(a.Paths.Root, a.AuthToken); err != nil {
+			return fmt.Errorf("save encrypted authentication token: %w", err)
+		}
+		a.AuthTokenFromStore = true
 	}
 
 	a.AuthenticatedBundle = authenticated
-
 	return nil
 }
 
@@ -259,157 +301,214 @@ func extractAuthenticatedRuntime(
 	return nil
 }
 
-func (a *App) StartSession() (*runtime.Session, error) {
-	cleanupStarted := time.Now()
-	if err := runtime.CleanupStale(a.Paths); err != nil {
-		return nil, fmt.Errorf(
-			"clean stale runtime sessions: %w",
-			err,
-		)
+func (a *App) PreparePersistentRuntime() error {
+	if !a.Persistent {
+		return fmt.Errorf("persistent runtime is not enabled")
 	}
-	traceStartup("stale-session cleanup", cleanupStarted)
-
-	session, err := runtime.NewSession(a.Paths)
+	authenticated, err := a.authenticatedBundle()
 	if err != nil {
-		return nil, fmt.Errorf(
-			"create runtime session: %w",
-			err,
-		)
+		return err
 	}
-	sessionName, err := sessionNameForRuntime(
-		session,
-		a.SessionName,
-		a.SessionNameSpecified,
-	)
+	_, err = a.ensurePersistentBundle(authenticated)
+	return err
+}
+
+func (a *App) ensurePersistentBundle(authenticated []byte) (string, error) {
+	digest := sha256.Sum256(authenticated)
+	fingerprint := hex.EncodeToString(digest[:12])
+	installed := filepath.Join(a.Paths.Runtime, "installed-"+fingerprint)
+
+	if info, err := os.Stat(installed); err == nil {
+		if !info.IsDir() {
+			return "", fmt.Errorf("persistent runtime path %q is not a directory", installed)
+		}
+		if _, err := os.Stat(filepath.Join(installed, "bin")); err != nil {
+			return "", fmt.Errorf("persistent runtime %q is incomplete; run 'unishell clean' before reinstalling: %w", installed, err)
+		}
+		if _, err := os.Stat(filepath.Join(installed, "config")); err != nil {
+			return "", fmt.Errorf("persistent runtime %q is incomplete; run 'unishell clean' before reinstalling: %w", installed, err)
+		}
+		marker, err := os.ReadFile(filepath.Join(installed, ".unishell-installed"))
+		if err != nil {
+			return "", fmt.Errorf("persistent runtime %q is incomplete; run 'unishell clean' before reinstalling: %w", installed, err)
+		}
+		wantMarker := fmt.Sprintf("bundle=%s\n", fingerprint)
+		if string(marker) != wantMarker {
+			return "", fmt.Errorf("persistent runtime %q has mismatched installation metadata", installed)
+		}
+		return installed, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("inspect persistent runtime: %w", err)
+	}
+
+	if err := os.MkdirAll(a.Paths.Runtime, 0700); err != nil {
+		return "", fmt.Errorf("create persistent runtime directory: %w", err)
+	}
+	if err := os.Mkdir(installed, 0700); err != nil {
+		return "", fmt.Errorf("create persistent runtime directory: %w", err)
+	}
+
+	reader, err := bundle.DecompressAuthenticatedReader(authenticated)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"generate runtime session name: %w",
-			err,
-		)
+		return "", fmt.Errorf("decompress persistent runtime bundle: %w", err)
+	}
+	extractErr := bundle.ExtractArchive(reader, installed)
+	closeErr := reader.Close()
+	if extractErr != nil {
+		return "", fmt.Errorf("extract persistent runtime bundle: %w", extractErr)
+	}
+	if closeErr != nil {
+		return "", fmt.Errorf("close persistent runtime bundle: %w", closeErr)
 	}
 
-	if err := session.SetName(sessionName); err != nil {
-		return nil, fmt.Errorf(
-			"set runtime session name: %w",
-			err,
-		)
+	marker := []byte(fmt.Sprintf("bundle=%s\n", fingerprint))
+	if err := os.WriteFile(filepath.Join(installed, ".unishell-installed"), marker, 0600); err != nil {
+		return "", fmt.Errorf("record persistent runtime version: %w", err)
 	}
-	prepareStarted := time.Now()
-	if err := session.Prepare(); err != nil {
-		return nil, fmt.Errorf(
-			"prepare runtime session: %w",
-			err,
-		)
-	}
-	traceStartup("runtime setup", prepareStarted)
+	return installed, nil
+}
 
-	cleanupOnError := func(err error) (*runtime.Session, error) {
-		_ = session.Cleanup()
-		return nil, err
+func (a *App) preparePersistentSessionFiles(session *runtime.Session, installed string) error {
+	if err := os.Remove(session.Paths.Bin); err != nil {
+		return fmt.Errorf("prepare persistent session binary path: %w", err)
+	}
+	if err := os.Symlink(filepath.Join(installed, "bin"), session.Paths.Bin); err != nil {
+		return fmt.Errorf("link persistent runtime binaries: %w", err)
+	}
+	if err := copyRuntimeDirectory(filepath.Join(installed, "config"), session.Paths.Config); err != nil {
+		return fmt.Errorf("copy persistent runtime configuration: %w", err)
+	}
+	return nil
+}
+
+func copyRuntimeDirectory(source, destination string) error {
+	return filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		if relative == "." {
+			return nil
+		}
+		target := filepath.Join(destination, relative)
+		info, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			link, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			return os.Symlink(link, target)
+		}
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode().Perm())
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("unsupported runtime config entry %q", path)
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+			return err
+		}
+		input, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		output, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(output, input)
+		inputCloseErr := input.Close()
+		closeErr := output.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if inputCloseErr != nil {
+			return inputCloseErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		return nil
+	})
+}
+
+func (a *App) prepareRuntimeSession(mode runtime.SessionMode) (*runtime.Session, error) {
+	if !a.Persistent {
+		cleanupStarted := time.Now()
+		if err := runtime.CleanupStale(a.Paths); err != nil {
+			return nil, fmt.Errorf("clean stale runtime sessions: %w", err)
+		}
+		traceStartup("stale-session cleanup", cleanupStarted)
+	}
+
+	if mode == runtime.SessionModeMultiplexer && !a.Persistent {
+		reconcileStarted := time.Now()
+		if err := a.Multiplexer.Reconcile(a.Paths.Runtime); err != nil {
+			return nil, fmt.Errorf("reconcile multiplexer sessions: %w", err)
+		}
+		traceStartup("multiplexer reconciliation", reconcileStarted)
 	}
 
 	authenticated, err := a.authenticatedBundle()
 	if err != nil {
-		return cleanupOnError(err)
+		return nil, err
+	}
+	installed := ""
+	if a.Persistent {
+		installed, err = a.ensurePersistentBundle(authenticated)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	if err := extractAuthenticatedRuntime(
+	session, err := runtime.NewSessionWithMode(a.Paths, mode)
+	if err != nil {
+		return nil, fmt.Errorf("create runtime session: %w", err)
+	}
+	session.Persistent = a.Persistent
+	sessionName, err := sessionNameForRuntime(session, a.SessionName, a.SessionNameSpecified)
+	if err != nil {
+		return nil, fmt.Errorf("generate runtime session name: %w", err)
+	}
+	if err := session.SetName(sessionName); err != nil {
+		return nil, fmt.Errorf("set runtime session name: %w", err)
+	}
+
+	prepareStarted := time.Now()
+	if err := session.Prepare(); err != nil {
+		return nil, fmt.Errorf("prepare runtime session: %w", err)
+	}
+	traceStartup("runtime setup", prepareStarted)
+
+	if a.Persistent {
+		if err := a.preparePersistentSessionFiles(session, installed); err != nil {
+			return nil, err
+		}
+	} else if err := extractAuthenticatedRuntime(
 		authenticated,
 		session.Paths.Runtime,
 		a.Version,
 		filepath.Join(filepath.Dir(a.Paths.Runtime), ".cache"),
 	); err != nil {
-		return cleanupOnError(err)
+		return nil, err
 	}
-
 	return session, nil
 }
 
-// PrepareMultiplexerSession creates and extracts a multiplexer runtime.
-//
-// The returned runtime remains owned by the caller. The caller must either
-// pass it to CreateMultiplexerSession and eventually clean it up, or clean
-// it directly when startup is abandoned.
+func (a *App) StartSession() (*runtime.Session, error) {
+	return a.prepareRuntimeSession(runtime.SessionModeNormal)
+}
+
+// PrepareMultiplexerSession prepares an isolated managed multiplexer runtime.
+// Persistent mode retains the session and shares the installed tool binaries.
 func (a *App) PrepareMultiplexerSession() (*runtime.Session, error) {
-	cleanupStarted := time.Now()
-	if err := runtime.CleanupStale(a.Paths); err != nil {
-		return nil, fmt.Errorf(
-			"clean stale runtime sessions: %w",
-			err,
-		)
-	}
-	traceStartup("stale-session cleanup", cleanupStarted)
-
-	reconcileStarted := time.Now()
-	if err := a.Multiplexer.Reconcile(
-		a.Paths.Runtime,
-	); err != nil {
-		return nil, fmt.Errorf(
-			"reconcile multiplexer sessions: %w",
-			err,
-		)
-	}
-	traceStartup("multiplexer reconciliation", reconcileStarted)
-
-	runtimeSession, err := runtime.NewSessionWithMode(
-		a.Paths,
-		runtime.SessionModeMultiplexer,
-	)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"create multiplexer runtime session: %w",
-			err,
-		)
-	}
-
-	sessionName, err := sessionNameForRuntime(
-		runtimeSession,
-		a.SessionName,
-		a.SessionNameSpecified,
-	)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"generate runtime session name: %w",
-			err,
-		)
-	}
-
-	if err := runtimeSession.SetName(sessionName); err != nil {
-		return nil, fmt.Errorf(
-			"set multiplexer runtime session name: %w",
-			err,
-		)
-	}
-
-	prepareStarted := time.Now()
-	if err := runtimeSession.Prepare(); err != nil {
-		return nil, fmt.Errorf(
-			"prepare multiplexer runtime session: %w",
-			err,
-		)
-	}
-	traceStartup("runtime setup", prepareStarted)
-
-	cleanupOnError := func(err error) (*runtime.Session, error) {
-		_ = runtimeSession.Cleanup()
-		return nil, err
-	}
-
-	authenticated, err := a.authenticatedBundle()
-	if err != nil {
-		return cleanupOnError(err)
-	}
-
-	if err := extractAuthenticatedRuntime(
-		authenticated,
-		runtimeSession.Paths.Runtime,
-		a.Version,
-		filepath.Join(filepath.Dir(a.Paths.Runtime), ".cache"),
-	); err != nil {
-		return cleanupOnError(err)
-	}
-
-	return runtimeSession, nil
+	return a.prepareRuntimeSession(runtime.SessionModeMultiplexer)
 }
 
 func setEnvironment(
@@ -534,6 +633,7 @@ func (a *App) CreateMultiplexerSessionResolved(
 	return &Session{
 		Runtime:     runtimeSession,
 		Multiplexer: managedSession,
+		Persistent:  a.Persistent,
 	}, nil
 }
 
@@ -568,6 +668,7 @@ func (a *App) DiscoverMultiplexerSession() (*Session, error) {
 
 	return &Session{
 		Multiplexer: managed,
+		Persistent:  a.Persistent,
 	}, nil
 }
 

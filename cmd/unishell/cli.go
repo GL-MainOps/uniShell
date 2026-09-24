@@ -11,10 +11,12 @@ const (
 	sessionEnvName            = "UNISHELL_SESSION"
 	multiplexerSessionEnvName = "UNISHELL_MULTIPLEXER_SESSION"
 	shellProfileEnvName       = "UNISHELL_SHELL_PROFILE"
+	shellEnvName              = "UNISHELL_SHELL"
 )
 
 type cliOptions struct {
 	RuntimeDir             string
+	Persistent             bool
 	Shell                  string
 	ShellProfile           string
 	NoSharedRC             bool
@@ -29,6 +31,7 @@ func parseCLIArgs(args []string) (cliOptions, []string, error) {
 	var options cliOptions
 	var commandArgs []string
 
+	options.Shell = strings.TrimSpace(os.Getenv(shellEnvName))
 	options.Multiplexer = strings.TrimSpace(
 		os.Getenv(multiplexerEnvName),
 	)

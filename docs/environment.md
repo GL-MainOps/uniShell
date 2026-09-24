@@ -336,21 +336,26 @@ sessions. Direct-shell session metadata does not contain this field.
 
 Overrides the root directory used by uniShell for its runtime data.
 
-Default:
+Ephemeral mode defaults to `/var/tmp/.lesscache`. After `unishell install`,
+persistent mode defaults to `$HOME/.local/unishell`.
+
+Resolution precedence is:
 
 ```text
-/var/tmp/.lesscache
-```
-
-Resolution precedence:
-
-```text
-explicit runtime root
+--runtime-dir
     ↓
 UNISHELL_RUNTIME_DIR
     ↓
-/var/tmp/.lesscache
+installed persistent runtime setting (if present)
+    ↓
+$HOME/.local/unishell for the installed binary
+    ↓
+/var/tmp/.lesscache for ephemeral launches
 ```
+
+The install command accepts `--runtime-dir PATH` or `UNISHELL_RUNTIME_DIR`
+to choose a persistent runtime root. Persistent launch defaults are stored in
+`<runtime-root>/.unishell-config.toml`.
 
 This variable is an **input** to runtime-root selection.
 
@@ -576,6 +581,12 @@ When `--target` is not supplied, `clean` interactively determines which
 managed session should be cleaned.
 
 `clean` never deletes a session without explicit user confirmation.
+
+In persistent mode, `unishell clean` only handles managed sessions. Removing
+the complete installed runtime requires `unishell clean --installed`, followed
+by two confirmations. This removes runtime versions, launch configuration,
+and saved credentials while preserving the installed executable and runtime
+location setting.
 
 If the specified session does not exist, uniShell reports that the target
 was not found and does not delete another session.
