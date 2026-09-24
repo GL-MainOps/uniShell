@@ -2970,3 +2970,26 @@ func TestRollbackRefreshedRuntimeRemovesIncompleteNewBundle(t *testing.T) {
 		t.Fatalf("incomplete refreshed bundle remains: stat error = %v", err)
 	}
 }
+
+func TestRunCompletionPrintsEmbeddedScripts(t *testing.T) {
+	for _, shellName := range []string{"bash", "zsh", "fish"} {
+		t.Run(shellName, func(t *testing.T) {
+			output := captureStdout(t, func() {
+				if err := runCompletion([]string{shellName}); err != nil {
+					t.Fatalf("runCompletion() returned error: %v", err)
+				}
+			})
+			for _, expected := range []string{"completion", "multiplexer", "tmux", "zellij", "shared-rc"} {
+				if !strings.Contains(output, expected) {
+					t.Errorf("%s completions do not contain %q", shellName, expected)
+				}
+			}
+		})
+	}
+}
+
+func TestRunCompletionRejectsUnsupportedShell(t *testing.T) {
+	if err := runCompletion([]string{"powershell"}); err == nil {
+		t.Fatal("runCompletion() accepted an unsupported shell")
+	}
+}

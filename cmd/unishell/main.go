@@ -97,6 +97,13 @@ func main() {
 	}
 
 	command, commandArgs := commandFromArgs(args)
+	if command == "completion" {
+		if err := runCompletion(commandArgs); err != nil {
+			printError(err)
+			os.Exit(exitCode(err))
+		}
+		return
+	}
 	if command == "install" {
 		root, rootErr := installRuntimeRoot(options)
 		if rootErr == nil {
@@ -333,6 +340,9 @@ func run(application *app.App, args []string) error {
 
 	case "install":
 		return runInstall(application.Paths.Root, commandArgs)
+
+	case "completion":
+		return runCompletion(commandArgs)
 
 	case "update", "upgrade":
 		return runUpdate(application, commandArgs)
@@ -1935,6 +1945,7 @@ Commands:
   update/upgrade Update the installed binary and persistent runtime
   clean       Clean a session; use --installed to remove the installed runtime
   list        List managed direct and multiplexer sessions
+  completion  Print Bash, Zsh, or Fish completions
   detach      Detach from the current uniShell multiplexer session
   version     Display version information
   help        Display this help message
@@ -2031,5 +2042,6 @@ Examples:
   unishell upgrade
   unishell clean
   unishell list
+  unishell completion bash > ~/.local/share/bash-completion/completions/unishell
   UNISHELL_MULTIPLEXER=tmux unishell`)
 }

@@ -51,6 +51,15 @@ the new binary, refreshes the runtime, then atomically replaces
 bundle created for that update and preserves the previous installation.
 Set `UNISHELL_UPGRADE_DIRECT_LINK` to provide a direct HTTPS binary URL.
 
+Generate completions with `unishell completion bash`, `unishell completion zsh`,
+or `unishell completion fish`, then save the output in the shell's completion
+directory. For example, Bash users can run:
+
+```bash
+mkdir -p ~/.local/share/bash-completion/completions
+unishell completion bash > ~/.local/share/bash-completion/completions/unishell
+```
+
 Use `unishell clean` to clean managed sessions. Removing the entire installed
 runtime requires `unishell clean --installed`; it asks for confirmation twice,
 then removes runtime versions, sessions, launch configuration, and saved
@@ -818,6 +827,7 @@ unishell update
 unishell upgrade
 unishell clean
 unishell list
+unishell completion bash
 unishell version
 ```
 
