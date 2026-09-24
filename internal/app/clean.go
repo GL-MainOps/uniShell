@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 )
@@ -148,4 +149,97 @@ func (a *App) CleanupMultiplexerSession(
 	}
 
 	return nil
+}
+
+// CleanPersistentRuntime intentionally removes all uniShell-managed runtime
+// versions, sessions, cache data, and local settings below the configured root.
+// The installed executable in ~/.local/bin is outside this directory and is
+// preserved.
+func (a *App) CleanPersistentRuntime() error {
+	allSessions, err := a.DiscoverPersistentCleanSessions()
+	if err != nil {
+		return err
+	}
+	var cleanupErrors []error
+	for _, session := range allSessions {
+		switch session.Metadata.Mode {
+		case sessionmeta.ModeNormal:
+			if err := a.TerminateNormalSession(session); err != nil {
+				cleanupErrors = append(cleanupErrors, err)
+			}
+		case sessionmeta.ModeMultiplexer:
+			if err := a.CleanupMultiplexerSession(session); err != nil {
+				cleanupErrors = append(cleanupErrors, err)
+			}
+		default:
+			cleanupErrors = append(cleanupErrors, fmt.Errorf(
+				"session %q uses unsupported termination mode %q",
+				session.Metadata.Name,
+				session.Metadata.Mode,
+			))
+		}
+	}
+	if len(cleanupErrors) > 0 {
+		return errors.Join(cleanupErrors...)
+	}
+
+	if err := os.RemoveAll(filepath.Join(a.Paths.Root, "runtime")); err != nil {
+		return fmt.Errorf("remove persistent runtime data: %w", err)
+	}
+	for _, name := range []string{".token", ".token.key", ".unishell-config.toml"} {
+		path := filepath.Join(a.Paths.Root, name)
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove persistent file %q: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func (a *App) DiscoverPersistentCleanSessions() ([]*CleanSession, error) {
+	runtimeRoot := filepath.Join(a.Paths.Root, "runtime")
+	versions, err := os.ReadDir(runtimeRoot)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("inspect persistent runtime versions: %w", err)
+	}
+
+	var sessions []*CleanSession
+	for _, version := range versions {
+		if !version.IsDir() || strings.HasPrefix(version.Name(), ".") {
+			continue
+		}
+		versionPath := filepath.Join(runtimeRoot, version.Name())
+		entries, err := os.ReadDir(versionPath)
+		if err != nil {
+			return nil, fmt.Errorf("inspect persistent runtime %q: %w", version.Name(), err)
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			path := filepath.Join(versionPath, entry.Name())
+			metadata, err := sessionmeta.ReadMetadata(path)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					continue
+				}
+				return nil, fmt.Errorf("read persistent session metadata %q: %w", path, err)
+			}
+			sessions = append(sessions, &CleanSession{
+				Metadata:   metadata,
+				RuntimeDir: path,
+			})
+		}
+	}
+	return sessions, nil
+}
+
+func (a *App) IsPersistent() bool {
+	return a.Persistent
+}
+
+func (a *App) PersistentRoot() string {
+	return a.Paths.Root
 }

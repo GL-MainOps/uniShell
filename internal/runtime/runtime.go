@@ -23,11 +23,12 @@ const (
 
 // Session represents one isolated temporary uniShell runtime session.
 type Session struct {
-	Paths    Paths
-	ID       string
-	Mode     SessionMode
-	Name     string
-	metadata sessionmeta.Metadata
+	Paths      Paths
+	ID         string
+	Mode       SessionMode
+	Name       string
+	Persistent bool
+	metadata   sessionmeta.Metadata
 }
 
 // NewSession creates a new isolated runtime session.
@@ -199,12 +200,16 @@ func (s *Session) Prepare() error {
 	}
 
 	if metadata.ProcessStartTicks == 0 {
-		_ = os.RemoveAll(s.Paths.Runtime)
+		if !s.Persistent {
+			_ = os.RemoveAll(s.Paths.Runtime)
+		}
 		return errors.New("unable to determine current process start time")
 	}
 
 	if metadata.ProcessGroupID <= 0 {
-		_ = os.RemoveAll(s.Paths.Runtime)
+		if !s.Persistent {
+			_ = os.RemoveAll(s.Paths.Runtime)
+		}
 		return errors.New("unable to determine current process group ID")
 	}
 
@@ -212,7 +217,9 @@ func (s *Session) Prepare() error {
 		s.Paths.Runtime,
 		metadata,
 	); err != nil {
-		_ = os.RemoveAll(s.Paths.Runtime)
+		if !s.Persistent {
+			_ = os.RemoveAll(s.Paths.Runtime)
+		}
 		return err
 	}
 	s.metadata = metadata
@@ -224,6 +231,9 @@ func (s *Session) Prepare() error {
 //
 // Cleanup is idempotent.
 func (s *Session) Cleanup() error {
+	if s.Persistent {
+		return nil
+	}
 	if err := os.RemoveAll(s.Paths.Runtime); err != nil {
 		return runtimeFilesystemError(
 			s.Paths.Runtime,

@@ -199,7 +199,15 @@ func TestParseCLIArgs(t *testing.T) {
 				"--no-shared-rc",
 			},
 			wantOptions: cliOptions{
-				NoSharedRC: true,
+				NoSharedRC:          true,
+				NoSharedRCSpecified: true,
+			},
+		},
+		{
+			name: "shared rc explicitly overrides config",
+			args: []string{"--shared-rc"},
+			wantOptions: cliOptions{
+				NoSharedRCSpecified: true,
 			},
 		},
 	}

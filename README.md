@@ -18,6 +18,53 @@ Commercial use, redistribution, modification, derivative works,
 sublicensing, and forking are not permitted unless separately authorized
 in writing by the copyright holder.
 
+## Runtime modes
+
+uniShell supports the existing ephemeral mode and an optional persistent
+installation. Ephemeral launches continue to extract a versioned runtime
+for each session and clean it up using the existing lifecycle.
+
+Install for desktop use with:
+
+```bash
+unishell install
+```
+
+This copies the executable to `~/.local/bin/unishell`, creates the default
+runtime at `~/.local/unishell`, and writes
+`~/.local/unishell/.unishell-config.toml`. Set `UNISHELL_RUNTIME_DIR` or
+pass `--runtime-dir PATH` during installation to choose another runtime root.
+The config file documents the launch options and stores the first launch's
+selected defaults. Edit its `[launch]` values to change them. Invalid keys
+and unsupported shell or multiplexer values produce an error naming the
+setting. Command-line options and environment settings take precedence;
+`--shared-rc` and `--no-shared-rc` can explicitly override either boolean
+value of `no_shared_rc`.
+
+Persistent mode keeps the extracted tools and session data between launches.
+The first authenticated launch saves the token as AES-GCM ciphertext in the
+hidden `.token` file, with a private local key in `.token.key`; later launches
+reuse it without a password prompt. Both files are restricted to the current
+OS account. `unishell update` checks GitLab releases, downloads and verifies
+the new binary, refreshes the runtime, then atomically replaces
+`~/.local/bin/unishell`. If replacement fails, it removes only the new runtime
+bundle created for that update and preserves the previous installation.
+Set `UNISHELL_UPGRADE_DIRECT_LINK` to provide a direct HTTPS binary URL.
+
+Generate completions with `unishell completion bash`, `unishell completion zsh`,
+or `unishell completion fish`, then save the output in the shell's completion
+directory. For example, Bash users can run:
+
+```bash
+mkdir -p ~/.local/share/bash-completion/completions
+unishell completion bash > ~/.local/share/bash-completion/completions/unishell
+```
+
+Use `unishell clean` to clean managed sessions. Removing the entire installed
+runtime requires `unishell clean --installed`; it asks for confirmation twice,
+then removes runtime versions, sessions, launch configuration, and saved
+credentials while leaving the executable and selected runtime location.
+
 ---
 
 # 1. Project Vision
@@ -33,38 +80,22 @@ The new project should preserve useful behavioral requirements from the
 old project while replacing its implementation with a maintainable,
 modular, testable, and DevOps-oriented architecture.
 
-The ultimate deployment goal is:
+The default deployment remains ephemeral:
 
 ```text
-one binary
-    |
-    +-- authenticate
-    |
-    +-- verify embedded runtime bundle
-    |
-    +-- create temporary runtime
-    |
-    +-- extract required tools
-    |
-    +-- start enhanced shell
-    |
-    +-- user exits shell
-    |
-    +-- clean temporary runtime
-    |
-    +-- leave only the uniShell binary
+one binary -> authenticate -> verify bundle -> create temporary runtime
+            -> start shell -> clean session runtime
 ```
 
-The target machine should not need:
+`unishell install` also supports a persistent desktop installation that keeps
+the authenticated runtime and session data until the user runs `unishell clean --installed`.
+
+In ephemeral mode, the target machine should not need:
 
 - a package manager;
-    
 - a system-wide installation;
-    
 - permanently installed copies of bundled tools;
-    
 - configuration files in standard system locations;
-    
 - a permanently extracted copy of the authenticated runtime payload.
     
 
@@ -372,22 +403,11 @@ server
 
 # 8. Authentication Model
 
-Every uniShell invocation requires authentication.
-
-Authentication occurs BEFORE:
-
-- help output;
-    
-- version output;
-    
-- command execution;
-    
-- runtime preparation;
-    
-- bundle extraction;
-    
-- shell startup.
-    
+Authenticated commands verify the token before runtime preparation,
+bundle extraction, or shell startup. `install` is a setup operation: it
+copies the executable and writes the config without extracting the runtime
+or requesting a token. `help` and `version` display information without
+starting a runtime.
 
 Examples:
 
@@ -403,13 +423,10 @@ Examples:
 ./unishell help
 ```
 
-```bash
-./unishell doctor
-```
-
-All require authentication.
-
-No command should print its normal output before authentication succeeds.
+Shell launches and runtime maintenance authenticate against the embedded bundle.
+`install` creates the local executable and configuration without extracting tools
+or requesting a token. Persistent installs reuse the encrypted local token after
+the first successful authenticated launch.
 
 ## Credential acquisition
 
@@ -444,9 +461,9 @@ Enter Token:
 
 The token must not be echoed.
 
-The token must not be written to disk.
-
-The token must not be logged.
+Ephemeral mode does not write the token to disk. Persistent mode stores it
+only as AES-GCM ciphertext in the private runtime directory, with a separate
+owner-only local key file. The token must not be logged.
 
 The token must not be included in normal diagnostic output.
 
@@ -807,12 +824,14 @@ unishell
 unishell shell
 unishell install
 unishell update
+unishell upgrade
 unishell clean
-unishell doctor
+unishell list
+unishell completion bash
 unishell version
 ```
 
-All operations require authentication.
+Shell launches and runtime maintenance authenticate against the embedded bundle. Persistent installs reuse the locally saved token after the first successful launch. `install` copies the executable and creates the config without prompting for a token.
 
 Global configuration should precede the command where applicable.
 
@@ -1607,15 +1626,12 @@ Do not hard-code the deployment location into the binary.
 
 AUTHENTICATION
 
-Every command requires authentication, including:
-
-    help
-    version
-    doctor
-    clean
-    shell
-    install
+Commands that access or change runtime data authenticate against the embedded
+bundle. `install` only creates the local executable and configuration and does
+not require a token. In persistent mode, the encrypted local token is reused
+for subsequent authenticated commands.
     update
+    upgrade
 
 Credential acquisition:
 
@@ -1630,7 +1646,8 @@ Interactive prompt must be exactly:
 
 There is no --auth or --auth-token option.
 
-Never log or persist the token.
+Never log the token. Persistent mode may save an encrypted token locally so
+later launches do not prompt again; ephemeral mode does not save it.
 
 Credential acquisition is NOT authentication.
 

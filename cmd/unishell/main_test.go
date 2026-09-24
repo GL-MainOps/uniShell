@@ -18,6 +18,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
+	"gitlab.com/mainops/uniShell/internal/persistence"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 	"gitlab.com/mainops/uniShell/internal/shell"
@@ -2452,6 +2453,43 @@ func TestRunCleanRejectsArguments(t *testing.T) {
 	}
 }
 
+func TestParseCleanArgsUsesInstalled(t *testing.T) {
+	options, err := parseCleanArgs([]string{"--installed"})
+	if err != nil {
+		t.Fatalf("parseCleanArgs() returned error: %v", err)
+	}
+	if !options.Installed {
+		t.Fatal("--installed was not recorded")
+	}
+}
+
+func TestParseCleanArgsRejectsInstalledWithTarget(t *testing.T) {
+	_, err := parseCleanArgs([]string{"--installed", "--target", "development"})
+	if err == nil {
+		t.Fatal("parseCleanArgs() accepted --installed with --target")
+	}
+}
+
+func TestConfirmCleanPersistentRuntimeRequiresPathConfirmation(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "home", "user", ".local", "unishell")
+
+	confirmed, err := confirmCleanPersistentRuntime(bufio.NewReader(strings.NewReader("yes\n"+root+"\n")), root)
+	if err != nil {
+		t.Fatalf("confirmCleanPersistentRuntime() returned error: %v", err)
+	}
+	if !confirmed {
+		t.Fatal("confirmCleanPersistentRuntime() rejected matching path confirmation")
+	}
+
+	confirmed, err = confirmCleanPersistentRuntime(bufio.NewReader(strings.NewReader("yes\nwrong\n")), root)
+	if err != nil {
+		t.Fatalf("confirmCleanPersistentRuntime() returned error: %v", err)
+	}
+	if confirmed {
+		t.Fatal("confirmCleanPersistentRuntime() accepted a different path")
+	}
+}
+
 func TestParseCleanArgsUsesTarget(t *testing.T) {
 	options, err := parseCleanArgs([]string{
 		"--target",
@@ -2804,5 +2842,154 @@ func TestChooseMultiplexerSessionCanStartNew(t *testing.T) {
 	}
 	if selected != nil {
 		t.Fatal("chooseMultiplexerSession() selected existing session, want new session")
+	}
+}
+
+type listTestApplication struct {
+	sessions []*app.CleanSession
+}
+
+func (a *listTestApplication) ListSessions() ([]*app.CleanSession, error) {
+	return a.sessions, nil
+}
+
+func TestRunListPrintsSessionIDNameAndType(t *testing.T) {
+	application := &listTestApplication{sessions: []*app.CleanSession{
+		{Metadata: sessionmeta.Metadata{ID: "direct-id", Name: "local", Mode: sessionmeta.ModeNormal}},
+		{Metadata: sessionmeta.Metadata{ID: "mux-id", Name: "work", Mode: sessionmeta.ModeMultiplexer}},
+	}}
+
+	output := captureStdout(t, func() {
+		if err := runList(application, nil); err != nil {
+			t.Fatalf("runList() returned error: %v", err)
+		}
+	})
+	want := "SESSION ID\tSESSION NAME\tSESSION TYPE\n" +
+		"direct-id\tlocal\tdirect\n" +
+		"mux-id\twork\tmultiplexer\n"
+	if output != want {
+		t.Fatalf("runList() output = %q, want %q", output, want)
+	}
+}
+
+func TestRunListRejectsArguments(t *testing.T) {
+	if err := runList(&listTestApplication{}, []string{"unexpected"}); err == nil {
+		t.Fatal("runList() accepted arguments")
+	}
+}
+
+func TestApplyPersistentConfigAllowsExplicitBooleanOverride(t *testing.T) {
+	root := t.TempDir()
+	if _, err := persistence.Create(root); err != nil {
+		t.Fatalf("persistence.Create() returned error: %v", err)
+	}
+	if err := persistence.SaveFirstLaunch(root, persistence.LaunchConfig{
+		Shell:      "bash",
+		NoSharedRC: true,
+	}); err != nil {
+		t.Fatalf("SaveFirstLaunch() returned error: %v", err)
+	}
+
+	defaults, err := applyPersistentConfig(cliOptions{}, root)
+	if err != nil {
+		t.Fatalf("applyPersistentConfig() returned error: %v", err)
+	}
+	if !defaults.NoSharedRC {
+		t.Fatal("config no_shared_rc=true was not applied")
+	}
+
+	override, err := applyPersistentConfig(cliOptions{NoSharedRCSpecified: true}, root)
+	if err != nil {
+		t.Fatalf("applyPersistentConfig() with override returned error: %v", err)
+	}
+	if override.NoSharedRC {
+		t.Fatal("explicit --shared-rc did not override config")
+	}
+}
+
+func TestRollbackRefreshedRuntimeRemovesOnlyNewInstalledBundle(t *testing.T) {
+	root := t.TempDir()
+	fingerprint := strings.Repeat("a", 24)
+	directory := filepath.Join(root, "runtime", "v2", "installed-"+fingerprint)
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatalf("MkdirAll() returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, ".unishell-installed"), []byte("bundle="+fingerprint+"\n"), 0600); err != nil {
+		t.Fatalf("WriteFile(marker) returned error: %v", err)
+	}
+
+	if err := rollbackRefreshedRuntime(root, runtimeRefreshReceipt{Directory: directory, Created: true}); err != nil {
+		t.Fatalf("rollbackRefreshedRuntime() returned error: %v", err)
+	}
+	if _, err := os.Stat(directory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("refreshed bundle still exists after rollback: stat error = %v", err)
+	}
+}
+
+func TestRollbackRefreshedRuntimePreservesExistingBundle(t *testing.T) {
+	root := t.TempDir()
+	fingerprint := strings.Repeat("b", 24)
+	directory := filepath.Join(root, "runtime", "v2", "installed-"+fingerprint)
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatalf("MkdirAll() returned error: %v", err)
+	}
+	if err := rollbackRefreshedRuntime(root, runtimeRefreshReceipt{Directory: directory, Created: false}); err != nil {
+		t.Fatalf("rollbackRefreshedRuntime() returned error: %v", err)
+	}
+	if _, err := os.Stat(directory); err != nil {
+		t.Fatalf("existing bundle was removed: %v", err)
+	}
+}
+
+func TestRollbackRefreshedRuntimeRejectsPathOutsideRuntime(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "installed-"+strings.Repeat("c", 24))
+	if err := os.MkdirAll(outside, 0700); err != nil {
+		t.Fatalf("MkdirAll() returned error: %v", err)
+	}
+	if err := rollbackRefreshedRuntime(root, runtimeRefreshReceipt{Directory: outside, Created: true}); err == nil {
+		t.Fatal("rollbackRefreshedRuntime() accepted a path outside runtime")
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Fatalf("outside path was removed: %v", err)
+	}
+}
+
+func TestRollbackRefreshedRuntimeRemovesIncompleteNewBundle(t *testing.T) {
+	root := t.TempDir()
+	fingerprint := strings.Repeat("d", 24)
+	directory := filepath.Join(root, "runtime", "v2", "installed-"+fingerprint)
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatalf("MkdirAll() returned error: %v", err)
+	}
+
+	if err := rollbackRefreshedRuntime(root, runtimeRefreshReceipt{Directory: directory, Created: true}); err != nil {
+		t.Fatalf("rollbackRefreshedRuntime() returned error: %v", err)
+	}
+	if _, err := os.Stat(directory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("incomplete refreshed bundle remains: stat error = %v", err)
+	}
+}
+
+func TestRunCompletionPrintsEmbeddedScripts(t *testing.T) {
+	for _, shellName := range []string{"bash", "zsh", "fish"} {
+		t.Run(shellName, func(t *testing.T) {
+			output := captureStdout(t, func() {
+				if err := runCompletion([]string{shellName}); err != nil {
+					t.Fatalf("runCompletion() returned error: %v", err)
+				}
+			})
+			for _, expected := range []string{"completion", "multiplexer", "tmux", "zellij", "shared-rc"} {
+				if !strings.Contains(output, expected) {
+					t.Errorf("%s completions do not contain %q", shellName, expected)
+				}
+			}
+		})
+	}
+}
+
+func TestRunCompletionRejectsUnsupportedShell(t *testing.T) {
+	if err := runCompletion([]string{"powershell"}); err == nil {
+		t.Fatal("runCompletion() accepted an unsupported shell")
 	}
 }
