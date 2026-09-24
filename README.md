@@ -812,6 +812,7 @@ unishell install
 unishell update
 unishell upgrade
 unishell clean
+unishell list
 unishell version
 ```
 

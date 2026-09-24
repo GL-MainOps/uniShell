@@ -345,6 +345,9 @@ func run(application *app.App, args []string) error {
 	case "clean":
 		return runClean(application, commandArgs)
 
+	case "list":
+		return runList(application, commandArgs)
+
 	case "detach":
 		return runDetach(application, commandArgs)
 
@@ -1345,6 +1348,41 @@ func installBinaryFrom(source, destination string) error {
 	return nil
 }
 
+type listApplication interface {
+	ListSessions() ([]*app.CleanSession, error)
+}
+
+func runList(application listApplication, args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("list does not accept argument %q", args[0])
+	}
+
+	sessions, err := application.ListSessions()
+	if err != nil {
+		return fmt.Errorf("list managed uniShell sessions: %w", err)
+	}
+	if len(sessions) == 0 {
+		fmt.Println("No managed uniShell sessions found.")
+		return nil
+	}
+
+	fmt.Println("SESSION ID\tSESSION NAME\tSESSION TYPE")
+	for _, session := range sessions {
+		if session == nil {
+			continue
+		}
+		sessionType := string(session.Metadata.Mode)
+		switch session.Metadata.Mode {
+		case sessionmeta.ModeNormal:
+			sessionType = "direct"
+		case sessionmeta.ModeMultiplexer:
+			sessionType = "multiplexer"
+		}
+		fmt.Printf("%s\t%s\t%s\n", session.Metadata.ID, session.Metadata.Name, sessionType)
+	}
+	return nil
+}
+
 type cleanOptions struct {
 	Target    string
 	Installed bool
@@ -1775,6 +1813,7 @@ Commands:
   install     Install persistent uniShell under ~/.local
   update/upgrade Update the installed binary and persistent runtime
   clean       Clean a session; use --installed to remove the installed runtime
+  list        List managed direct and multiplexer sessions
   detach      Detach from the current uniShell multiplexer session
   version     Display version information
   help        Display this help message
@@ -1815,6 +1854,8 @@ Clean subcommand:
       Clean one managed session or interactively select sessions.
   unishell clean --installed
       Delete the persistent runtime after two confirmations.
+  unishell list
+      Print session ID, name, and type.
 
 Environment:
   UNISHELL_SHELL
@@ -1864,5 +1905,6 @@ Examples:
   unishell update
   unishell upgrade
   unishell clean
+  unishell list
   UNISHELL_MULTIPLEXER=tmux unishell`)
 }

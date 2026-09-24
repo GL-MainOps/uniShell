@@ -2843,3 +2843,36 @@ func TestChooseMultiplexerSessionCanStartNew(t *testing.T) {
 		t.Fatal("chooseMultiplexerSession() selected existing session, want new session")
 	}
 }
+
+type listTestApplication struct {
+	sessions []*app.CleanSession
+}
+
+func (a *listTestApplication) ListSessions() ([]*app.CleanSession, error) {
+	return a.sessions, nil
+}
+
+func TestRunListPrintsSessionIDNameAndType(t *testing.T) {
+	application := &listTestApplication{sessions: []*app.CleanSession{
+		{Metadata: sessionmeta.Metadata{ID: "direct-id", Name: "local", Mode: sessionmeta.ModeNormal}},
+		{Metadata: sessionmeta.Metadata{ID: "mux-id", Name: "work", Mode: sessionmeta.ModeMultiplexer}},
+	}}
+
+	output := captureStdout(t, func() {
+		if err := runList(application, nil); err != nil {
+			t.Fatalf("runList() returned error: %v", err)
+		}
+	})
+	want := "SESSION ID\tSESSION NAME\tSESSION TYPE\n" +
+		"direct-id\tlocal\tdirect\n" +
+		"mux-id\twork\tmultiplexer\n"
+	if output != want {
+		t.Fatalf("runList() output = %q, want %q", output, want)
+	}
+}
+
+func TestRunListRejectsArguments(t *testing.T) {
+	if err := runList(&listTestApplication{}, []string{"unexpected"}); err == nil {
+		t.Fatal("runList() accepted arguments")
+	}
+}
