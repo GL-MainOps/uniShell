@@ -1,6 +1,7 @@
 package persistence
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
+	"gitlab.com/mainops/uniShell/internal/shell"
 )
 
 const ConfigFilename = ".unishell-config.toml"
@@ -21,6 +23,7 @@ type LaunchConfig struct {
 	Shell                  string `toml:"shell"`
 	ShellProfile           string `toml:"shell_profile"`
 	NoSharedRC             bool   `toml:"no_shared_rc"`
+	NoSharedRCSet          bool   `toml:"-"`
 	Multiplexer            string `toml:"multiplexer"`
 	SessionName            string `toml:"session_name"`
 	MultiplexerSessionName string `toml:"multiplexer_session_name"`
@@ -38,10 +41,46 @@ func Read(root string) (Config, error) {
 	}
 
 	var config Config
-	if err := toml.Unmarshal(data, &config); err != nil {
+	decoder := toml.NewDecoder(bytes.NewReader(data)).DisallowUnknownFields()
+	if err := decoder.Decode(&config); err != nil {
+		return Config{}, fmt.Errorf("invalid persistent configuration: %w; check setting names, sections, and value types", err)
+	}
+
+	var presence struct {
+		Launch map[string]any `toml:"launch"`
+	}
+	if err := toml.Unmarshal(data, &presence); err != nil {
 		return Config{}, fmt.Errorf("parse persistent configuration: %w", err)
 	}
+	_, config.Launch.NoSharedRCSet = presence.Launch["no_shared_rc"]
+	if err := config.Validate(); err != nil {
+		return Config{}, err
+	}
 	return config, nil
+}
+
+func (c Config) Validate() error {
+	if value := strings.ToLower(strings.TrimSpace(c.Launch.Shell)); value != "" {
+		valid := false
+		for _, name := range shell.SupportedShells() {
+			if value == name {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return fmt.Errorf("invalid [launch].shell %q; choose bash, zsh, fish, or nushell", c.Launch.Shell)
+		}
+	}
+
+	if value := strings.ToLower(strings.TrimSpace(c.Launch.Multiplexer)); value != "" {
+		switch value {
+		case "tmux", "zellij", "none", "disabled":
+		default:
+			return fmt.Errorf("invalid [launch].multiplexer %q; choose tmux, zellij, none, or disabled", c.Launch.Multiplexer)
+		}
+	}
+	return nil
 }
 
 func Create(root string) (string, error) {
@@ -112,19 +151,29 @@ func write(path string, data []byte) error {
 func template(launch LaunchConfig) []byte {
 	return []byte(fmt.Sprintf(`# uniShell persistent configuration.
 #
-# The options below are examples and documentation. Uncomment or edit the
-# active values in [launch] to set defaults. Command-line options and
-# environment variables override these defaults.
+# Edit values in [launch] to set persistent defaults. Command-line options
+# and environment variables take precedence. Invalid keys and values are
+# reported with the setting name when uniShell starts.
 #
-# Available options:
-# runtime_dir = "PATH"                 # Choose at install with --runtime-dir or UNISHELL_RUNTIME_DIR.
-# shell = "bash"                       # bash, zsh, fish, or nushell.
-# shell_profile = "work"              # Select a bundled shell profile.
-# no_shared_rc = false                 # Skip shared shell configuration.
-# multiplexer = "tmux"                 # tmux, zellij, none, or disabled.
-# session_name = "work"                # Optional uniShell session name.
-# multiplexer_session_name = "work"   # Optional native multiplexer name.
-# new_session = false                  # Always start a new multiplexer session.
+# Runtime directory: choose it during install with --runtime-dir or
+# UNISHELL_RUNTIME_DIR. This file lives inside that directory.
+# shell: bash, zsh, fish, or nushell.
+# shell_profile: profile name from the selected shell's bundled profiles.
+# no_shared_rc: true skips shared shell configuration; false loads it.
+#   Override either value per launch with --no-shared-rc or --shared-rc.
+# multiplexer: tmux, zellij, none, or disabled.
+# session_name: optional uniShell session name.
+# multiplexer_session_name: optional native multiplexer session name.
+# new_session: true always starts a new multiplexer session.
+#
+# These are the corresponding commented examples:
+# shell = "bash"
+# shell_profile = "work"
+# no_shared_rc = false
+# multiplexer = "tmux"
+# session_name = "work"
+# multiplexer_session_name = "work"
+# new_session = false
 #
 # Do not put UNISHELL_AUTH_TOKEN or other secrets in this file. uniShell
 # stores its locally reusable authentication token in encrypted form.
@@ -133,11 +182,11 @@ func template(launch LaunchConfig) []byte {
 configured = %t
 shell = %s
 shell_profile = %s
-no_shared_rc = %t
-multiplexer = %s
-session_name = %s
-multiplexer_session_name = %s
-new_session = %t
+no_shared_rc = %t # true skips shared shell configuration; false loads it.
+multiplexer = %s # tmux, zellij, none, or disabled.
+session_name = %s # Optional uniShell session name.
+multiplexer_session_name = %s # Optional native multiplexer name.
+new_session = %t # Always start a new multiplexer session when true.
 `,
 		launch.Configured,
 		tomlString(launch.Shell),

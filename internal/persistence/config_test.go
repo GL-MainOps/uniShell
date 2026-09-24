@@ -68,3 +68,41 @@ func TestSaveFirstLaunchPersistsOptionsOnlyOnce(t *testing.T) {
 		t.Fatalf("second launch overwrote configured shell: got %q, want %q", got.Launch.Shell, first.Shell)
 	}
 }
+
+func TestReadRejectsUnknownOptionsWithGuidance(t *testing.T) {
+	root := t.TempDir()
+	data := []byte("[launch]\nshel = \"bash\"\n")
+	if err := os.WriteFile(ConfigPath(root), data, 0600); err != nil {
+		t.Fatalf("WriteFile(config) returned error: %v", err)
+	}
+	_, err := Read(root)
+	if err == nil || !strings.Contains(err.Error(), "setting names") {
+		t.Fatalf("Read() error = %v, want unknown-setting guidance", err)
+	}
+}
+
+func TestReadExplainsUnsupportedShell(t *testing.T) {
+	root := t.TempDir()
+	data := []byte("[launch]\nshell = \"csh\"\n")
+	if err := os.WriteFile(ConfigPath(root), data, 0600); err != nil {
+		t.Fatalf("WriteFile(config) returned error: %v", err)
+	}
+	_, err := Read(root)
+	if err == nil || !strings.Contains(err.Error(), "[launch].shell") || !strings.Contains(err.Error(), "nushell") {
+		t.Fatalf("Read() error = %v, want supported-shell guidance", err)
+	}
+}
+
+func TestReadTracksExplicitBooleanFalse(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Create(root); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	config, err := Read(root)
+	if err != nil {
+		t.Fatalf("Read() returned error: %v", err)
+	}
+	if !config.Launch.NoSharedRCSet || config.Launch.NoSharedRC {
+		t.Fatalf("no_shared_rc presence/value = %t/%t, want explicitly set false", config.Launch.NoSharedRCSet, config.Launch.NoSharedRC)
+	}
+}

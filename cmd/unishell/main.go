@@ -248,8 +248,8 @@ func applyPersistentConfig(options cliOptions, root string) (cliOptions, error) 
 	if options.ShellProfile == "" {
 		options.ShellProfile = launch.ShellProfile
 	}
-	if !options.NoSharedRC && launch.NoSharedRC {
-		options.NoSharedRC = true
+	if !options.NoSharedRCSpecified && (launch.NoSharedRCSet || launch.Configured) {
+		options.NoSharedRC = launch.NoSharedRC
 	}
 	if options.Multiplexer == "" {
 		options.Multiplexer = launch.Multiplexer
@@ -1848,6 +1848,10 @@ Options:
   --new-session
       Start a new multiplexer session without attaching to or prompting
       about existing sessions.
+
+  --no-shared-rc / --shared-rc
+      Explicitly skip or load shared shell configuration, overriding the
+      persistent config value.
 
 Clean subcommand:
   unishell clean [--target SESSION]

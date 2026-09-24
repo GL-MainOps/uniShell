@@ -18,6 +18,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/credentials"
 	"gitlab.com/mainops/uniShell/internal/multiplexer"
 	"gitlab.com/mainops/uniShell/internal/multiplexer/api"
+	"gitlab.com/mainops/uniShell/internal/persistence"
 	"gitlab.com/mainops/uniShell/internal/runtime"
 	sessionmeta "gitlab.com/mainops/uniShell/internal/session"
 	"gitlab.com/mainops/uniShell/internal/shell"
@@ -2874,5 +2875,34 @@ func TestRunListPrintsSessionIDNameAndType(t *testing.T) {
 func TestRunListRejectsArguments(t *testing.T) {
 	if err := runList(&listTestApplication{}, []string{"unexpected"}); err == nil {
 		t.Fatal("runList() accepted arguments")
+	}
+}
+
+func TestApplyPersistentConfigAllowsExplicitBooleanOverride(t *testing.T) {
+	root := t.TempDir()
+	if _, err := persistence.Create(root); err != nil {
+		t.Fatalf("persistence.Create() returned error: %v", err)
+	}
+	if err := persistence.SaveFirstLaunch(root, persistence.LaunchConfig{
+		Shell:      "bash",
+		NoSharedRC: true,
+	}); err != nil {
+		t.Fatalf("SaveFirstLaunch() returned error: %v", err)
+	}
+
+	defaults, err := applyPersistentConfig(cliOptions{}, root)
+	if err != nil {
+		t.Fatalf("applyPersistentConfig() returned error: %v", err)
+	}
+	if !defaults.NoSharedRC {
+		t.Fatal("config no_shared_rc=true was not applied")
+	}
+
+	override, err := applyPersistentConfig(cliOptions{NoSharedRCSpecified: true}, root)
+	if err != nil {
+		t.Fatalf("applyPersistentConfig() with override returned error: %v", err)
+	}
+	if override.NoSharedRC {
+		t.Fatal("explicit --shared-rc did not override config")
 	}
 }

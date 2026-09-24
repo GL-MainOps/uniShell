@@ -20,6 +20,7 @@ type cliOptions struct {
 	Shell                  string
 	ShellProfile           string
 	NoSharedRC             bool
+	NoSharedRCSpecified    bool
 	Multiplexer            string
 	SessionName            string
 	SessionNameSpecified   bool
@@ -127,6 +128,11 @@ func parseCLIArgs(args []string) (cliOptions, []string, error) {
 
 		case arg == "--no-shared-rc":
 			options.NoSharedRC = true
+			options.NoSharedRCSpecified = true
+
+		case arg == "--shared-rc":
+			options.NoSharedRC = false
+			options.NoSharedRCSpecified = true
 
 		case arg == "--new-session":
 			options.NewSession = true

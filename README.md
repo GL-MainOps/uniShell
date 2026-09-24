@@ -35,8 +35,11 @@ runtime at `~/.local/unishell`, and writes
 `~/.local/unishell/.unishell-config.toml`. Set `UNISHELL_RUNTIME_DIR` or
 pass `--runtime-dir PATH` during installation to choose another runtime root.
 The config file documents the launch options and stores the first launch's
-selected defaults. Edit its `[launch]` values to change them. Command-line
-options and environment settings take precedence.
+selected defaults. Edit its `[launch]` values to change them. Invalid keys
+and unsupported shell or multiplexer values produce an error naming the
+setting. Command-line options and environment settings take precedence;
+`--shared-rc` and `--no-shared-rc` can explicitly override either boolean
+value of `no_shared_rc`.
 
 Persistent mode keeps the extracted tools and session data between launches.
 The first authenticated launch saves the token as AES-GCM ciphertext in the
