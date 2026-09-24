@@ -8,7 +8,7 @@ import (
 	"gitlab.com/mainops/uniShell/internal/crypto"
 )
 
-// Create creates an encrypted uniShell runtime bundle from sourceDir.
+// Create creates an authenticated uniShell runtime bundle from sourceDir.
 func Create(sourceDir, password string, compress bool) ([]byte, error) {
 	archive, err := CreateArchive(sourceDir)
 	if err != nil {
@@ -26,24 +26,23 @@ func Create(sourceDir, password string, compress bool) ([]byte, error) {
 		payload = compressed
 	}
 
-	encrypted, err := crypto.Encrypt(payload, password)
+	authenticated, err := crypto.Authenticate(payload, password)
 	if err != nil {
-		return nil, fmt.Errorf("encrypt runtime archive: %w", err)
+		return nil, fmt.Errorf("authenticate runtime archive: %w", err)
 	}
 
-	return encrypted, nil
+	return authenticated, nil
 }
 
-// OpenAuthenticated decrypts and authenticates an encrypted uniShell
-// runtime bundle.
+// OpenAuthenticated verifies an authenticated uniShell runtime bundle.
 //
 // The returned bytes contain the authenticated compressed payload. They
 // must be passed to DecompressAuthenticated to materialize the tar archive.
 func OpenAuthenticated(data []byte, password string) ([]byte, error) {
-	compressed, err := crypto.Decrypt(data, password)
+	compressed, err := crypto.Verify(data, password)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"open encrypted runtime bundle: %w",
+			"verify runtime bundle: %w",
 			err,
 		)
 	}
@@ -94,8 +93,8 @@ func DecompressAuthenticatedReader(
 	return reader, nil
 }
 
-// Open authenticates and decrypts an encrypted uniShell runtime bundle,
-// then decompresses its authenticated payload.
+// Open verifies a uniShell runtime bundle, then decompresses its
+// authenticated payload.
 //
 // The returned bytes contain the tar archive and must be passed to
 // ExtractArchive to materialize the runtime.

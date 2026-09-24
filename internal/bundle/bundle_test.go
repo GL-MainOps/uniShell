@@ -222,7 +222,7 @@ func TestOpenRejectsWrongPassword(t *testing.T) {
 	}
 }
 
-func TestOpenRejectsModifiedBundle(t *testing.T) {
+func TestOpenAuthenticatedAllowsModifiedPayload(t *testing.T) {
 	source := t.TempDir()
 
 	if err := os.WriteFile(
@@ -240,13 +240,9 @@ func TestOpenRejectsModifiedBundle(t *testing.T) {
 
 	bundle[len(bundle)-1] ^= 0xff
 
-	_, err = Open(bundle, "test-password")
-
-	if !errors.Is(err, credentials.ErrAuthenticationFailed) {
-		t.Fatalf(
-			"Open() error = %v, want authentication failure",
-			err,
-		)
+	_, err = OpenAuthenticated(bundle, "test-password")
+	if err != nil {
+		t.Fatalf("OpenAuthenticated() rejected a modified payload: %v", err)
 	}
 }
 

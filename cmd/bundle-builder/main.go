@@ -30,7 +30,7 @@ func run(args []string) error {
 	output := flags.String(
 		"output",
 		"",
-		"output encrypted bundle path",
+		"output authenticated bundle path",
 	)
 
 	compress := flags.Bool(

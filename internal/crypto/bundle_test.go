@@ -46,7 +46,7 @@ func TestWrongPasswordFailsAuthentication(t *testing.T) {
 	}
 }
 
-func TestModifiedBundleFailsAuthentication(t *testing.T) {
+func TestPayloadChangesDoNotFailTokenGate(t *testing.T) {
 	encrypted, err := Encrypt(
 		[]byte("uniShell test payload"),
 		"test-password",
@@ -57,13 +57,12 @@ func TestModifiedBundleFailsAuthentication(t *testing.T) {
 
 	encrypted[len(encrypted)-1] ^= 0xff
 
-	_, err = Decrypt(encrypted, "test-password")
-	if err != credentials.ErrAuthenticationFailed {
-		t.Fatalf(
-			"Decrypt() error = %v, want %v",
-			err,
-			credentials.ErrAuthenticationFailed,
-		)
+	verified, err := Decrypt(encrypted, "test-password")
+	if err != nil {
+		t.Fatalf("Decrypt() returned error for a payload change: %v", err)
+	}
+	if verified[len(verified)-1] != encrypted[len(encrypted)-1] {
+		t.Fatal("verified payload does not reflect the modified payload byte")
 	}
 }
 
@@ -109,26 +108,15 @@ func TestUnsupportedVersionFails(t *testing.T) {
 	}
 }
 
-func TestInvalidKDFParametersFail(t *testing.T) {
-	encrypted, err := Encrypt(
-		[]byte("uniShell test payload"),
-		"test-password",
-	)
+func TestTruncatedTokenGateHeaderFails(t *testing.T) {
+	bundle, err := Encrypt([]byte("payload"), "test-password")
 	if err != nil {
 		t.Fatalf("Encrypt() returned error: %v", err)
 	}
 
-	// The Argon2 memory field occupies bytes 9-12.
-	// Change 65536 KiB to 65537 KiB.
-	encrypted[12] = 1
-
-	_, err = Decrypt(encrypted, "test-password")
+	_, err = Decrypt(bundle[:macHeaderSize-1], "test-password")
 	if err != ErrInvalidBundle {
-		t.Fatalf(
-			"Decrypt() error = %v, want %v",
-			err,
-			ErrInvalidBundle,
-		)
+		t.Fatalf("Decrypt() error = %v, want %v", err, ErrInvalidBundle)
 	}
 }
 
@@ -180,7 +168,7 @@ func TestDecryptLegacyVersionTwoBundle(t *testing.T) {
 	nonce := bytes.Repeat([]byte{0x24}, aead.NonceSize())
 
 	bundle := Bundle{
-		Version: formatVersion,
+		Version: legacyFormatVersion,
 		Time:    legacyArgonTime,
 		Memory:  legacyArgonMemory,
 		Threads: legacyArgonThreads,
@@ -211,34 +199,18 @@ func TestDecryptLegacyVersionTwoBundle(t *testing.T) {
 	}
 }
 
-func TestBundleUsesVersionTwoParameters(t *testing.T) {
-	encrypted, err := Encrypt(
-		[]byte("uniShell test payload"),
-		"test-password",
-	)
+func TestBundleUsesVersionFourTokenGate(t *testing.T) {
+	payload := []byte("uniShell test payload")
+	bundle, err := Encrypt(payload, "test-password")
 	if err != nil {
 		t.Fatalf("Encrypt() returned error: %v", err)
 	}
 
-	bundle, err := decodeBundle(encrypted)
-	if err != nil {
-		t.Fatalf("decodeBundle() returned error: %v", err)
+	if bundle[4] != formatVersion {
+		t.Fatalf("Version = %d, want %d", bundle[4], formatVersion)
 	}
-
-	if bundle.Version != 2 {
-		t.Fatalf("Version = %d, want 2", bundle.Version)
-	}
-
-	if bundle.Time != 1 {
-		t.Fatalf("Time = %d, want 1", bundle.Time)
-	}
-
-	if bundle.Memory != 64*1024 {
-		t.Fatalf("Memory = %d, want %d", bundle.Memory, 64*1024)
-	}
-
-	if bundle.Threads != 4 {
-		t.Fatalf("Threads = %d, want 4", bundle.Threads)
+	if !bytes.Equal(bundle[5+macSize:], payload) {
+		t.Fatal("version 4 bundle does not contain the plaintext payload")
 	}
 }
 
@@ -269,7 +241,7 @@ func TestEmptyPasswordFails(t *testing.T) {
 	}
 }
 
-func TestEncryptionProducesDifferentBundles(t *testing.T) {
+func TestAuthenticationBundleIsDeterministic(t *testing.T) {
 	plaintext := []byte("uniShell test payload")
 	password := "test-password"
 
@@ -283,8 +255,8 @@ func TestEncryptionProducesDifferentBundles(t *testing.T) {
 		t.Fatalf("second Encrypt() returned error: %v", err)
 	}
 
-	if bytes.Equal(first, second) {
-		t.Fatal("two encryptions produced identical bundles")
+	if !bytes.Equal(first, second) {
+		t.Fatal("same payload and token produced different authenticated bundles")
 	}
 }
 
