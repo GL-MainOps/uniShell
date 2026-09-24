@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -38,6 +39,7 @@ func newApplication(options cliOptions) (*app.App, error) {
 		SessionName:            options.SessionName,
 		SessionNameSpecified:   options.SessionNameSpecified,
 		MultiplexerSessionName: options.MultiplexerSessionName,
+		NewSession:             options.NewSession,
 	})
 }
 
@@ -432,23 +434,81 @@ func runDirectShell(
 	return runtimeSession.Cleanup()
 }
 
+type multiSessionDiscovery interface {
+	DiscoverMultiplexerSessions() ([]*multiplexer.ManagedSession, error)
+}
+
+type newSessionRequest interface {
+	RequestedNewSession() bool
+}
+
 func runMultiplexerShell(
 	application shellApplication,
 	ctx context.Context,
 	multiplexerName string,
 ) error {
-	session, err := application.DiscoverMultiplexerSession()
-	if err == nil {
-		printReattachMessage(application, session)
-
-		return session.Attach()
+	forceNew := false
+	if requested, ok := application.(newSessionRequest); ok {
+		forceNew = requested.RequestedNewSession()
 	}
 
-	if !errors.Is(err, multiplexer.ErrSessionNotFound) {
-		return fmt.Errorf(
-			"discover multiplexer session: %w",
-			err,
-		)
+	if !forceNew {
+		if discovery, ok := application.(multiSessionDiscovery); ok {
+			sessions, err := discovery.DiscoverMultiplexerSessions()
+			if err != nil {
+				return fmt.Errorf("discover multiplexer sessions: %w", err)
+			}
+
+			live := make([]*app.Session, 0, len(sessions))
+			hasMultiplexerIdentity := false
+			for _, managed := range sessions {
+				if managed == nil || managed.Backend == nil {
+					continue
+				}
+				if managed.Metadata.Multiplexer != "" {
+					hasMultiplexerIdentity = true
+				}
+				if managed.Backend.IsAlive(managed.Session) {
+					live = append(live, &app.Session{Multiplexer: managed})
+				}
+			}
+
+			// Older session providers may not expose the multiplexer identity in
+			// their all-session result. Preserve their existing name-based lookup.
+			if !hasMultiplexerIdentity {
+				session, err := application.DiscoverMultiplexerSession()
+				if err == nil {
+					printReattachMessage(application, session)
+					return session.Attach()
+				}
+				if !errors.Is(err, multiplexer.ErrSessionNotFound) {
+					return fmt.Errorf("discover multiplexer session: %w", err)
+				}
+			} else {
+				selected, err := chooseMultiplexerSession(
+					ctx, multiplexerName, live, os.Stdin, os.Stdout,
+				)
+				if err != nil {
+					if errors.Is(err, errMultiplexerSessionChoiceCancelled) {
+						return fmt.Errorf("multiplexer session selection cancelled")
+					}
+					return err
+				}
+				if selected != nil {
+					printReattachMessage(application, selected)
+					return selected.Attach()
+				}
+			}
+		} else {
+			session, err := application.DiscoverMultiplexerSession()
+			if err == nil {
+				printReattachMessage(application, session)
+				return session.Attach()
+			}
+			if !errors.Is(err, multiplexer.ErrSessionNotFound) {
+				return fmt.Errorf("discover multiplexer session: %w", err)
+			}
+		}
 	}
 
 	runtimeSession, err := application.PrepareMultiplexerSession()
@@ -527,7 +587,7 @@ func runMultiplexerShell(
 		sessionEnvironment,
 	)
 
-	session, err = application.CreateMultiplexerSessionResolved(
+	session, err := application.CreateMultiplexerSessionResolved(
 		runtimeSession,
 		multiplexerName,
 		selected,
@@ -558,6 +618,110 @@ func runMultiplexerShell(
 	}
 
 	return nil
+}
+
+var errMultiplexerSessionChoiceCancelled = errors.New(
+	"multiplexer session selection cancelled",
+)
+
+func chooseMultiplexerSession(
+	ctx context.Context,
+	requested string,
+	sessions []*app.Session,
+	in io.Reader,
+	out io.Writer,
+) (*app.Session, error) {
+	matching := make([]*app.Session, 0, len(sessions))
+	for _, session := range sessions {
+		if session != nil && session.Multiplexer != nil &&
+			session.Multiplexer.Metadata.Multiplexer == requested {
+			matching = append(matching, session)
+		}
+	}
+
+	sort.SliceStable(matching, func(i, j int) bool {
+		return matching[i].Multiplexer.Metadata.CreatedAt.After(
+			matching[j].Multiplexer.Metadata.CreatedAt,
+		)
+	})
+	sort.SliceStable(sessions, func(i, j int) bool {
+		return sessions[i].Multiplexer.Metadata.CreatedAt.After(
+			sessions[j].Multiplexer.Metadata.CreatedAt,
+		)
+	})
+
+	if len(matching) == 1 {
+		return matching[0], nil
+	}
+	if len(sessions) == 0 {
+		return nil, nil
+	}
+
+	candidates := matching
+	if len(candidates) == 0 {
+		candidates = sessions
+		fmt.Fprintf(out, "An active %s session already exists.\n", candidates[0].Multiplexer.Metadata.Multiplexer)
+		fmt.Fprintln(out, "Choose a session to attach to, or start a new session.")
+	} else {
+		fmt.Fprintf(out, "Multiple active %s sessions exist.\n", requested)
+		fmt.Fprintln(out, "Choose a session to attach to, or start a new session.")
+	}
+
+	for i, session := range candidates {
+		metadata := session.Multiplexer.Metadata
+		name := metadata.MultiplexerSessionName
+		if name == "" {
+			name = metadata.Name
+		}
+		sessionID := filepath.Base(session.Multiplexer.Session.Runtime)
+		if session.Multiplexer.Session.Runtime == "" || sessionID == "." {
+			sessionID = metadata.ID
+		}
+		fmt.Fprintf(out, "  %d. %s — %s (id: %s)\n", i+1, metadata.Multiplexer, name, sessionID)
+	}
+	fmt.Fprintln(out, "  n. start a new session")
+	fmt.Fprintln(out, "  q. cancel")
+
+	scanner := bufio.NewScanner(in)
+	for {
+		fmt.Fprint(out, "Select an existing session, new session, or quit [number/n/q]: ")
+		input := make(chan string, 1)
+		errCh := make(chan error, 1)
+		go func() {
+			if scanner.Scan() {
+				input <- scanner.Text()
+				return
+			}
+			err := scanner.Err()
+			if err == nil {
+				err = io.EOF
+			}
+			errCh <- err
+		}()
+
+		select {
+		case <-ctx.Done():
+			return nil, errMultiplexerSessionChoiceCancelled
+		case err := <-errCh:
+			if errors.Is(err, io.EOF) {
+				return nil, errMultiplexerSessionChoiceCancelled
+			}
+			return nil, fmt.Errorf("read multiplexer session selection: %w", err)
+		case value := <-input:
+			value = strings.ToLower(strings.TrimSpace(value))
+			if value == "n" || value == "new" {
+				return nil, nil
+			}
+			if value == "q" || value == "quit" || value == "exit" {
+				return nil, errMultiplexerSessionChoiceCancelled
+			}
+			index, err := strconv.Atoi(value)
+			if err == nil && index >= 1 && index <= len(candidates) {
+				return candidates[index-1], nil
+			}
+			fmt.Fprintln(out, "Invalid selection. Choose one of the listed numbers, n, or q.")
+		}
+	}
 }
 
 func printReattachMessage(
@@ -1051,6 +1215,10 @@ Options:
         4. quit
 
       Ctrl+C or selecting quit safely cancels startup.
+
+  --new-session
+      Start a new multiplexer session without attaching to or prompting
+      about existing sessions.
 
 Environment:
   UNISHELL_SHELL

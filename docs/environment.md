@@ -199,6 +199,25 @@ When an invalid value is supplied interactively, uniShell presents:
 
 Pressing `Ctrl+C` or selecting `quit` cancels startup safely.
 
+### Existing multiplexer sessions
+
+When `unishell` finds a live managed multiplexer session of the requested
+multiplexer type, it attaches to that session. If multiple live sessions of
+that type are available, it asks which one to attach to or whether to start a
+new session.
+
+If live managed sessions exist only for a different multiplexer type,
+`unishell` displays their multiplexer type, session name, and session ID. You
+can attach to one of them, start a session with the requested multiplexer, or
+cancel startup.
+
+Use `--new-session` to always create a new managed session and skip existing
+session discovery and prompts:
+
+```bash
+unishell --multiplexer zellij --new-session
+```
+
 ### `UNISHELL_SESSION`
 
 Selects the base name of the uniShell logical session.
