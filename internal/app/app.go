@@ -302,70 +302,74 @@ func extractAuthenticatedRuntime(
 }
 
 func (a *App) PreparePersistentRuntime() error {
-	if !a.Persistent {
-		return fmt.Errorf("persistent runtime is not enabled")
-	}
-	authenticated, err := a.authenticatedBundle()
-	if err != nil {
-		return err
-	}
-	_, err = a.ensurePersistentBundle(authenticated)
+	_, _, err := a.PreparePersistentRuntimeResult()
 	return err
 }
 
-func (a *App) ensurePersistentBundle(authenticated []byte) (string, error) {
+func (a *App) PreparePersistentRuntimeResult() (string, bool, error) {
+	if !a.Persistent {
+		return "", false, fmt.Errorf("persistent runtime is not enabled")
+	}
+	authenticated, err := a.authenticatedBundle()
+	if err != nil {
+		return "", false, err
+	}
+	return a.ensurePersistentBundle(authenticated)
+}
+
+func (a *App) ensurePersistentBundle(authenticated []byte) (string, bool, error) {
 	digest := sha256.Sum256(authenticated)
 	fingerprint := hex.EncodeToString(digest[:12])
 	installed := filepath.Join(a.Paths.Runtime, "installed-"+fingerprint)
 
 	if info, err := os.Stat(installed); err == nil {
 		if !info.IsDir() {
-			return "", fmt.Errorf("persistent runtime path %q is not a directory", installed)
+			return "", false, fmt.Errorf("persistent runtime path %q is not a directory", installed)
 		}
 		if _, err := os.Stat(filepath.Join(installed, "bin")); err != nil {
-			return "", fmt.Errorf("persistent runtime %q is incomplete; run 'unishell clean' before reinstalling: %w", installed, err)
+			return "", false, fmt.Errorf("persistent runtime %q is incomplete; run 'unishell clean --installed' before reinstalling: %w", installed, err)
 		}
 		if _, err := os.Stat(filepath.Join(installed, "config")); err != nil {
-			return "", fmt.Errorf("persistent runtime %q is incomplete; run 'unishell clean' before reinstalling: %w", installed, err)
+			return "", false, fmt.Errorf("persistent runtime %q is incomplete; run 'unishell clean --installed' before reinstalling: %w", installed, err)
 		}
 		marker, err := os.ReadFile(filepath.Join(installed, ".unishell-installed"))
 		if err != nil {
-			return "", fmt.Errorf("persistent runtime %q is incomplete; run 'unishell clean' before reinstalling: %w", installed, err)
+			return "", false, fmt.Errorf("persistent runtime %q is incomplete; run 'unishell clean --installed' before reinstalling: %w", installed, err)
 		}
 		wantMarker := fmt.Sprintf("bundle=%s\n", fingerprint)
 		if string(marker) != wantMarker {
-			return "", fmt.Errorf("persistent runtime %q has mismatched installation metadata", installed)
+			return "", false, fmt.Errorf("persistent runtime %q has mismatched installation metadata", installed)
 		}
-		return installed, nil
+		return installed, false, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("inspect persistent runtime: %w", err)
+		return "", false, fmt.Errorf("inspect persistent runtime: %w", err)
 	}
 
 	if err := os.MkdirAll(a.Paths.Runtime, 0700); err != nil {
-		return "", fmt.Errorf("create persistent runtime directory: %w", err)
+		return "", false, fmt.Errorf("create persistent runtime directory: %w", err)
 	}
 	if err := os.Mkdir(installed, 0700); err != nil {
-		return "", fmt.Errorf("create persistent runtime directory: %w", err)
+		return "", false, fmt.Errorf("create persistent runtime directory: %w", err)
 	}
 
 	reader, err := bundle.DecompressAuthenticatedReader(authenticated)
 	if err != nil {
-		return "", fmt.Errorf("decompress persistent runtime bundle: %w", err)
+		return installed, true, fmt.Errorf("decompress persistent runtime bundle: %w", err)
 	}
 	extractErr := bundle.ExtractArchive(reader, installed)
 	closeErr := reader.Close()
 	if extractErr != nil {
-		return "", fmt.Errorf("extract persistent runtime bundle: %w", extractErr)
+		return installed, true, fmt.Errorf("extract persistent runtime bundle: %w", extractErr)
 	}
 	if closeErr != nil {
-		return "", fmt.Errorf("close persistent runtime bundle: %w", closeErr)
+		return installed, true, fmt.Errorf("close persistent runtime bundle: %w", closeErr)
 	}
 
 	marker := []byte(fmt.Sprintf("bundle=%s\n", fingerprint))
 	if err := os.WriteFile(filepath.Join(installed, ".unishell-installed"), marker, 0600); err != nil {
-		return "", fmt.Errorf("record persistent runtime version: %w", err)
+		return installed, true, fmt.Errorf("record persistent runtime version: %w", err)
 	}
-	return installed, nil
+	return installed, true, nil
 }
 
 func (a *App) preparePersistentSessionFiles(session *runtime.Session, installed string) error {
@@ -461,7 +465,7 @@ func (a *App) prepareRuntimeSession(mode runtime.SessionMode) (*runtime.Session,
 	}
 	installed := ""
 	if a.Persistent {
-		installed, err = a.ensurePersistentBundle(authenticated)
+		installed, _, err = a.ensurePersistentBundle(authenticated)
 		if err != nil {
 			return nil, err
 		}

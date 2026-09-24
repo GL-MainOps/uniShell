@@ -2906,3 +2906,67 @@ func TestApplyPersistentConfigAllowsExplicitBooleanOverride(t *testing.T) {
 		t.Fatal("explicit --shared-rc did not override config")
 	}
 }
+
+func TestRollbackRefreshedRuntimeRemovesOnlyNewInstalledBundle(t *testing.T) {
+	root := t.TempDir()
+	fingerprint := strings.Repeat("a", 24)
+	directory := filepath.Join(root, "runtime", "v2", "installed-"+fingerprint)
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatalf("MkdirAll() returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, ".unishell-installed"), []byte("bundle="+fingerprint+"\n"), 0600); err != nil {
+		t.Fatalf("WriteFile(marker) returned error: %v", err)
+	}
+
+	if err := rollbackRefreshedRuntime(root, runtimeRefreshReceipt{Directory: directory, Created: true}); err != nil {
+		t.Fatalf("rollbackRefreshedRuntime() returned error: %v", err)
+	}
+	if _, err := os.Stat(directory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("refreshed bundle still exists after rollback: stat error = %v", err)
+	}
+}
+
+func TestRollbackRefreshedRuntimePreservesExistingBundle(t *testing.T) {
+	root := t.TempDir()
+	fingerprint := strings.Repeat("b", 24)
+	directory := filepath.Join(root, "runtime", "v2", "installed-"+fingerprint)
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatalf("MkdirAll() returned error: %v", err)
+	}
+	if err := rollbackRefreshedRuntime(root, runtimeRefreshReceipt{Directory: directory, Created: false}); err != nil {
+		t.Fatalf("rollbackRefreshedRuntime() returned error: %v", err)
+	}
+	if _, err := os.Stat(directory); err != nil {
+		t.Fatalf("existing bundle was removed: %v", err)
+	}
+}
+
+func TestRollbackRefreshedRuntimeRejectsPathOutsideRuntime(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "installed-"+strings.Repeat("c", 24))
+	if err := os.MkdirAll(outside, 0700); err != nil {
+		t.Fatalf("MkdirAll() returned error: %v", err)
+	}
+	if err := rollbackRefreshedRuntime(root, runtimeRefreshReceipt{Directory: outside, Created: true}); err == nil {
+		t.Fatal("rollbackRefreshedRuntime() accepted a path outside runtime")
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Fatalf("outside path was removed: %v", err)
+	}
+}
+
+func TestRollbackRefreshedRuntimeRemovesIncompleteNewBundle(t *testing.T) {
+	root := t.TempDir()
+	fingerprint := strings.Repeat("d", 24)
+	directory := filepath.Join(root, "runtime", "v2", "installed-"+fingerprint)
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatalf("MkdirAll() returned error: %v", err)
+	}
+
+	if err := rollbackRefreshedRuntime(root, runtimeRefreshReceipt{Directory: directory, Created: true}); err != nil {
+		t.Fatalf("rollbackRefreshedRuntime() returned error: %v", err)
+	}
+	if _, err := os.Stat(directory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("incomplete refreshed bundle remains: stat error = %v", err)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -337,10 +338,7 @@ func run(application *app.App, args []string) error {
 		return runUpdate(application, commandArgs)
 
 	case "__refresh-runtime":
-		if len(commandArgs) > 0 {
-			return fmt.Errorf("internal runtime refresh does not accept arguments")
-		}
-		return application.PreparePersistentRuntime()
+		return runRefreshRuntime(application, commandArgs)
 
 	case "clean":
 		return runClean(application, commandArgs)
@@ -1135,23 +1133,146 @@ func runUpdate(application *app.App, args []string) error {
 	}
 	defer os.Remove(stagedBinary)
 
-	refresh := exec.Command(stagedBinary, "--runtime-dir", application.Paths.Root, "__refresh-runtime")
-	refresh.Stdout = os.Stdout
-	refresh.Stderr = os.Stderr
-	refresh.Stdin = os.Stdin
-	if err := refresh.Run(); err != nil {
-		return fmt.Errorf("prepare updated persistent runtime: %w", err)
-	}
-
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("resolve home directory: %w", err)
 	}
 	destination := filepath.Join(home, ".local", "bin", "unishell")
+
+	receiptFile, err := os.CreateTemp("", ".unishell-runtime-refresh-*.json")
+	if err != nil {
+		return fmt.Errorf("create runtime refresh receipt: %w", err)
+	}
+	receiptPath := receiptFile.Name()
+	if err := receiptFile.Chmod(0600); err != nil {
+		_ = receiptFile.Close()
+		_ = os.Remove(receiptPath)
+		return fmt.Errorf("protect runtime refresh receipt: %w", err)
+	}
+	if err := receiptFile.Close(); err != nil {
+		_ = os.Remove(receiptPath)
+		return fmt.Errorf("close runtime refresh receipt: %w", err)
+	}
+	defer os.Remove(receiptPath)
+
+	refresh := exec.Command(stagedBinary, "--runtime-dir", application.Paths.Root, "__refresh-runtime", "--receipt-file", receiptPath)
+	refresh.Stdout = os.Stdout
+	refresh.Stderr = os.Stderr
+	refresh.Stdin = os.Stdin
+	refreshErr := refresh.Run()
+	receipt, receiptErr := readRuntimeRefreshReceipt(receiptPath)
+	if refreshErr != nil {
+		rollbackErr := error(nil)
+		if receiptErr == nil {
+			rollbackErr = rollbackRefreshedRuntime(application.Paths.Root, receipt)
+		}
+		return errors.Join(fmt.Errorf("prepare updated persistent runtime: %w", refreshErr), rollbackErr)
+	}
+	if receiptErr != nil {
+		return fmt.Errorf("read runtime refresh receipt: %w", receiptErr)
+	}
+
 	if err := installBinaryFrom(stagedBinary, destination); err != nil {
-		return err
+		rollbackErr := rollbackRefreshedRuntime(application.Paths.Root, receipt)
+		return errors.Join(err, rollbackErr)
 	}
 	fmt.Printf("Updated uniShell to %s.\n", tag)
+	return nil
+}
+
+type runtimeRefreshReceipt struct {
+	Directory string `json:"directory"`
+	Created   bool   `json:"created"`
+}
+
+func runRefreshRuntime(application *app.App, args []string) error {
+	if len(args) == 0 {
+		return application.PreparePersistentRuntime()
+	}
+	if len(args) != 2 || args[0] != "--receipt-file" || strings.TrimSpace(args[1]) == "" {
+		return fmt.Errorf("internal runtime refresh accepts only --receipt-file PATH")
+	}
+
+	directory, created, prepareErr := application.PreparePersistentRuntimeResult()
+	receipt := runtimeRefreshReceipt{Directory: directory, Created: created}
+	data, err := json.Marshal(receipt)
+	if err == nil {
+		err = os.WriteFile(args[1], data, 0600)
+	}
+	if err != nil {
+		rollbackErr := error(nil)
+		if created {
+			rollbackErr = rollbackRefreshedRuntime(application.Paths.Root, receipt)
+		}
+		return errors.Join(fmt.Errorf("write runtime refresh receipt: %w", err), prepareErr, rollbackErr)
+	}
+	return prepareErr
+}
+
+func readRuntimeRefreshReceipt(path string) (runtimeRefreshReceipt, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return runtimeRefreshReceipt{}, err
+	}
+	var receipt runtimeRefreshReceipt
+	if err := json.Unmarshal(data, &receipt); err != nil {
+		return runtimeRefreshReceipt{}, err
+	}
+	if receipt.Directory == "" {
+		return runtimeRefreshReceipt{}, fmt.Errorf("receipt has an empty runtime directory")
+	}
+	return receipt, nil
+}
+
+func rollbackRefreshedRuntime(root string, receipt runtimeRefreshReceipt) error {
+	if !receipt.Created {
+		return nil
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("resolve runtime root for rollback: %w", err)
+	}
+	runtimeRoot, err := filepath.Abs(filepath.Join(rootAbs, "runtime"))
+	if err != nil {
+		return fmt.Errorf("resolve runtime directory for rollback: %w", err)
+	}
+	candidate, err := filepath.Abs(receipt.Directory)
+	if err != nil {
+		return fmt.Errorf("resolve refreshed runtime for rollback: %w", err)
+	}
+	relative, err := filepath.Rel(runtimeRoot, candidate)
+	if err != nil {
+		return fmt.Errorf("validate refreshed runtime for rollback: %w", err)
+	}
+	parts := strings.Split(relative, string(filepath.Separator))
+	if len(parts) != 2 || strings.HasPrefix(relative, "..") || !strings.HasPrefix(parts[1], "installed-") {
+		return fmt.Errorf("refusing to roll back runtime outside an installed bundle directory: %q", candidate)
+	}
+	fingerprint := strings.TrimPrefix(parts[1], "installed-")
+	if len(fingerprint) != 24 {
+		return fmt.Errorf("refusing to roll back runtime with invalid bundle fingerprint: %q", candidate)
+	}
+	if _, err := hex.DecodeString(fingerprint); err != nil {
+		return fmt.Errorf("refusing to roll back runtime with invalid bundle fingerprint: %q", candidate)
+	}
+	info, err := os.Lstat(candidate)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect refreshed runtime for rollback: %w", err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to roll back non-directory runtime path %q", candidate)
+	}
+	if _, err := os.Lstat(filepath.Join(candidate, sessionmeta.MetadataFileName)); err == nil {
+		return fmt.Errorf("refusing to roll back a runtime directory containing session metadata: %q", candidate)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect refreshed runtime metadata: %w", err)
+	}
+	if err := os.RemoveAll(candidate); err != nil {
+		return fmt.Errorf("roll back refreshed runtime %q: %w", candidate, err)
+	}
 	return nil
 }
 

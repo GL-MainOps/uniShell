@@ -46,7 +46,9 @@ The first authenticated launch saves the token as AES-GCM ciphertext in the
 hidden `.token` file, with a private local key in `.token.key`; later launches
 reuse it without a password prompt. Both files are restricted to the current
 OS account. `unishell update` checks GitLab releases, downloads and verifies
-the new binary, refreshes the runtime, then replaces `~/.local/bin/unishell`.
+the new binary, refreshes the runtime, then atomically replaces
+`~/.local/bin/unishell`. If replacement fails, it removes only the new runtime
+bundle created for that update and preserves the previous installation.
 Set `UNISHELL_UPGRADE_DIRECT_LINK` to provide a direct HTTPS binary URL.
 
 Use `unishell clean` to clean managed sessions. Removing the entire installed
