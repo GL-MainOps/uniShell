@@ -2864,11 +2864,30 @@ func TestRunListPrintsSessionIDNameAndType(t *testing.T) {
 			t.Fatalf("runList() returned error: %v", err)
 		}
 	})
-	want := "SESSION ID\tSESSION NAME\tSESSION TYPE\n" +
-		"direct-id\tlocal\tdirect\n" +
-		"mux-id\twork\tmultiplexer\n"
-	if output != want {
-		t.Fatalf("runList() output = %q, want %q", output, want)
+	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("runList() produced %d lines, want 3: %q", len(lines), output)
+	}
+	columnStarts := []int{
+		strings.Index(lines[0], "SESSION ID"),
+		strings.Index(lines[0], "SESSION NAME"),
+		strings.Index(lines[0], "SESSION TYPE"),
+	}
+	if columnStarts[0] != 0 || columnStarts[1] <= columnStarts[0] || columnStarts[2] <= columnStarts[1] {
+		t.Fatalf("runList() header columns are not aligned: %q", lines[0])
+	}
+	rowStarts := []int{
+		strings.Index(lines[1], "direct-id"),
+		strings.Index(lines[1], "local"),
+		strings.LastIndex(lines[1], "direct"),
+	}
+	for i, start := range rowStarts {
+		if start != columnStarts[i] {
+			t.Fatalf("runList() data column %d starts at %d, header starts at %d: %q", i+1, start, columnStarts[i], lines[1])
+		}
+	}
+	if !strings.Contains(lines[2], "multiplexer") {
+		t.Fatalf("runList() omitted multiplexer type: %q", lines[2])
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"gitlab.com/mainops/uniShell/internal/app"
@@ -1497,7 +1498,8 @@ func runList(application listApplication, args []string) error {
 		return nil
 	}
 
-	fmt.Println("SESSION ID\tSESSION NAME\tSESSION TYPE")
+	table := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(table, "SESSION ID\tSESSION NAME\tSESSION TYPE")
 	for _, session := range sessions {
 		if session == nil {
 			continue
@@ -1509,9 +1511,9 @@ func runList(application listApplication, args []string) error {
 		case sessionmeta.ModeMultiplexer:
 			sessionType = "multiplexer"
 		}
-		fmt.Printf("%s\t%s\t%s\n", session.Metadata.ID, session.Metadata.Name, sessionType)
+		fmt.Fprintf(table, "%s\t%s\t%s\n", session.Metadata.ID, session.Metadata.Name, sessionType)
 	}
-	return nil
+	return table.Flush()
 }
 
 type cleanOptions struct {
