@@ -98,6 +98,34 @@ not persisted as part of the session metadata.
 
 ## Global Configuration
 
+### `UNISHELL_GITHUB_TOKEN`
+
+Optional GitHub personal access token used while `scripts/build.sh` acquires
+tools from GitHub releases. Release acquisition looks up release metadata via
+the GitHub REST API, which allows 60 unauthenticated requests per hour;
+authenticated requests have a higher per-user limit. The token is sent only
+with GitHub release metadata API requests and is not embedded in the built
+uniShell runtime or sent to the asset download host.
+
+To create a least-privilege token:
+
+1. Open GitHub **Settings → Developer settings → Personal access tokens → Fine-grained tokens** and select **Generate new token**.
+2. Give it a descriptive name such as `uniShell tool acquisition`, choose your account as the resource owner, and set an expiration.
+3. Under repository access, choose **Public Repositories (read-only)** if offered. This workflow only reads public release metadata, so grant no repository or account permissions.
+4. Generate and copy the token. Fine-grained tokens have read-only access to public repositories by default; this workflow needs no additional permissions.
+
+Provide it to the build process without putting it in project files:
+
+```bash
+UNISHELL_GITHUB_TOKEN=github_pat_... ./scripts/build.sh
+```
+
+The variable is optional. Without it, acquisition continues anonymously. A
+token can increase the primary API rate limit, but it cannot resolve secondary
+rate limits or unrelated causes of `403 Forbidden` responses. GitHub's
+`x-ratelimit-remaining` response header indicates whether a request exhausted
+the primary limit.
+
 ### `UNISHELL_AUTH_TOKEN`
 
 Provides the authentication token used when accessing the encrypted

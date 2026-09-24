@@ -57,6 +57,7 @@ jobs:
       - name: Build
         env:
           UNISHELL_AUTH_TOKEN: ${{ secrets.UNISHELL_AUTH_TOKEN }}
+          UNISHELL_GITHUB_TOKEN: ${{ secrets.UNISHELL_GITHUB_TOKEN }}
         run: ./scripts/build.sh --compress true --profile "$UNISHELL_PROFILE" --version "$UNISHELL_VERSION"
 
       - name: Upload build binaries

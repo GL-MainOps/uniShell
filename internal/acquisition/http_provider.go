@@ -188,6 +188,15 @@ func (p HTTPProvider) resolveGitHubRelease(
 	for name, value := range headers {
 		request.Header.Set(name, value)
 	}
+	// Release metadata is fetched from the GitHub REST API, whose anonymous
+	// rate limit is much lower than its authenticated limit. Use the optional
+	// build-time token only for this API request; never attach it to the
+	// resolved asset download URL, which may use a different host.
+	if request.Header.Get("Authorization") == "" {
+		if token := strings.TrimSpace(os.Getenv("UNISHELL_GITHUB_TOKEN")); token != "" {
+			request.Header.Set("Authorization", "Bearer "+token)
+		}
+	}
 
 	response, err := p.Client.Do(request)
 	if err != nil {
