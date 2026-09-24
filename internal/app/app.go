@@ -26,6 +26,7 @@ type Options struct {
 	SessionName            string
 	SessionNameSpecified   bool
 	MultiplexerSessionName string
+	NewSession             bool
 	MultiplexerOptions     api.Options
 	Shell                  string
 	ShellProfile           string
@@ -44,6 +45,7 @@ type App struct {
 	SessionName            string
 	SessionNameSpecified   bool
 	MultiplexerSessionName string
+	NewSession             bool
 	MultiplexerOptions     api.Options
 	Shell                  string
 	ShellProfile           string
@@ -120,6 +122,7 @@ func New(options Options) (*App, error) {
 		SessionName:            sessionName,
 		SessionNameSpecified:   sessionNameSpecified,
 		MultiplexerSessionName: options.MultiplexerSessionName,
+		NewSession:             options.NewSession,
 		MultiplexerOptions:     multiplexerOptions,
 		Shell:                  options.Shell,
 		ShellProfile:           options.ShellProfile,
@@ -141,6 +144,10 @@ func (a *App) RequestedNoSharedRC() bool {
 
 func (a *App) RequestedMultiplexer() string {
 	return a.MultiplexerName
+}
+
+func (a *App) RequestedNewSession() bool {
+	return a.NewSession
 }
 
 func (a *App) ValidateAuthentication() error {

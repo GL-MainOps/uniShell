@@ -2731,3 +2731,78 @@ export TEST_SESSION_ID='test-session'
 		)
 	}
 }
+
+func TestChooseMultiplexerSessionAttachesMatchingTypeWithoutPrompt(t *testing.T) {
+	backend := &shellTestBackend{alive: true}
+	session := &app.Session{Multiplexer: &multiplexer.ManagedSession{
+		Metadata: sessionmeta.Metadata{
+			Multiplexer:            "tmux",
+			MultiplexerSessionName: "work@abc",
+			ID:                     "session-id",
+		},
+		Backend: backend,
+	}}
+	var output bytes.Buffer
+
+	selected, err := chooseMultiplexerSession(
+		t.Context(), "tmux", []*app.Session{session}, strings.NewReader(""), &output,
+	)
+	if err != nil {
+		t.Fatalf("chooseMultiplexerSession() returned error: %v", err)
+	}
+	if selected != session {
+		t.Fatal("chooseMultiplexerSession() did not return matching session")
+	}
+	if output.Len() != 0 {
+		t.Fatalf("prompt output = %q, want empty", output.String())
+	}
+}
+
+func TestChooseMultiplexerSessionPromptsForOtherType(t *testing.T) {
+	backend := &shellTestBackend{alive: true}
+	session := &app.Session{Multiplexer: &multiplexer.ManagedSession{
+		Metadata: sessionmeta.Metadata{
+			Multiplexer:            "tmux",
+			MultiplexerSessionName: "work@abc",
+			ID:                     "metadata-id",
+		},
+		Backend: backend,
+		Session: multiplexer.Session{
+			Runtime: "/tmp/unishell/runtime/development/runtime-directory-id",
+		},
+	}}
+	var output bytes.Buffer
+
+	selected, err := chooseMultiplexerSession(
+		t.Context(), "zellij", []*app.Session{session}, strings.NewReader("1\n"), &output,
+	)
+	if err != nil {
+		t.Fatalf("chooseMultiplexerSession() returned error: %v", err)
+	}
+	if selected != session {
+		t.Fatal("chooseMultiplexerSession() did not return selected session")
+	}
+	for _, want := range []string{"tmux", "work@abc", "runtime-directory-id"} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("prompt output %q does not contain %q", output.String(), want)
+		}
+	}
+}
+
+func TestChooseMultiplexerSessionCanStartNew(t *testing.T) {
+	backend := &shellTestBackend{alive: true}
+	session := &app.Session{Multiplexer: &multiplexer.ManagedSession{
+		Metadata: sessionmeta.Metadata{Multiplexer: "tmux"},
+		Backend:  backend,
+	}}
+
+	selected, err := chooseMultiplexerSession(
+		t.Context(), "zellij", []*app.Session{session}, strings.NewReader("n\n"), io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("chooseMultiplexerSession() returned error: %v", err)
+	}
+	if selected != nil {
+		t.Fatal("chooseMultiplexerSession() selected existing session, want new session")
+	}
+}

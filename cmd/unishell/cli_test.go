@@ -614,3 +614,13 @@ func TestParseCLIArgsRejectsEmptyShellProfile(t *testing.T) {
 		t.Fatal("parseCLIArgs() returned nil error")
 	}
 }
+
+func TestParseCLIArgsNewSession(t *testing.T) {
+	options, _, err := parseCLIArgs([]string{"--new-session"})
+	if err != nil {
+		t.Fatalf("parseCLIArgs() returned error: %v", err)
+	}
+	if !options.NewSession {
+		t.Fatal("--new-session was not recorded")
+	}
+}
