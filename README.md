@@ -18,6 +18,10 @@ Commercial use, redistribution, modification, derivative works,
 sublicensing, and forking are not permitted unless separately authorized
 in writing by the copyright holder.
 
+AI coding agents should start with [AGENTS.md](./AGENTS.md) for repository
+instructions and [docs/agent-onboarding.md](./docs/agent-onboarding.md) for a
+current source map.
+
 ## Runtime modes
 
 uniShell supports the existing ephemeral mode and an optional persistent
