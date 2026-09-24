@@ -12,18 +12,21 @@ import (
 	"time"
 )
 
-const archiveCachePrefix = "archive-v1-"
+const (
+	archiveCachePrefix       = "archive-v2-"
+	legacyArchiveCachePrefix = "archive-v1-"
+)
 
-// ArchiveCacheResult describes the private, decompressed archive opened for
-// extraction. A cache miss builds the archive atomically before returning it.
+// ArchiveCacheResult describes the private binary archive opened for
+// extraction. A cache miss builds it atomically before returning it.
 type ArchiveCacheResult struct {
 	File                 *os.File
 	Hit                  bool
 	DecompressionElapsed time.Duration
 }
 
-// OpenArchiveCache opens the cached tar archive for this runtime version and
-// authenticated bundle. The cache stores the archive, not extracted session
+// OpenArchiveCache opens the cached binary archive for this runtime version
+// and authenticated bundle. The cache stores entries, not extracted session
 // files, so each launch still materializes a private session runtime.
 //
 // cacheDir should be a private directory owned by the current user. Cache files
@@ -39,7 +42,7 @@ func OpenArchiveCache(
 	_, _ = fingerprint.Write([]byte{0})
 	_, _ = fingerprint.Write(data)
 	key := hex.EncodeToString(fingerprint.Sum(nil))
-	cachePath := filepath.Join(cacheDir, archiveCachePrefix+key+".tar")
+	cachePath := filepath.Join(cacheDir, archiveCachePrefix+key+".bin")
 
 	if err := os.MkdirAll(cacheDir, 0700); err != nil {
 		return ArchiveCacheResult{}, fmt.Errorf("create archive cache: %w", err)
@@ -73,12 +76,12 @@ func OpenArchiveCache(
 		return ArchiveCacheResult{}, err
 	}
 	timed := &archiveCacheTimedReader{reader: reader}
-	_, copyErr := io.Copy(temp, timed)
+	copyErr := writeOpaqueArchiveCache(timed, temp)
 	closeReaderErr := reader.Close()
 	elapsed := timed.elapsed
 	if copyErr != nil {
 		_ = temp.Close()
-		return ArchiveCacheResult{}, fmt.Errorf("write decompressed archive cache: %w", copyErr)
+		return ArchiveCacheResult{}, fmt.Errorf("write binary archive cache: %w", copyErr)
 	}
 	if closeReaderErr != nil {
 		_ = temp.Close()
@@ -150,7 +153,9 @@ func pruneArchiveCache(cacheDir, currentPath string) {
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasPrefix(name, archiveCachePrefix) || !strings.HasSuffix(name, ".tar") {
+		currentFormat := strings.HasPrefix(name, archiveCachePrefix) && strings.HasSuffix(name, ".bin")
+		legacyFormat := strings.HasPrefix(name, legacyArchiveCachePrefix) && strings.HasSuffix(name, ".tar")
+		if entry.IsDir() || !currentFormat && !legacyFormat {
 			continue
 		}
 		path := filepath.Join(cacheDir, name)

@@ -22,24 +22,9 @@ var ErrUnsupportedEntry = errors.New("unsupported archive entry")
 // restricted to destination and cannot escape it through absolute paths
 // or path traversal.
 func ExtractArchive(reader io.Reader, destination string) error {
-	destination, err := filepath.Abs(destination)
+	destination, directories, err := prepareExtractionDestination(destination)
 	if err != nil {
-		return fmt.Errorf("resolve extraction destination: %w", err)
-	}
-
-	if err := os.MkdirAll(destination, defaultDirectoryMode); err != nil {
-		if info, statErr := os.Stat(destination); statErr == nil && !info.IsDir() {
-			return fmt.Errorf(
-				"%w: extraction destination is not a directory",
-				ErrInvalidSource,
-			)
-		}
-		return fmt.Errorf("create extraction destination: %w", err)
-	}
-
-	directories := directoryCache{
-		root:    destination,
-		ensured: map[string]struct{}{destination: {}},
+		return err
 	}
 	tarReader := tar.NewReader(reader)
 
@@ -62,7 +47,7 @@ func ExtractArchive(reader io.Reader, destination string) error {
 			return fmt.Errorf("archive entry %q: %w", header.Name, err)
 		}
 
-		if err := extractEntry(tarReader, header, target, &directories); err != nil {
+		if err := extractEntry(tarReader, header, target, directories); err != nil {
 			return fmt.Errorf(
 				"extract archive entry %q: %w",
 				header.Name,
@@ -72,6 +57,23 @@ func ExtractArchive(reader io.Reader, destination string) error {
 	}
 
 	return nil
+}
+
+func prepareExtractionDestination(destination string) (string, *directoryCache, error) {
+	destination, err := filepath.Abs(destination)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve extraction destination: %w", err)
+	}
+	if err := os.MkdirAll(destination, defaultDirectoryMode); err != nil {
+		if info, statErr := os.Stat(destination); statErr == nil && !info.IsDir() {
+			return "", nil, fmt.Errorf("%w: extraction destination is not a directory", ErrInvalidSource)
+		}
+		return "", nil, fmt.Errorf("create extraction destination: %w", err)
+	}
+	return destination, &directoryCache{
+		root:    destination,
+		ensured: map[string]struct{}{destination: {}},
+	}, nil
 }
 
 func secureArchivePath(destination, archivePath string) (string, error) {
@@ -170,7 +172,7 @@ func extractEntry(
 ) error {
 	switch header.Typeflag {
 	case tar.TypeDir:
-		return extractDirectory(header, target, directories)
+		return extractDirectory(header.FileInfo().Mode().Perm(), target, directories)
 
 	case tar.TypeReg, tar.TypeRegA:
 		return extractFile(reader, header, target, directories)
@@ -184,12 +186,12 @@ func extractEntry(
 	}
 }
 
-func extractDirectory(header *tar.Header, target string, directories *directoryCache) error {
+func extractDirectory(mode os.FileMode, target string, directories *directoryCache) error {
 	if err := directories.ensure(target); err != nil {
 		return fmt.Errorf("create directory: %w", err)
 	}
 
-	if err := os.Chmod(target, header.FileInfo().Mode().Perm()); err != nil {
+	if err := os.Chmod(target, mode.Perm()); err != nil {
 		return fmt.Errorf("set directory permissions: %w", err)
 	}
 
@@ -202,34 +204,43 @@ func extractFile(
 	target string,
 	directories *directoryCache,
 ) error {
-	parent := filepath.Dir(target)
+	if header.Size < 0 {
+		return fmt.Errorf("invalid file size %d", header.Size)
+	}
+	return extractFileContents(
+		reader,
+		header.Size,
+		header.FileInfo().Mode().Perm(),
+		target,
+		directories,
+	)
+}
 
+func extractFileContents(
+	reader io.Reader,
+	size int64,
+	mode os.FileMode,
+	target string,
+	directories *directoryCache,
+) error {
+	parent := filepath.Dir(target)
 	if err := directories.ensure(parent); err != nil {
 		return fmt.Errorf("create parent directory: %w", err)
 	}
-
-	file, err := os.OpenFile(
-		target,
-		os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
-		defaultFileMode,
-	)
+	file, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, defaultFileMode)
 	if err != nil {
 		return fmt.Errorf("create file: %w", err)
 	}
-
-	if _, err := io.Copy(file, reader); err != nil {
+	if _, err := io.CopyN(file, reader, size); err != nil {
 		_ = file.Close()
 		return fmt.Errorf("write file: %w", err)
 	}
-
-	if err := file.Chmod(header.FileInfo().Mode().Perm()); err != nil {
+	if err := file.Chmod(mode.Perm()); err != nil {
 		_ = file.Close()
 		return fmt.Errorf("set file permissions: %w", err)
 	}
-
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("close file: %w", err)
 	}
-
 	return nil
 }

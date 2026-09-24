@@ -31,13 +31,21 @@ func TestOpenArchiveCacheCreatesPrivateVersionedCache(t *testing.T) {
 		t.Fatal("first cache open unexpectedly reported a hit")
 	}
 	assertArchiveCacheMode(t, cacheDir, first.File.Name())
-	got, err := io.ReadAll(first.File)
-	if err != nil {
-		t.Fatalf("read cached archive: %v", err)
+	magic := make([]byte, len(opaqueArchiveMagic))
+	if _, err := io.ReadFull(first.File, magic); err != nil {
+		t.Fatalf("read cache format header: %v", err)
 	}
-	if !bytes.Equal(got, archive) {
-		t.Fatal("cached archive does not match source archive")
+	if !bytes.Equal(magic, opaqueArchiveMagic[:]) {
+		t.Fatal("cache does not use the private binary format")
 	}
+	if _, err := first.File.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("rewind cached archive: %v", err)
+	}
+	destination := t.TempDir()
+	if err := ExtractArchiveCache(first.File, destination); err != nil {
+		t.Fatalf("extract cached archive: %v", err)
+	}
+	assertExtractedFile(t, destination, "bin/tool", []byte("first version"), 0600)
 
 	second, err := OpenArchiveCache(compressed, "v1.0.0", cacheDir)
 	if err != nil {
@@ -88,7 +96,7 @@ func TestOpenArchiveCacheCreatesPrivateVersionedCache(t *testing.T) {
 	}
 	cacheFiles := 0
 	for _, entry := range entries {
-		if filepath.Ext(entry.Name()) == ".tar" {
+		if filepath.Ext(entry.Name()) == ".bin" {
 			cacheFiles++
 		}
 	}

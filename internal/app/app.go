@@ -216,7 +216,7 @@ func extractAuthenticatedRuntime(
 		traceStartup(cacheStage, cacheStarted)
 
 		extractStarted := time.Now()
-		err = bundle.ExtractArchive(cached.File, destination)
+		err = bundle.ExtractArchiveCache(cached.File, destination)
 		traceStartup("extract runtime", extractStarted)
 		if err != nil {
 			return fmt.Errorf("extract runtime bundle: %w", err)
