@@ -42,7 +42,15 @@ build:
     expire_in: 2 days
 
   before_script:
-    - test -n "$UNISHELL_AUTH_TOKEN"
+    - |
+      if [ -z "${UNISHELL_GITHUB_TOKEN:-}" ]; then
+        echo "UNISHELL_GITHUB_TOKEN is unavailable. Check the variable key, environment scope, and protected tag status (CI_COMMIT_REF_PROTECTED=${CI_COMMIT_REF_PROTECTED:-unknown})." >&2
+        exit 1
+      fi
+      if [ -z "${UNISHELL_AUTH_TOKEN:-}" ]; then
+        echo "UNISHELL_AUTH_TOKEN is unavailable. Check that this required build secret is configured for the pipeline." >&2
+        exit 1
+      fi
 
 release-preparation:
   stage: build

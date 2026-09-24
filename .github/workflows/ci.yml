@@ -49,10 +49,13 @@ jobs:
           restore-keys: |
             unishell-acquisition-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Verify authentication token
+      - name: Verify build secrets
         env:
           UNISHELL_AUTH_TOKEN: ${{ secrets.UNISHELL_AUTH_TOKEN }}
-        run: test -n "$UNISHELL_AUTH_TOKEN"
+          UNISHELL_GITHUB_TOKEN: ${{ secrets.UNISHELL_GITHUB_TOKEN }}
+        run: |
+          test -n "$UNISHELL_AUTH_TOKEN" || { echo "UNISHELL_AUTH_TOKEN is unavailable." >&2; exit 1; }
+          test -n "$UNISHELL_GITHUB_TOKEN" || { echo "UNISHELL_GITHUB_TOKEN is unavailable to this workflow." >&2; exit 1; }
 
       - name: Build
         env:
