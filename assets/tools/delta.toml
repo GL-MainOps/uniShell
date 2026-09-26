@@ -1,5 +1,5 @@
 [[tools]]
-name = "superfile"
+name = "delta"
 profiles = [
     "full",
     "slim",
@@ -7,12 +7,12 @@ profiles = [
 ]
 
 [[tools.artifacts]]
-version = "1.6.0"
+version = "0.19.2"
 platform = "linux"
 architecture = "amd64"
 archive_type = "tar.gz"
-binary_path = "dist/superfile-linux-v1.6.0-amd64/spf"
-binary_name = "sf"
+binary_path = "delta-0.19.2-x86_64-unknown-linux-musl/delta"
+binary_name = "delta"
 checksum = ""
 
 [tools.artifacts.validation]
@@ -24,7 +24,7 @@ executable = true
 kind = "github-release"
 
 [tools.artifacts.source.github_release]
-owner = "yorukot"
-repository = "superfile"
-release = "v1.6.0"
-asset = "superfile-linux-v1.6.0-amd64.tar.gz"
+owner = "dandavison"
+repository = "delta"
+release = "0.19.2"
+asset = "delta-0.19.2-x86_64-unknown-linux-musl.tar.gz"

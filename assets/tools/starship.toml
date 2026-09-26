@@ -1,5 +1,5 @@
 [[tools]]
-name = "superfile"
+name = "startship"
 profiles = [
     "full",
     "slim",
@@ -7,24 +7,24 @@ profiles = [
 ]
 
 [[tools.artifacts]]
-version = "1.6.0"
+version = "1.26.0"
 platform = "linux"
 architecture = "amd64"
 archive_type = "tar.gz"
-binary_path = "dist/superfile-linux-v1.6.0-amd64/spf"
-binary_name = "sf"
+binary_path = "starship"
+binary_name = "starship"
 checksum = ""
 
 [tools.artifacts.validation]
 static_elf = true
-musl = true
+musl = false
 executable = true
 
 [tools.artifacts.source]
 kind = "github-release"
 
 [tools.artifacts.source.github_release]
-owner = "yorukot"
-repository = "superfile"
-release = "v1.6.0"
-asset = "superfile-linux-v1.6.0-amd64.tar.gz"
+owner = "starship"
+repository = "starship"
+release = "v1.26.0"
+asset = "starship-x86_64-unknown-linux-gnu.tar.gz"

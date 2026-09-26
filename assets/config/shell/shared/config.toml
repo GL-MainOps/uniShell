@@ -49,7 +49,7 @@ _ZO_FZF_OPTS = '--border-label "ZOXIDE RECENT DIRECTORIES" --ansi --info=default
 # ┌────────────────┐
 # │ GIT            │
 # └────────────────┘
-GIT_CONFIG_PARAMETERS="'core.sshCommand'='ssh -o StrictHostKeyChecking=no' 'color.ui'='auto' 'diff.mnemonicPrefix'='true' 'diff.renames'='true' 'diff.tool'='vimdiff' 'status.submoduleSummary'='true' 'status.showUntrackedFiles'='all' 'color.branch.upstream'='cyan' 'init.defaultBranch'='main' "
+GIT_CONFIG_PARAMETERS="'core.pager'='delta' 'interactive.diffFilter'='delta --color-only' 'delta.navigate'='true' 'merge.conflictStyle'='zdiff3' 'core.sshCommand'='ssh -o StrictHostKeyChecking=no' 'color.ui'='auto' 'diff.mnemonicPrefix'='true' 'diff.renames'='true' 'diff.tool'='vimdiff' 'status.submoduleSummary'='true' 'status.showUntrackedFiles'='all' 'color.branch.upstream'='cyan' 'init.defaultBranch'='main' "
 
 # ┌────────────────┐
 # │ SUDO           │
