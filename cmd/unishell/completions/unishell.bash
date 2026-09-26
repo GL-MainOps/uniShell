@@ -46,3 +46,4 @@ _unishell_complete() {
 }
 
 complete -F _unishell_complete unishell
+# vim: set ft=bash:

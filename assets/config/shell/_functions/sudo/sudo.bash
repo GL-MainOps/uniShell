@@ -1,10 +1,10 @@
 
-# Elivate safely
+# --- Elevate safely ----------------------------------------------------------
 es() {
     sudo --preserve-env=$SUDO_PRESERVED_VARIABLES bash --rcfile "$UNISHELL_CONFIG_PATH/shell-generated/$UNISHELL_SESSION_SHELL_PROFILE.bash"
 }
 
-### DOUPLE ESC = SUDO <previous command>
+# --- DOUBLE ESC = SUDO <previous command> -----------------------------------
 function _sudo_add_sudo {
     if [[ -z $READLINE_LINE ]]; then
         READLINE_LINE=$(fc -ln -1)
@@ -27,3 +27,4 @@ function _sudo_add_sudo {
 bind -m emacs -x '"\e\e": _sudo_add_sudo'
 bind -m vi-insert -x '"\e\e": _sudo_add_sudo'
 bind -m vi-command -x '"\e\e": _sudo_add_sudo'
+# vim: set ft=bash:

@@ -1,5 +1,3 @@
-# --- docker ------------------------------------------------------------------
-# changed: replace the single `unalias d` line above the `if` with this
 for __n in d dps dimg dl dstop drm dins dnet dvol dprune dstats drun dex \
            dc dup ddown dcl dcr dcp co cou cod cog cor cop; do
     unalias "$__n" 2>/dev/null
@@ -99,3 +97,4 @@ if [[ $- == *i* ]] && command -v docker &>/dev/null &&
 
     complete -o default -F __docker_wrapper_complete "${!DOCKER_WRAPPER_MAP[@]}"
 fi
+# vim: set ft=bash:

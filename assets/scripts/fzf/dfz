@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 # dfz.bash - fzf-driven Docker and Docker Compose operations for Bash
 #
 # Purpose:
@@ -1328,3 +1330,4 @@ export -f \
     _dfz__help \
     dfz
 
+# vim: set ft=bash:

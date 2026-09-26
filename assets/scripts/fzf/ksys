@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 # ksys.bash - fzf-driven systemd operations for Bash
 #
 # Purpose:
@@ -966,3 +968,4 @@ export -f \
     _ksys__help \
     ksys
 
+# vim: set ft=bash:

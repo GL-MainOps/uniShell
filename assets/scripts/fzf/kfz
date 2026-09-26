@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 # kfz.bash - fzf-driven Kubernetes operations for Bash
 #
 # Purpose:
@@ -1584,3 +1586,4 @@ export -f \
     _kfz__contexts \
     kfz
 
+# vim: set ft=bash:

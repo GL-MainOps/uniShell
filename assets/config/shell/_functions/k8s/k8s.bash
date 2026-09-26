@@ -240,3 +240,4 @@ if [[ $- == *i* ]] && command -v kubectl &>/dev/null &&
     complete -o default -F __kubectl_wrapper_complete "${!KUBECTL_WRAPPER_MAP[@]}"
 fi
 
+# vim: set ft=bash:

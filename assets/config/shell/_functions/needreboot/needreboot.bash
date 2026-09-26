@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 needreboot() {
     local email="Muhammad Yahia"
     local distro=""
@@ -59,3 +61,4 @@ needreboot() {
 
     return 1
 }
+# vim: set ft=bash:
