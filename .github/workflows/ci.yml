@@ -61,7 +61,7 @@ jobs:
         env:
           UNISHELL_AUTH_TOKEN: ${{ secrets.UNISHELL_AUTH_TOKEN }}
           UNISHELL_GITHUB_TOKEN: ${{ secrets.UNISHELL_GITHUB_TOKEN }}
-        run: ./scripts/build.sh --compress true --profile "$UNISHELL_PROFILE" --version "$UNISHELL_VERSION"
+        run: ./scripts/build.sh --compress false --profile "$UNISHELL_PROFILE" --version "$UNISHELL_VERSION"
 
       - name: Upload build binaries
         uses: actions/upload-artifact@v7

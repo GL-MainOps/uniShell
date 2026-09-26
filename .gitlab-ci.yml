@@ -32,7 +32,7 @@ build:
   script:
     - >
       UNISHELL_GITHUB_TOKEN="${UNISHELL_GITHUB_TOKEN:-}"
-      ./scripts/build.sh --compress true --profile "$UNISHELL_PROFILE"
+      ./scripts/build.sh --compress false --profile "$UNISHELL_PROFILE"
       --version "$UNISHELL_VERSION"
 
   artifacts:

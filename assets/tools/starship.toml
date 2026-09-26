@@ -17,7 +17,7 @@ checksum = ""
 
 [tools.artifacts.validation]
 static_elf = true
-musl = false
+musl = true
 executable = true
 
 [tools.artifacts.source]
@@ -27,4 +27,4 @@ kind = "github-release"
 owner = "starship"
 repository = "starship"
 release = "v1.26.0"
-asset = "starship-x86_64-unknown-linux-gnu.tar.gz"
+asset = "starship-x86_64-unknown-linux-musl.tar.gz"
