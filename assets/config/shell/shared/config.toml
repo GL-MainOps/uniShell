@@ -21,7 +21,6 @@ GROFF_NO_SGR = "1"
 MANPAGER = 'sh -c "col -bx | bat -l man -p"'
 PAGER = "bat -p --paging=always"
 EDITOR = "vim"
-# diffprog = ""
 
 # ╭────────────────────────────────╮
 # │ PROGRAM-SPECIFIC VARIABLES     │
@@ -49,7 +48,7 @@ _ZO_FZF_OPTS = '--border-label "ZOXIDE RECENT DIRECTORIES" --ansi --info=default
 # ┌────────────────┐
 # │ GIT            │
 # └────────────────┘
-GIT_CONFIG_PARAMETERS="'core.pager'='delta' 'interactive.diffFilter'='delta --color-only' 'delta.navigate'='true' 'merge.conflictStyle'='zdiff3' 'core.sshCommand'='ssh -o StrictHostKeyChecking=no' 'color.ui'='auto' 'diff.mnemonicPrefix'='true' 'diff.renames'='true' 'diff.tool'='vimdiff' 'status.submoduleSummary'='true' 'status.showUntrackedFiles'='all' 'color.branch.upstream'='cyan' 'init.defaultBranch'='main' "
+GIT_CONFIG_PARAMETERS="'core.pager'='delta --syntax-theme \"OneHalfDark\" --side-by-side' 'interactive.diffFilter'='delta --color-only' 'delta.navigate'='true' 'merge.conflictStyle'='zdiff3' 'core.sshCommand'='ssh -o StrictHostKeyChecking=no' 'color.ui'='auto' 'diff.mnemonicPrefix'='true' 'diff.renames'='true' 'diff.tool'='vimdiff' 'status.submoduleSummary'='true' 'status.showUntrackedFiles'='all' 'color.branch.upstream'='cyan' 'init.defaultBranch'='main' "
 
 # ┌────────────────┐
 # │ SUDO           │
@@ -73,6 +72,7 @@ SUDO_INITIAL_PRESERVED_VARIABLES = "EDITOR,MANPAGER,PAGER,PATH,TMUX,SSH_AUTH_SOC
 # ╰────────────────────────────────╯
 ssh = "ssh -o StrictHostKeyChecking=no"
 lports = "sudo lsof -i -P -n | grep LISTEN"
+diff = 'delta --syntax-theme "OneHalfDark" --side-by-side'
 
 # ╭────────────────────────────────╮
 # │ PROGRAM-SPECIFIC               │
