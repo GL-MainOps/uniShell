@@ -1,0 +1,44 @@
+complete -c tspin -l theme -d 'Provide a custom path to a theme file' -r -F
+complete -c tspin -s e -l exec -d 'Run command and view the output in a pager' -r
+complete -c tspin -l highlight -d 'Highlights in the form color:word1,word2' -r
+complete -c tspin -l enable -d 'Enable specific highlighters' -r -f -a "numbers\t''
+urls\t''
+emails\t''
+pointers\t''
+dates\t''
+durations\t''
+paths\t''
+quotes\t''
+key-value-pairs\t''
+uuids\t''
+ipv4\t''
+processes\t''
+json\t''
+keywords\t''"
+complete -c tspin -l disable -d 'Disable specific highlighters' -r -f -a "numbers\t''
+urls\t''
+emails\t''
+pointers\t''
+dates\t''
+durations\t''
+paths\t''
+quotes\t''
+key-value-pairs\t''
+uuids\t''
+ipv4\t''
+processes\t''
+json\t''
+keywords\t''"
+complete -c tspin -l extras -d 'Enable extra highlighters (e.g., --extras ipv6)' -r -f -a "ipv6\t''
+jvm-stack-trace\t''"
+complete -c tspin -l pager -d 'Override the default pager command used by tspin. (e.g. `--pager="ov -f [FILE]"`)' -r
+complete -c tspin -l completions -d 'Print shell completions to stdout' -r -f -a "bash\t''
+elvish\t''
+fish\t''
+powershell\t''
+zsh\t''"
+complete -c tspin -s f -l follow -d 'Follow the contents of a file'
+complete -c tspin -s p -l print -d 'Print the output to stdout'
+complete -c tspin -l generate-default-theme -d 'Print the default theme as a theme.toml to stdout'
+complete -c tspin -s h -l help -d 'Print help'
+complete -c tspin -s V -l version -d 'Print version'
