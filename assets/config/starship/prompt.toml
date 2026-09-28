@@ -178,8 +178,8 @@ $git_commit$git_branch[](#C6D6CF)${custom.E_UNISHELL_SESSION_VERSION}[](fg
 [character] # VARS: symbol
     disabled = false
     format = '$symbol '
-    success_symbol = '[](bold green)'
-    error_symbol = '[](bold red)'
+    success_symbol = '[ ](bold green)'
+    error_symbol = '[ ](bold red)'
 
 
 

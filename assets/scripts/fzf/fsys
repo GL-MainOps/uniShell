@@ -1,0 +1,1973 @@
+#!/usr/bin/env bash
+
+# fsys - fzf-driven systemd workflows for Bash
+#
+# Purpose:
+#   A compact, keyboard-driven interface to the system and user systemd
+#   managers. It is intentionally implemented as a Bash function so it can be
+#   sourced from .bashrc, while also supporting direct execution as a script.
+#
+# Design goals:
+#   - Preserve the original workflows and key bindings.
+#   - Exact fzf matching by default; previews start hidden.
+#   - System and user manager operations are explicit and never mixed.
+#   - Mutating actions require confirmation by default, before sudo is invoked.
+#   - Destructive/high-impact actions require typing YES; ordinary mutations
+#     require y/yes. --yes is an explicit per-invocation bypass.
+#   - Never interpolate a selected unit into a command more than necessary;
+#     selected values are passed as individual shell arguments.
+#   - Keep interactive editors attached to /dev/tty.
+#   - Keep sudo's useful interactive environment, including EDITOR/VISUAL.
+#   - Be useful even without bat, clipboard tools, or a graphical session.
+#
+# Requirements:
+#   bash, systemctl, journalctl, fzf
+#
+# Optional:
+#   bat       colored output
+#   wl-copy   Wayland clipboard
+#   xclip     X11 clipboard
+#   xsel      X11 clipboard
+#   pbcopy    macOS clipboard (useful when the script is shared)
+#
+# Examples:
+#   source /path/to/fsys
+#   fsys
+#   fsys services
+#   fsys services ssh
+#   fsys user services
+#   fsys -u timers
+#   fsys --yes service
+#   ./fsys logs
+#
+# vim: set ft=bash:
+
+# Do not enable `set -e`, `set -u`, or shell options globally here: this file is
+# designed to be sourced into an interactive shell and must not alter the
+# caller's shell semantics.
+
+# -----------------------------------------------------------------------------
+# Version / configuration
+# -----------------------------------------------------------------------------
+
+FSYS_VERSION='2.0.0'
+FSYS_LOG_LINES="${FSYS_LOG_LINES:-200}"
+FSYS_PREVIEW_LOG_LINES="${FSYS_PREVIEW_LOG_LINES:-40}"
+FSYS_SNAPSHOT_LOG_LINES="${FSYS_SNAPSHOT_LOG_LINES:-500}"
+FSYS_SUDO_PRESERVE_ENV="${FSYS_SUDO_PRESERVE_ENV:-EDITOR,VISUAL,MANPAGER,PAGER,PATH,TERM,COLORTERM,TMUX,SSH_AUTH_SOCK,UNISHELL_SESSION_RUNTIME_DIR}"
+export FSYS_VERSION FSYS_LOG_LINES FSYS_PREVIEW_LOG_LINES FSYS_SNAPSHOT_LOG_LINES FSYS_SUDO_PRESERVE_ENV
+[[ ${FSYS_ASSUME_YES+x} ]] && export FSYS_ASSUME_YES
+
+# -----------------------------------------------------------------------------
+# Common helpers
+# -----------------------------------------------------------------------------
+
+_fsys__version() {
+    printf 'fsys %s\n' "$FSYS_VERSION"
+}
+
+_fsys__usage_error() {
+    printf 'fsys: %s\n' "$*" >&2
+    printf 'Run `fsys --help` for usage.\n' >&2
+    return 2
+}
+
+_fsys__valid_scope() {
+    case ${1-} in
+        system|user) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+_fsys__require_commands() {
+    local missing=()
+    local cmd
+
+    for cmd in systemctl journalctl fzf; do
+        command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+    done
+
+    if ((${#missing[@]})); then
+        printf 'fsys: missing command(s): %s\n' "${missing[*]}" >&2
+        return 127
+    fi
+}
+
+_fsys__pause() {
+    # fzf execute actions have a real controlling terminal, but tests and
+    # unusual SSH/session setups may not. Never block forever without /dev/tty.
+    [[ -r /dev/tty ]] || return 0
+    printf '\nPress Enter to return to fzf...' >&2
+    IFS= read -r _ </dev/tty
+}
+
+_fsys__render() {
+    local language=${1:-text}
+
+    if command -v bat >/dev/null 2>&1; then
+        if [[ $language == text ]]; then
+            bat --style=plain --color=always --paging=never 2>/dev/null
+        else
+            bat \
+                --style=plain \
+                --color=always \
+                --paging=never \
+                --language="$language" \
+                2>/dev/null
+        fi
+    else
+        cat
+    fi
+}
+
+_fsys__preview_render() {
+    _fsys__render "${1:-text}"
+}
+
+_fsys__clip() {
+    local value
+    value=$(< /dev/stdin)
+
+    if command -v wl-copy >/dev/null 2>&1; then
+        printf '%s' "$value" | wl-copy
+    elif command -v xclip >/dev/null 2>&1; then
+        printf '%s' "$value" | xclip -selection clipboard
+    elif command -v xsel >/dev/null 2>&1; then
+        printf '%s' "$value" | xsel --clipboard --input
+    elif command -v pbcopy >/dev/null 2>&1; then
+        printf '%s' "$value" | pbcopy
+    else
+        printf '%s\n' "$value"
+        printf 'fsys: no clipboard command found.\n' >&2
+        return 1
+    fi
+}
+
+_fsys__scope_label() {
+    [[ ${1:-system} == user ]] && printf 'user' || printf 'system'
+}
+
+_fsys__scope_args() {
+    [[ ${1:-system} == user ]] && printf '%s\n' '--user'
+}
+
+_fsys__unit_args_valid() {
+    local unit
+
+    for unit in "$@"; do
+        # Unit names emitted by systemctl do not contain literal tabs/newlines.
+        # Reject an option-looking unit as an additional defense in case a
+        # caller invokes an exported helper directly rather than through fzf.
+        [[ -n $unit ]] || return 1
+        [[ $unit != -* ]] || return 1
+        [[ $unit != *$'\t'* ]] || return 1
+        [[ $unit != *$'\n'* ]] || return 1
+    done
+}
+
+# -----------------------------------------------------------------------------
+# Privilege, confirmation, and systemctl execution
+# -----------------------------------------------------------------------------
+
+# Run system-manager systemctl without changing the caller's environment.
+# Root shells do not need sudo and should not be forced through it.
+_fsys__sudo_systemctl() {
+    if ((EUID == 0)); then
+        command systemctl "$@"
+        return
+    fi
+
+    sudo --preserve-env="$FSYS_SUDO_PRESERVE_ENV" systemctl "$@"
+}
+
+# Prompt before any mutating operation. The default policy is intentionally
+# conservative:
+#   y/yes  -> ordinary mutation
+#   YES    -> destructive/high-impact mutation
+#   --yes  -> explicit per-invocation bypass
+_fsys__confirm() {
+    local scope=$1
+    local operation=$2
+    shift 2
+    local -a units=("$@")
+    local reply level='normal' label
+    local count=${#units[@]}
+    local max_display=12
+    local shown=0
+
+    [[ ${FSYS_ASSUME_YES:-0} == 1 ]] && return 0
+
+    case $operation in
+        stop|disable|mask|reset-failed|edit|trigger|daemon-reload|reexec|enable-linger|disable-linger)
+            level='high'
+            ;;
+    esac
+
+    label="$(printf '%s' "$operation" | tr '[:lower:]' '[:upper:]')"
+
+    if [[ $scope == system ]]; then
+        printf '\n%s SYSTEM-MANAGER OPERATION\n' 'fsys:' >&2
+    else
+        printf '\n%s USER-MANAGER OPERATION\n' 'fsys:' >&2
+    fi
+
+    printf '  operation : %s\n' "$label" >&2
+    if ((${#units[@]})); then
+        printf '  units     : %d\n' "$count" >&2
+        for unit in "${units[@]}"; do
+            printf '    - %s\n' "$unit" >&2
+            shown=$((shown + 1))
+            if ((shown >= max_display)); then
+                if ((count > max_display)); then
+                    printf '    - ... (%d more)\n' "$((count - max_display))" >&2
+                fi
+                break
+            fi
+        done
+    fi
+
+    if [[ $level == high ]]; then
+        printf '  This action can change or remove active system state.\n' >&2
+        printf '  Type YES to continue: ' >&2
+        IFS= read -r reply </dev/tty || return 1
+        [[ $reply == YES ]]
+    else
+        printf '  Continue? [y/N]: ' >&2
+        IFS= read -r reply </dev/tty || return 1
+        case ${reply,,} in
+            y|yes) return 0 ;;
+            *) return 1 ;;
+        esac
+    fi
+}
+
+_fsys__systemctl_mutate_as() {
+    local scope=${1:-system}
+    local action=${2-}
+    local confirmation=${3-}
+    shift 3 || true
+    local -a units=("$@")
+
+    _fsys__valid_scope "$scope" || {
+        printf 'fsys: invalid scope: %s\n' "$scope" >&2
+        return 2
+    }
+
+    [[ -n $action ]] || {
+        printf 'fsys: mutation action is empty.\n' >&2
+        return 2
+    }
+    [[ -n $confirmation ]] && : || confirmation=$action
+
+    ((${#units[@]})) || return 0
+    _fsys__unit_args_valid "${units[@]}" || {
+        printf 'fsys: refusing an invalid unit argument.\n' >&2
+        return 2
+    }
+
+    _fsys__confirm "$scope" "$confirmation" "${units[@]}" || {
+        printf 'fsys: action cancelled.\n' >&2
+        return 0
+    }
+
+    if [[ $scope == user ]]; then
+        command systemctl --user "$action" "${units[@]}"
+        return $?
+    fi
+
+    command -v sudo >/dev/null 2>&1 || {
+        if ((EUID == 0)); then
+            command systemctl "$action" "${units[@]}"
+            return $?
+        fi
+        printf 'fsys: sudo is required for system-manager mutations.\n' >&2
+        return 127
+    }
+
+    # Ask for sudo credentials only after the user has explicitly confirmed.
+    if ((EUID != 0)); then
+        sudo -v || {
+            printf 'fsys: sudo authentication failed; action not executed.\n' >&2
+            return 1
+        }
+    fi
+
+    _fsys__sudo_systemctl "$action" "${units[@]}"
+}
+
+_fsys__systemctl_mutate() {
+    local scope=${1:-system}
+    local action=${2-}
+    shift 2 || true
+    _fsys__systemctl_mutate_as "$scope" "$action" "$action" "$@"
+}
+
+_fsys__daemon_reload() {
+    local scope=${1:-system}
+
+    _fsys__valid_scope "$scope" || return 2
+    _fsys__confirm "$scope" daemon-reload || {
+        printf 'fsys: daemon-reload cancelled.\n' >&2
+        return 0
+    }
+
+    if [[ $scope == user ]]; then
+        systemctl --user daemon-reload
+    else
+        command -v sudo >/dev/null 2>&1 || {
+            ((EUID == 0)) || {
+                printf 'fsys: sudo is required for system-manager daemon-reload.\n' >&2
+                return 127
+            }
+        }
+        if ((EUID != 0)) && ! sudo -v; then
+            printf 'fsys: sudo authentication failed; daemon-reload not executed.\n' >&2
+            return 1
+        fi
+        _fsys__sudo_systemctl daemon-reload
+    fi
+}
+
+_fsys__reset_failed_all() {
+    local scope=${1:-system}
+    _fsys__valid_scope "$scope" || return 2
+
+    _fsys__confirm "$scope" reset-failed || {
+        printf 'fsys: reset-failed cancelled.\n' >&2
+        return 0
+    }
+
+    if [[ $scope == user ]]; then
+        systemctl --user reset-failed
+    else
+        command -v sudo >/dev/null 2>&1 || {
+            ((EUID == 0)) || {
+                printf 'fsys: sudo is required for system-manager reset-failed.\n' >&2
+                return 127
+            }
+        }
+        if ((EUID != 0)) && ! sudo -v; then
+            printf 'fsys: sudo authentication failed; reset-failed not executed.\n' >&2
+            return 1
+        fi
+        _fsys__sudo_systemctl reset-failed
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# Selection-file helpers
+# -----------------------------------------------------------------------------
+
+_fsys__read_units() {
+    local file=$1
+    [[ -r $file ]] || {
+        printf 'fsys: selection file is not readable: %s\n' "$file" >&2
+        return 2
+    }
+
+    local line unit
+    while IFS= read -r line; do
+        [[ -n $line ]] || continue
+        IFS=$'\t' read -r unit _ <<< "$line"
+        [[ -n $unit ]] || continue
+        printf '%s\n' "$unit"
+    done < "$file"
+}
+
+_fsys__read_timer_pairs() {
+    local file=$1
+    [[ -r $file ]] || {
+        printf 'fsys: selection file is not readable: %s\n' "$file" >&2
+        return 2
+    }
+
+    local line timer target
+    while IFS= read -r line; do
+        [[ -n $line ]] || continue
+        IFS=$'\t' read -r timer target _ <<< "$line"
+        [[ -n $timer && -n $target ]] || continue
+        printf '%s\t%s\n' "$timer" "$target"
+    done < "$file"
+}
+
+_fsys__copy_selected() {
+    local file=$1
+    local separator=${2:-$'\n'}
+    local value
+
+    value=$(_fsys__read_units "$file") || return
+    [[ -n $value ]] || return 0
+
+    printf '%s%s' "$value" "$separator" | _fsys__clip
+}
+
+# -----------------------------------------------------------------------------
+# systemd list builders
+# -----------------------------------------------------------------------------
+
+_fsys__services_list() {
+    local scope=${1:-system}
+    _fsys__valid_scope "$scope" || return 2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    systemctl "${scope_args[@]}" \
+        list-units \
+        --type=service \
+        --all \
+        --no-legend \
+        --no-pager \
+        --full \
+        --plain 2>/dev/null |
+        awk '
+            {
+                unit = $1
+                load = $2
+                active = $3
+                substate = $4
+                if (unit == "") next
+
+                description = ""
+                if (NF >= 5) {
+                    match($0, /^[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]*/)
+                    description = substr($0, RSTART + RLENGTH)
+                }
+
+                u[++count] = unit
+                l[count] = load
+                a[count] = active
+                s[count] = substate
+                d[count] = description
+
+                if (length(unit) > wu) wu = length(unit)
+                if (length(load) > wl) wl = length(load)
+                if (length(active) > wa) wa = length(active)
+                if (length(substate) > ws) ws = length(substate)
+            }
+            END {
+                for (i = 1; i <= count; i++)
+                    printf "%s\t%s\t%s\t%s\t%-*s  %-*s  %-*s  %-*s  %s\n", \
+                        u[i], l[i], a[i], s[i], \
+                        wu, u[i], wl, l[i], wa, a[i], ws, s[i], d[i]
+            }
+        '
+}
+
+_fsys__timers_list() {
+    local scope=${1:-system}
+    _fsys__valid_scope "$scope" || return 2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    systemctl "${scope_args[@]}" \
+        list-timers \
+        --all \
+        --no-legend \
+        --no-pager \
+        --full \
+        --plain 2>/dev/null |
+        awk '
+            {
+                if (NF < 2) next
+
+                timer = $(NF - 1)
+                activates = $NF
+
+                prefix = $0
+                sub(/[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]*$/, "", prefix)
+                sub(/[[:space:]]+$/, "", prefix)
+
+                t[++count] = timer
+                ac[count] = activates
+                p[count] = prefix
+
+                if (length(prefix) > wp) wp = length(prefix)
+                if (length(timer) > wt) wt = length(timer)
+                if (length(activates) > wa) wa = length(activates)
+            }
+            END {
+                for (i = 1; i <= count; i++)
+                    printf "%s\t%s\t%-*s  %-*s  %-*s\n", \
+                        t[i], ac[i], wp, p[i], wt, t[i], wa, ac[i]
+            }
+        '
+}
+
+_fsys__units_list() {
+    local scope=${1:-system}
+    _fsys__valid_scope "$scope" || return 2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    systemctl "${scope_args[@]}" \
+        list-units \
+        --all \
+        --no-legend \
+        --no-pager \
+        --full \
+        --plain \
+        --type=service,timer,socket,path,mount,automount,swap,target,device 2>/dev/null |
+        awk '
+            {
+                unit = $1
+                load = $2
+                active = $3
+                substate = $4
+                if (unit == "") next
+
+                description = ""
+                if (NF >= 5) {
+                    match($0, /^[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]*/)
+                    description = substr($0, RSTART + RLENGTH)
+                }
+
+                u[++count] = unit
+                l[count] = load
+                a[count] = active
+                s[count] = substate
+                d[count] = description
+
+                if (length(unit) > wu) wu = length(unit)
+                if (length(load) > wl) wl = length(load)
+                if (length(active) > wa) wa = length(active)
+                if (length(substate) > ws) ws = length(substate)
+            }
+            END {
+                for (i = 1; i <= count; i++)
+                    printf "%s\t%s\t%s\t%s\t%-*s  %-*s  %-*s  %-*s  %s\n", \
+                        u[i], l[i], a[i], s[i], \
+                        wu, u[i], wl, l[i], wa, a[i], ws, s[i], d[i]
+            }
+        '
+}
+
+_fsys__failed_list() {
+    local scope=${1:-system}
+    _fsys__valid_scope "$scope" || return 2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    systemctl "${scope_args[@]}" \
+        --failed \
+        --no-legend \
+        --no-pager \
+        --full \
+        --plain 2>/dev/null |
+        awk '
+            {
+                unit = $1
+                load = $2
+                active = $3
+                substate = $4
+                if (unit == "") next
+
+                description = ""
+                if (NF >= 5) {
+                    match($0, /^[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]*/)
+                    description = substr($0, RSTART + RLENGTH)
+                }
+
+                printf "%s\t%s\t%s\t%s\t%s\n", unit, active, substate, load, description
+            }
+        '
+}
+
+_fsys__unit_files_list() {
+    local scope=${1:-system}
+    _fsys__valid_scope "$scope" || return 2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    systemctl "${scope_args[@]}" \
+        list-unit-files \
+        --no-legend \
+        --no-pager \
+        --full \
+        --plain 2>/dev/null |
+        awk '
+            {
+                if ($1 == "") next
+                u[++count] = $1
+                s[count] = $2
+                p[count] = $3
+                if (length(u[count]) > wu) wu = length(u[count])
+                if (length(s[count]) > ws) ws = length(s[count])
+                if (length(p[count]) > wp) wp = length(p[count])
+            }
+            END {
+                for (i = 1; i <= count; i++)
+                    printf "%s\t%s\t%s\t%-*s  %-*s  %-*s\n", \
+                        u[i], s[i], p[i], wu, u[i], ws, s[i], wp, p[i]
+            }
+        '
+}
+
+_fsys__boots_list() {
+    local scope=${1:-system}
+    _fsys__valid_scope "$scope" || return 2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    journalctl "${scope_args[@]}" --list-boots --no-pager 2>/dev/null
+}
+
+# -----------------------------------------------------------------------------
+# Previews
+# -----------------------------------------------------------------------------
+
+_fsys__service_preview() {
+    local scope=$1 unit=$2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    _fsys__unit_args_valid "$unit" || return 2
+    systemctl "${scope_args[@]}" status --no-pager --full "$unit" 2>&1 |
+        _fsys__preview_render text
+}
+
+_fsys__timer_preview() {
+    local scope=$1 timer=$2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    _fsys__unit_args_valid "$timer" || return 2
+    {
+        systemctl "${scope_args[@]}" status --no-pager --full "$timer" 2>&1
+        printf '\n--- timer calendar ---\n'
+        systemctl "${scope_args[@]}" list-timers --all --no-pager --full --plain 2>&1 |
+            grep -F -- "$timer" || true
+    } | _fsys__preview_render text
+}
+
+_fsys__unit_preview() {
+    local scope=$1 unit=$2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    _fsys__unit_args_valid "$unit" || return 2
+    systemctl "${scope_args[@]}" status --no-pager --full "$unit" 2>&1 |
+        _fsys__preview_render text
+}
+
+_fsys__logs_preview() {
+    local scope=$1 unit=$2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    _fsys__unit_args_valid "$unit" || return 2
+    journalctl "${scope_args[@]}" --no-pager --full -n "$FSYS_PREVIEW_LOG_LINES" -u "$unit" 2>&1 |
+        _fsys__preview_render text
+}
+
+_fsys__failed_preview() {
+    local scope=$1 unit=$2
+    _fsys__service_preview "$scope" "$unit"
+}
+
+# -----------------------------------------------------------------------------
+# Dedicated interactive actions
+# -----------------------------------------------------------------------------
+
+_fsys__edit_selected() {
+    local scope=$1
+    local file=$2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    [[ -r $file ]] || {
+        printf 'fsys: selection file is not readable: %s\n' "$file" >&2
+        return 2
+    }
+
+    local -a units=()
+    mapfile -t units < <(_fsys__read_units "$file")
+
+    ((${#units[@]} == 1)) || {
+        printf 'fsys: edit requires exactly one selected unit.\n' >&2
+        _fsys__pause
+        return 1
+    }
+
+    local unit=${units[0]}
+    _fsys__unit_args_valid "$unit" || return 2
+
+    _fsys__confirm "$scope" edit "$unit" || {
+        printf 'fsys: edit cancelled.\n' >&2
+        return 0
+    }
+
+    if [[ $scope == user ]]; then
+        systemctl --user edit "$unit" </dev/tty >/dev/tty 2>/dev/tty
+        return $?
+    fi
+
+    command -v sudo >/dev/null 2>&1 || {
+        ((EUID == 0)) || {
+            printf 'fsys: sudo is required for system-manager edits.\n' >&2
+            return 127
+        }
+    }
+
+    if ((EUID != 0)); then
+        sudo -v || {
+            printf 'fsys: sudo authentication failed; edit not started.\n' >&2
+            return 1
+        }
+    fi
+
+    _fsys__sudo_systemctl edit "$unit" </dev/tty >/dev/tty 2>/dev/tty
+}
+
+_fsys__cat_selected() {
+    local scope=$1
+    local kind=$2
+    local file=$3
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    local -a units=()
+    mapfile -t units < <(_fsys__read_units "$file") || return
+    ((${#units[@]})) || return 0
+    _fsys__unit_args_valid "${units[@]}" || return 2
+
+    systemctl "${scope_args[@]}" --no-pager --full cat "${units[@]}" 2>&1 |
+        _fsys__render text
+    _fsys__pause
+}
+
+_fsys__show_properties() {
+    local scope=$1
+    local file=$2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    local -a units=()
+    mapfile -t units < <(_fsys__read_units "$file") || return
+    ((${#units[@]})) || return 0
+    _fsys__unit_args_valid "${units[@]}" || return 2
+
+    systemctl "${scope_args[@]}" show \
+        --no-pager \
+        --property=Id,Names,Description,LoadState,ActiveState,SubState,FragmentPath,UnitFileState,UnitFilePreset,User,Group,MainPID,ExecMainStartTimestamp,Restart \
+        "${units[@]}" 2>&1 |
+        _fsys__render text
+    _fsys__pause
+}
+
+_fsys__dependencies_selected() {
+    local scope=$1
+    local file=$2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    local -a units=()
+    mapfile -t units < <(_fsys__read_units "$file") || return
+    ((${#units[@]})) || return 0
+    _fsys__unit_args_valid "${units[@]}" || return 2
+
+    local unit
+    for unit in "${units[@]}"; do
+        printf '\n===== %s =====\n' "$unit"
+        systemctl "${scope_args[@]}" list-dependencies --all --no-pager "$unit" 2>&1
+    done | _fsys__render text
+    _fsys__pause
+}
+
+# -----------------------------------------------------------------------------
+# Generic action dispatcher
+# -----------------------------------------------------------------------------
+
+_fsys__journal_selected() {
+    local scope=$1
+    local action=$2
+    local file=$3
+    local boot=${4-}
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    local -a units=() journal_opts=()
+    mapfile -t units < <(_fsys__read_units "$file") || return
+    ((${#units[@]})) || return 0
+    _fsys__unit_args_valid "${units[@]}" || return 2
+
+    local unit
+    for unit in "${units[@]}"; do
+        journal_opts+=( -u "$unit" )
+    done
+
+    case $action in
+        logs)
+            journalctl "${scope_args[@]}" --no-pager --full -n "$FSYS_LOG_LINES" "${journal_opts[@]}" |
+                _fsys__render text
+            _fsys__pause
+            ;;
+        previous)
+            journalctl "${scope_args[@]}" --no-pager --full -b -1 "${journal_opts[@]}" |
+                _fsys__render text
+            _fsys__pause
+            ;;
+        errors)
+            journalctl "${scope_args[@]}" --no-pager --full -n "$FSYS_LOG_LINES" -p err..emerg "${journal_opts[@]}" |
+                _fsys__render text
+            _fsys__pause
+            ;;
+        warnings)
+            journalctl "${scope_args[@]}" --no-pager --full -n "$FSYS_LOG_LINES" -p warning..emerg "${journal_opts[@]}" |
+                _fsys__render text
+            _fsys__pause
+            ;;
+        follow)
+            journalctl "${scope_args[@]}" -f --full -n "$FSYS_LOG_LINES" "${journal_opts[@]}"
+            ;;
+        *)
+            printf 'fsys: unknown journal action: %s\n' "$action" >&2
+            return 2
+            ;;
+    esac
+}
+
+_fsys__action() {
+    local action=$1
+    local scope=$2
+    local kind=$3
+    local file=$4
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    _fsys__valid_scope "$scope" || return 2
+    [[ -r $file ]] || {
+        printf 'fsys: selection file is not readable: %s\n' "$file" >&2
+        return 2
+    }
+
+    local -a units=() targets=()
+    local line unit target _rest
+
+    if [[ $kind == timer ]]; then
+        while IFS= read -r line; do
+            [[ -n $line ]] || continue
+            IFS=$'\t' read -r unit target _rest <<< "$line"
+            [[ -n $unit ]] || continue
+            units+=("$unit")
+            targets+=("$target")
+        done < "$file"
+    else
+        while IFS= read -r line; do
+            [[ -n $line ]] || continue
+            IFS=$'\t' read -r unit _rest <<< "$line"
+            [[ -n $unit ]] || continue
+            units+=("$unit")
+        done < "$file"
+    fi
+
+    ((${#units[@]})) || return 0
+    _fsys__unit_args_valid "${units[@]}" || {
+        printf 'fsys: refusing invalid unit argument(s).\n' >&2
+        return 2
+    }
+
+    case $action in
+        status)
+            systemctl "${scope_args[@]}" status --no-pager --full "${units[@]}" 2>&1 |
+                _fsys__render text
+            _fsys__pause
+            ;;
+
+        properties)
+            _fsys__show_properties "$scope" "$file"
+            ;;
+
+        dependencies)
+            _fsys__dependencies_selected "$scope" "$file"
+            ;;
+
+        start|stop|restart|reload|enable|disable|mask|unmask|reset-failed)
+            _fsys__systemctl_mutate "$scope" "$action" "${units[@]}"
+            ;;
+
+        edit)
+            _fsys__edit_selected "$scope" "$file"
+            ;;
+
+        cat)
+            _fsys__cat_selected "$scope" "$kind" "$file"
+            ;;
+
+        logs|follow|previous|errors|warnings)
+            _fsys__journal_selected "$scope" "$action" "$file"
+            ;;
+
+        copy)
+            _fsys__copy_selected "$file"
+            ;;
+
+        daemon-reload)
+            _fsys__daemon_reload "$scope"
+            ;;
+
+        target-logs)
+            local -a journal_opts=()
+            for target in "${targets[@]}"; do
+                [[ -n $target ]] || continue
+                _fsys__unit_args_valid "$target" || return 2
+                journal_opts+=( -u "$target" )
+            done
+            ((${#journal_opts[@]})) || return 0
+            journalctl "${scope_args[@]}" --no-pager --full -n "$FSYS_LOG_LINES" "${journal_opts[@]}" |
+                _fsys__render text
+            _fsys__pause
+            ;;
+
+        target-follow)
+            ((${#targets[@]} == 1)) || {
+                printf 'fsys: target follow requires exactly one selected timer.\n' >&2
+                _fsys__pause
+                return 1
+            }
+            _fsys__unit_args_valid "${targets[0]}" || return 2
+            journalctl "${scope_args[@]}" -f --full -n "$FSYS_LOG_LINES" -u "${targets[0]}"
+            ;;
+
+        trigger)
+            local -a target_units=()
+            for target in "${targets[@]}"; do
+                [[ -n $target ]] || continue
+                _fsys__unit_args_valid "$target" || return 2
+                target_units+=("$target")
+            done
+            ((${#target_units[@]})) || return 0
+            _fsys__systemctl_mutate_as "$scope" start trigger "${target_units[@]}"
+            ;;
+
+        *)
+            printf 'fsys: unknown action: %s\n' "$action" >&2
+            return 2
+            ;;
+    esac
+}
+
+# -----------------------------------------------------------------------------
+# Headers
+# -----------------------------------------------------------------------------
+
+_fsys__services_header() {
+    printf '%s\n%s\n%s' \
+        'Enter status · Tab select · Ctrl-A all · Ctrl-R reload · Ctrl-/ preview' \
+        'Ctrl-S start · Ctrl-X stop · Alt-R restart · Alt-L reload · Ctrl-E edit · Ctrl-Y cat' \
+        'Ctrl-L logs · Alt-F follow · Alt-P previous boot · Alt-E errors · Alt-W warnings · Ctrl-O properties' \
+        'Ctrl-B dependencies · Ctrl-N enable · Alt-D disable · Alt-M mask · Alt-U unmask · Alt-I reset-failed · Alt-C copy'
+}
+
+_fsys__timers_header() {
+    printf '%s\n%s\n%s' \
+        'Enter status · Tab select · Ctrl-A all · Ctrl-R reload · Ctrl-/ preview' \
+        'Ctrl-S start · Ctrl-X stop · Ctrl-N enable · Alt-D disable · Ctrl-E edit · Ctrl-Y cat' \
+        'Ctrl-L target logs · Alt-F target follow · Alt-T trigger now · Ctrl-O properties · Ctrl-B dependencies · Alt-C copy'
+}
+
+_fsys__units_header() {
+    printf '%s\n%s\n%s' \
+        'Enter status · Tab select · Ctrl-A all · Ctrl-R reload · Ctrl-/ preview' \
+        'Ctrl-S start · Ctrl-X stop · Alt-R restart · Alt-L reload · Ctrl-E edit · Ctrl-Y cat' \
+        'Ctrl-L logs · Alt-F follow · Alt-P previous boot · Alt-E errors · Alt-W warnings · Ctrl-O properties' \
+        'Ctrl-B dependencies · Ctrl-N enable · Alt-D disable · Alt-M mask · Alt-U unmask · Alt-I reset-failed · Alt-C copy'
+}
+
+_fsys__failed_header() {
+    printf '%s\n%s' \
+        'Enter status · Tab select · Ctrl-/ preview · Ctrl-R reload' \
+        'Ctrl-S restart · Ctrl-X stop · Ctrl-I reset-failed · Ctrl-L logs · Alt-F follow · Ctrl-Y cat · Ctrl-C copy'
+}
+
+_fsys__unit_files_header() {
+    printf '%s\n%s' \
+        'Enter status · Tab select · Ctrl-R reload · Ctrl-/ preview' \
+        'Ctrl-S start · Ctrl-X stop · Ctrl-N enable · Alt-D disable · Alt-M mask · Alt-U unmask · Ctrl-Y cat · Ctrl-C copy'
+}
+
+_fsys__logs_header() {
+    printf '%s\n%s\n%s' \
+        'Enter recent logs · Tab select · Ctrl-A all · Ctrl-R reload · Ctrl-/ preview' \
+        'Ctrl-L recent · Alt-F follow · Alt-P previous boot · Ctrl-E edit · Alt-E errors · Alt-W warnings' \
+        'Ctrl-Y cat unit · Alt-Y 500-line snapshot · Alt-E errors · Alt-W warnings · Alt-C copy'
+}
+
+# -----------------------------------------------------------------------------
+# Pickers
+# -----------------------------------------------------------------------------
+
+_fsys__fzf_common() {
+    # This helper intentionally prints a shell-escaped argument fragment. It is
+    # used by picker functions to keep common behavior consistent.
+    printf '%s\n' \
+        '--with-shell=bash -c' \
+        '--exact' \
+        '--multi' \
+        '--delimiter=\t' \
+        '--preview-window=right:55%:hidden:wrap'
+}
+
+_fsys__services() {
+    local scope=${1:-system}
+    local query=${2-}
+    _fsys__require_commands || return
+    _fsys__valid_scope "$scope" || return 2
+
+    local query_arg=()
+    [[ -n $query ]] && query_arg=(--query="$query")
+
+    _fsys__services_list "$scope" |
+        fzf \
+            --with-shell='bash -c' \
+            --exact \
+            --multi \
+            "${query_arg[@]}" \
+            --delimiter=$'\t' \
+            --with-nth=5 \
+            --accept-nth='{1}' \
+            --prompt="systemd $scope service ❯❯❯ " \
+            --header="$(_fsys__services_header)" \
+            --preview="_fsys__service_preview '$scope' {1}" \
+            --preview-window='right:55%:hidden:wrap' \
+            --bind="ctrl-r:reload(_fsys__services_list '$scope')" \
+            --bind="ctrl-a:select-all" \
+            --bind="ctrl-d:deselect-all" \
+            --bind="enter:execute(_fsys__action status '$scope' service {+f})" \
+            --bind="ctrl-s:execute(_fsys__action start '$scope' service {+f})+reload(_fsys__services_list '$scope')" \
+            --bind="ctrl-x:execute(_fsys__action stop '$scope' service {+f})+reload(_fsys__services_list '$scope')" \
+            --bind="alt-r:execute(_fsys__action restart '$scope' service {+f})+reload(_fsys__services_list '$scope')" \
+            --bind="alt-l:execute(_fsys__action reload '$scope' service {+f})+reload(_fsys__services_list '$scope')" \
+            --bind="ctrl-e:execute(_fsys__edit_selected '$scope' {+f})+reload(_fsys__services_list '$scope')" \
+            --bind="ctrl-y:execute(_fsys__cat_selected '$scope' service {+f})" \
+            --bind="ctrl-l:execute(_fsys__action logs '$scope' service {+f})" \
+            --bind="alt-f:execute(_fsys__action follow '$scope' service {+f})" \
+            --bind="alt-p:execute(_fsys__action previous '$scope' service {+f})" \
+            --bind="alt-e:execute(_fsys__action errors '$scope' service {+f})" \
+            --bind="alt-w:execute(_fsys__action warnings '$scope' service {+f})" \
+            --bind="ctrl-o:execute(_fsys__action properties '$scope' service {+f})" \
+            --bind="ctrl-i:execute(_fsys__action reset-failed '$scope' service {+f})+reload(_fsys__services_list '$scope')" \
+            --bind="ctrl-n:execute(_fsys__action enable '$scope' service {+f})+reload(_fsys__services_list '$scope')" \
+            --bind="alt-d:execute(_fsys__action disable '$scope' service {+f})+reload(_fsys__services_list '$scope')" \
+            --bind="alt-m:execute(_fsys__action mask '$scope' service {+f})+reload(_fsys__services_list '$scope')" \
+            --bind="alt-u:execute(_fsys__action unmask '$scope' service {+f})+reload(_fsys__services_list '$scope')" \
+            --bind="alt-c:execute(_fsys__action copy '$scope' service {+f})" \
+            --bind="alt-g:execute(_fsys__daemon_reload '$scope')+reload(_fsys__services_list '$scope')" \
+            --bind="alt-enter:accept"
+}
+
+_fsys__timers() {
+    local scope=${1:-system}
+    local query=${2-}
+    _fsys__require_commands || return
+    _fsys__valid_scope "$scope" || return 2
+
+    local query_arg=()
+    [[ -n $query ]] && query_arg=(--query="$query")
+
+    _fsys__timers_list "$scope" |
+        fzf \
+            --with-shell='bash -c' \
+            --exact \
+            --multi \
+            "${query_arg[@]}" \
+            --delimiter=$'\t' \
+            --with-nth=3 \
+            --accept-nth='{1}' \
+            --prompt="systemd $scope timer ❯❯❯ " \
+            --header="$(_fsys__timers_header)" \
+            --preview="_fsys__timer_preview '$scope' {1}" \
+            --preview-window='right:55%:hidden:wrap' \
+            --bind="ctrl-r:reload(_fsys__timers_list '$scope')" \
+            --bind="ctrl-a:select-all" \
+            --bind="ctrl-d:deselect-all" \
+            --bind="enter:execute(_fsys__action status '$scope' timer {+f})" \
+            --bind="ctrl-s:execute(_fsys__action start '$scope' timer {+f})+reload(_fsys__timers_list '$scope')" \
+            --bind="ctrl-x:execute(_fsys__action stop '$scope' timer {+f})+reload(_fsys__timers_list '$scope')" \
+            --bind="ctrl-n:execute(_fsys__action enable '$scope' timer {+f})+reload(_fsys__timers_list '$scope')" \
+            --bind="alt-d:execute(_fsys__action disable '$scope' timer {+f})+reload(_fsys__timers_list '$scope')" \
+            --bind="ctrl-e:execute(_fsys__edit_selected '$scope' {+f})+reload(_fsys__timers_list '$scope')" \
+            --bind="ctrl-y:execute(_fsys__cat_selected '$scope' timer {+f})" \
+            --bind="ctrl-l:execute(_fsys__action target-logs '$scope' timer {+f})" \
+            --bind="alt-f:execute(_fsys__action target-follow '$scope' timer {+f})" \
+            --bind="alt-t:execute(_fsys__action trigger '$scope' timer {+f})+reload(_fsys__timers_list '$scope')" \
+            --bind="ctrl-o:execute(_fsys__action properties '$scope' timer {+f})" \
+            --bind="alt-c:execute(_fsys__action copy '$scope' timer {+f})" \
+            --bind="alt-g:execute(_fsys__daemon_reload '$scope')+reload(_fsys__timers_list '$scope')" \
+            --bind='alt-enter:accept'
+}
+
+_fsys__units() {
+    local scope=${1:-system}
+    local query=${2-}
+    _fsys__require_commands || return
+    _fsys__valid_scope "$scope" || return 2
+
+    local query_arg=()
+    [[ -n $query ]] && query_arg=(--query="$query")
+
+    _fsys__units_list "$scope" |
+        fzf \
+            --with-shell='bash -c' \
+            --exact \
+            --multi \
+            "${query_arg[@]}" \
+            --delimiter=$'\t' \
+            --with-nth=5 \
+            --accept-nth='{1}' \
+            --prompt="systemd $scope unit ❯❯❯ " \
+            --header="$(_fsys__units_header)" \
+            --preview="_fsys__unit_preview '$scope' {1}" \
+            --preview-window='right:55%:hidden:wrap' \
+            --bind="ctrl-r:reload(_fsys__units_list '$scope')" \
+            --bind="ctrl-a:select-all" \
+            --bind="ctrl-d:deselect-all" \
+            --bind="enter:execute(_fsys__action status '$scope' unit {+f})" \
+            --bind="ctrl-s:execute(_fsys__action start '$scope' unit {+f})+reload(_fsys__units_list '$scope')" \
+            --bind="ctrl-x:execute(_fsys__action stop '$scope' unit {+f})+reload(_fsys__units_list '$scope')" \
+            --bind="alt-r:execute(_fsys__action restart '$scope' unit {+f})+reload(_fsys__units_list '$scope')" \
+            --bind="alt-l:execute(_fsys__action reload '$scope' unit {+f})+reload(_fsys__units_list '$scope')" \
+            --bind="ctrl-e:execute(_fsys__edit_selected '$scope' {+f})+reload(_fsys__units_list '$scope')" \
+            --bind="ctrl-y:execute(_fsys__cat_selected '$scope' unit {+f})" \
+            --bind="ctrl-l:execute(_fsys__action logs '$scope' unit {+f})" \
+            --bind="alt-f:execute(_fsys__action follow '$scope' unit {+f})" \
+            --bind="alt-p:execute(_fsys__action previous '$scope' unit {+f})" \
+            --bind="alt-e:execute(_fsys__action errors '$scope' unit {+f})" \
+            --bind="alt-w:execute(_fsys__action warnings '$scope' unit {+f})" \
+            --bind="ctrl-o:execute(_fsys__action properties '$scope' unit {+f})" \
+            --bind="ctrl-i:execute(_fsys__action reset-failed '$scope' unit {+f})+reload(_fsys__units_list '$scope')" \
+            --bind="ctrl-n:execute(_fsys__action enable '$scope' unit {+f})+reload(_fsys__units_list '$scope')" \
+            --bind="alt-d:execute(_fsys__action disable '$scope' unit {+f})+reload(_fsys__units_list '$scope')" \
+            --bind="alt-m:execute(_fsys__action mask '$scope' unit {+f})+reload(_fsys__units_list '$scope')" \
+            --bind="alt-u:execute(_fsys__action unmask '$scope' unit {+f})+reload(_fsys__units_list '$scope')" \
+            --bind="alt-c:execute(_fsys__action copy '$scope' unit {+f})" \
+            --bind="alt-g:execute(_fsys__daemon_reload '$scope')+reload(_fsys__units_list '$scope')" \
+            --bind='alt-enter:accept'
+}
+
+_fsys__failed() {
+    local scope=${1:-system}
+    local query=${2-}
+    _fsys__require_commands || return
+    _fsys__valid_scope "$scope" || return 2
+
+    local query_arg=()
+    [[ -n $query ]] && query_arg=(--query="$query")
+
+    _fsys__failed_list "$scope" |
+        fzf \
+            --with-shell='bash -c' \
+            --exact \
+            --multi \
+            "${query_arg[@]}" \
+            --delimiter=$'\t' \
+            --with-nth=5 \
+            --accept-nth='{1}' \
+            --prompt="systemd $scope failed ❯❯❯ " \
+            --header="$(_fsys__failed_header)" \
+            --preview="_fsys__failed_preview '$scope' {1}" \
+            --preview-window='right:55%:hidden:wrap' \
+            --bind="ctrl-r:reload(_fsys__failed_list '$scope')" \
+            --bind="ctrl-a:select-all" \
+            --bind="ctrl-d:deselect-all" \
+            --bind="enter:execute(_fsys__action status '$scope' failed {+f})" \
+            --bind="ctrl-s:execute(_fsys__action restart '$scope' failed {+f})+reload(_fsys__failed_list '$scope')" \
+            --bind="ctrl-x:execute(_fsys__action stop '$scope' failed {+f})+reload(_fsys__failed_list '$scope')" \
+            --bind="ctrl-i:execute(_fsys__action reset-failed '$scope' failed {+f})+reload(_fsys__failed_list '$scope')" \
+            --bind="ctrl-l:execute(_fsys__action logs '$scope' failed {+f})" \
+            --bind="alt-f:execute(_fsys__action follow '$scope' failed {+f})" \
+            --bind="ctrl-y:execute(_fsys__cat_selected '$scope' failed {+f})" \
+            --bind="alt-c:execute(_fsys__action copy '$scope' failed {+f})" \
+            --bind='alt-enter:accept'
+}
+
+_fsys__unit_files() {
+    local scope=${1:-system}
+    local query=${2-}
+    _fsys__require_commands || return
+    _fsys__valid_scope "$scope" || return 2
+
+    local query_arg=()
+    [[ -n $query ]] && query_arg=(--query="$query")
+
+    _fsys__unit_files_list "$scope" |
+        fzf \
+            --with-shell='bash -c' \
+            --exact \
+            --multi \
+            "${query_arg[@]}" \
+            --delimiter=$'\t' \
+            --with-nth=4 \
+            --accept-nth='{1}' \
+            --prompt="systemd $scope unit-file ❯❯❯ " \
+            --header="$(_fsys__unit_files_header)" \
+            --preview="_fsys__unit_preview '$scope' {1}" \
+            --preview-window='right:55%:hidden:wrap' \
+            --bind="ctrl-r:reload(_fsys__unit_files_list '$scope')" \
+            --bind="ctrl-a:select-all" \
+            --bind="ctrl-d:deselect-all" \
+            --bind="enter:execute(_fsys__action status '$scope' unit-file {+f})" \
+            --bind="ctrl-s:execute(_fsys__action start '$scope' unit-file {+f})+reload(_fsys__unit_files_list '$scope')" \
+            --bind="ctrl-x:execute(_fsys__action stop '$scope' unit-file {+f})+reload(_fsys__unit_files_list '$scope')" \
+            --bind="ctrl-n:execute(_fsys__action enable '$scope' unit-file {+f})+reload(_fsys__unit_files_list '$scope')" \
+            --bind="alt-d:execute(_fsys__action disable '$scope' unit-file {+f})+reload(_fsys__unit_files_list '$scope')" \
+            --bind="alt-m:execute(_fsys__action mask '$scope' unit-file {+f})+reload(_fsys__unit_files_list '$scope')" \
+            --bind="alt-u:execute(_fsys__action unmask '$scope' unit-file {+f})+reload(_fsys__unit_files_list '$scope')" \
+            --bind="ctrl-y:execute(_fsys__cat_selected '$scope' unit-file {+f})" \
+            --bind="alt-c:execute(_fsys__action copy '$scope' unit-file {+f})" \
+            --bind='alt-enter:accept'
+}
+
+# -----------------------------------------------------------------------------
+# Logs / boots
+# -----------------------------------------------------------------------------
+
+_fsys__logs_snapshot_selected() {
+    local scope=$1
+    local file=$2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    local -a units=()
+    mapfile -t units < <(_fsys__read_units "$file") || return
+    ((${#units[@]})) || return 0
+    _fsys__unit_args_valid "${units[@]}" || return 2
+
+    local -a journal_opts=()
+    local unit
+    for unit in "${units[@]}"; do
+        journal_opts+=( -u "$unit" )
+    done
+
+    journalctl "${scope_args[@]}" --no-pager --full -n "$FSYS_SNAPSHOT_LOG_LINES" "${journal_opts[@]}" 2>&1 |
+        _fsys__render text
+    _fsys__pause
+}
+
+_fsys__logs() {
+    local scope=${1:-system}
+    local query=${2-}
+    _fsys__require_commands || return
+    _fsys__valid_scope "$scope" || return 2
+
+    local query_arg=()
+    [[ -n $query ]] && query_arg=(--query="$query")
+
+    _fsys__units_list "$scope" |
+        fzf \
+            --with-shell='bash -c' \
+            --exact \
+            --multi \
+            "${query_arg[@]}" \
+            --delimiter=$'\t' \
+            --with-nth=5 \
+            --accept-nth='{1}' \
+            --prompt="systemd $scope logs ❯❯❯ " \
+            --header="$(_fsys__logs_header)" \
+            --preview="_fsys__logs_preview '$scope' {1}" \
+            --preview-window='right:55%:hidden:wrap' \
+            --bind="ctrl-r:reload(_fsys__units_list '$scope')" \
+            --bind="ctrl-a:select-all" \
+            --bind="ctrl-d:deselect-all" \
+            --bind="enter:execute(_fsys__action logs '$scope' unit {+f})" \
+            --bind="ctrl-l:execute(_fsys__action logs '$scope' unit {+f})" \
+            --bind="alt-f:execute(_fsys__action follow '$scope' unit {+f})" \
+            --bind="alt-p:execute(_fsys__action previous '$scope' unit {+f})" \
+            --bind="ctrl-e:execute(_fsys__edit_selected '$scope' {+f})+reload(_fsys__units_list '$scope')" \
+            --bind="alt-e:execute(_fsys__action errors '$scope' unit {+f})" \
+            --bind="alt-w:execute(_fsys__action warnings '$scope' unit {+f})" \
+            --bind="ctrl-y:execute(_fsys__cat_selected '$scope' unit {+f})" \
+            --bind="alt-y:execute(_fsys__logs_snapshot_selected '$scope' {+f})" \
+            --bind="alt-c:execute(_fsys__action copy '$scope' unit {+f})" \
+            --bind='alt-enter:accept'
+}
+
+_fsys__boots_header() {
+    printf '%s\n%s' \
+        'Enter show selected boot · Ctrl-R reload · Ctrl-/ preview · Ctrl-C copy boot ID' \
+        'Logs are read-only; Esc returns'
+}
+
+_fsys__boot_preview() {
+    local scope=$1 boot=$2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+    journalctl "${scope_args[@]}" --no-pager --full -b "$boot" -n 30 2>&1 |
+        _fsys__preview_render text
+}
+
+_fsys__boot_action() {
+    local scope=$1
+    local boot=$2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    journalctl "${scope_args[@]}" --no-pager --full -b "$boot" -n "$FSYS_LOG_LINES" |
+        _fsys__render text
+    _fsys__pause
+}
+
+_fsys__boots() {
+    local scope=${1:-system}
+    _fsys__require_commands || return
+    _fsys__valid_scope "$scope" || return 2
+
+    _fsys__boots_list "$scope" |
+        fzf \
+            --with-shell='bash -c' \
+            --exact \
+            --no-multi \
+            --delimiter=' ' \
+            --prompt="journal $scope boots ❯❯❯ " \
+            --header="$(_fsys__boots_header)" \
+            --preview="_fsys__boot_preview '$scope' {1}" \
+            --preview-window='right:55%:hidden:wrap' \
+            --bind="ctrl-r:reload(_fsys__boots_list '$scope')" \
+            --bind="enter:execute(_fsys__boot_action '$scope' {1})" \
+            --bind='ctrl-c:execute-silent(_fsys__boot_action_copy {1})' \
+            --bind='alt-enter:accept' \
+            >/dev/null
+}
+
+_fsys__boot_action_copy() {
+    local boot=$1
+    printf '%s\n' "$boot" | _fsys__clip
+}
+
+# -----------------------------------------------------------------------------
+# Overview / linger
+# -----------------------------------------------------------------------------
+
+_fsys__overview_preview() {
+    local scope=${1:-system}
+    _fsys__valid_scope "$scope" || return 2
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    {
+        printf '===== fsys %s overview =====\n\n' "$scope"
+        printf '%-22s ' 'Manager state:'
+        systemctl "${scope_args[@]}" is-system-running 2>&1 || true
+        printf '%-22s ' 'Failed units:'
+        systemctl "${scope_args[@]}" --failed --no-legend --no-pager 2>&1 | wc -l
+        printf '\n----- active jobs -----\n'
+        systemctl "${scope_args[@]}" list-jobs --no-pager 2>&1 || true
+        printf '\n----- failed units -----\n'
+        systemctl "${scope_args[@]}" --failed --no-pager 2>&1 || true
+    }
+}
+
+_fsys__overview() {
+    local scope=${1:-system}
+    _fsys__require_commands || return
+    _fsys__valid_scope "$scope" || return 2
+
+    local -a scope_args=()
+    [[ $scope == user ]] && scope_args+=(--user)
+
+    {
+        printf '===== fsys %s overview =====\n\n' "$scope"
+        printf '%-22s ' 'Manager state:'
+        systemctl "${scope_args[@]}" is-system-running 2>&1 || true
+        printf '%-22s ' 'Failed units:'
+        systemctl "${scope_args[@]}" --failed --no-legend --no-pager | wc -l
+        printf '\n----- active jobs -----\n'
+        systemctl "${scope_args[@]}" list-jobs --no-pager 2>&1 || true
+        printf '\n----- failed units -----\n'
+        systemctl "${scope_args[@]}" --failed --no-pager 2>&1 || true
+    } | _fsys__render text
+    _fsys__pause
+}
+
+_fsys__linger_status() {
+    command -v loginctl >/dev/null 2>&1 || {
+        printf 'fsys: loginctl is required for linger management.\n' >&2
+        return 127
+    }
+
+    local user=${USER:-$(id -un)}
+    loginctl show-user "$user" -p Linger --value 2>&1
+}
+
+_fsys__linger() {
+    command -v loginctl >/dev/null 2>&1 || {
+        printf 'fsys: loginctl is required for linger management.\n' >&2
+        return 127
+    }
+
+    local user=${USER:-$(id -un)}
+    local state
+    state=$(loginctl show-user "$user" -p Linger --value 2>/dev/null) || {
+        printf 'fsys: cannot determine linger state for %s.\n' "$user" >&2
+        return 1
+    }
+
+    printf 'User:   %s\nLinger: %s\n\n' "$user" "$state"
+    printf '1) Enable linger\n2) Disable linger\n3) Show status\nq) Cancel\n\nChoice: ' >&2
+
+    local choice
+    IFS= read -r choice </dev/tty || return 1
+    case $choice in
+        1)
+            _fsys__confirm system enable-linger "$user" || {
+                printf 'fsys: linger enable cancelled.\n' >&2
+                return 0
+            }
+            if ((EUID == 0)); then
+                loginctl enable-linger "$user"
+            else
+                sudo -v || return 1
+                sudo loginctl enable-linger "$user"
+            fi
+            ;;
+        2)
+            _fsys__confirm system disable-linger "$user" || {
+                printf 'fsys: linger disable cancelled.\n' >&2
+                return 0
+            }
+            if ((EUID == 0)); then
+                loginctl disable-linger "$user"
+            else
+                sudo -v || return 1
+                sudo loginctl disable-linger "$user"
+            fi
+            ;;
+        3)
+            _fsys__linger_status
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+# -----------------------------------------------------------------------------
+# Top-level menus
+# -----------------------------------------------------------------------------
+
+_fsys__menu_list() {
+    printf '%s\t%s\n' \
+        system-overview  'System · overview' \
+        system-failed    'System · failed units' \
+        system-services  'System · services' \
+        system-timers    'System · timers' \
+        system-units     'System · all loaded units' \
+        system-unitfiles 'System · installed unit files' \
+        system-logs      'System · journal by unit' \
+        system-boots     'System · journal boots' \
+        system-linger    'User · linger management' \
+        user-overview    'User · overview' \
+        user-failed      'User · failed units' \
+        user-services    'User · services' \
+        user-timers      'User · timers' \
+        user-units       'User · all loaded units' \
+        user-unitfiles   'User · installed unit files' \
+        user-logs        'User · journal by unit' \
+        user-boots       'User · journal boots'
+}
+
+_fsys__menu_header() {
+    printf '%s\n%s' \
+        'Enter select · Ctrl-R reload · Ctrl-/ preview · Esc exit' \
+        'Exact matching · --yes bypasses mutation confirmations for this invocation'
+}
+
+_fsys__menu_preview() {
+    local selection=$1
+
+    case $selection in
+        system-overview|user-overview)
+            _fsys__overview_preview "${selection%%-*}"
+            ;;
+        system-failed|user-failed)
+            _fsys__failed_list "${selection%%-*}"
+            ;;
+        system-services)
+            systemctl --no-pager --full --plain status systemd-logind.service 2>&1
+            ;;
+        system-timers)
+            systemctl --no-pager --full --plain list-timers --all 2>&1
+            ;;
+        system-units)
+            systemctl --no-pager --full --plain list-units --all 2>&1 | head -n 30
+            ;;
+        system-unitfiles)
+            systemctl --no-pager --full --plain list-unit-files 2>&1 | head -n 30
+            ;;
+        system-logs)
+            journalctl --no-pager --full -n 25 2>&1
+            ;;
+        system-boots)
+            journalctl --list-boots --no-pager 2>&1
+            ;;
+        system-linger)
+            _fsys__linger_status
+            ;;
+        user-services)
+            systemctl --user --no-pager --full --plain list-units --type=service --all 2>&1
+            ;;
+        user-timers)
+            systemctl --user --no-pager --full --plain list-timers --all 2>&1
+            ;;
+        user-units)
+            systemctl --user --no-pager --full --plain list-units --all 2>&1 | head -n 30
+            ;;
+        user-unitfiles)
+            systemctl --user --no-pager --full --plain list-unit-files 2>&1 | head -n 30
+            ;;
+        user-logs)
+            journalctl --user --no-pager --full -n 25 2>&1
+            ;;
+        user-boots)
+            journalctl --user --list-boots --no-pager 2>&1
+            ;;
+    esac | _fsys__preview_render text
+}
+
+_fsys__menu() {
+    local selected
+
+    selected=$(
+        _fsys__menu_list |
+            fzf \
+                --with-shell='bash -c' \
+                --exact \
+                --no-multi \
+                --delimiter=$'\t' \
+                --with-nth=2 \
+                --accept-nth='{1}' \
+                --prompt='systemd ❯❯❯ ' \
+                --header="$(_fsys__menu_header)" \
+                --preview='_fsys__menu_preview {1}' \
+                --preview-window='right:55%:hidden:wrap' \
+                --bind='ctrl-r:reload(_fsys__menu_list)'
+    ) || return 0
+
+    case $selected in
+        system-overview) _fsys__overview system ;;
+        system-failed) _fsys__failed system ;;
+        system-services) _fsys__services system ;;
+        system-timers) _fsys__timers system ;;
+        system-units) _fsys__units system ;;
+        system-unitfiles) _fsys__unit_files system ;;
+        system-logs) _fsys__logs system ;;
+        system-boots) _fsys__boots system ;;
+        system-linger) _fsys__linger ;;
+        user-overview) _fsys__overview user ;;
+        user-failed) _fsys__failed user ;;
+        user-services) _fsys__services user ;;
+        user-timers) _fsys__timers user ;;
+        user-units) _fsys__units user ;;
+        user-unitfiles) _fsys__unit_files user ;;
+        user-logs) _fsys__logs user ;;
+        user-boots) _fsys__boots user ;;
+    esac
+}
+
+_fsys__scope_menu_list() {
+    local scope=$1
+    local label
+    label=$([[ $scope == user ]] && printf 'User' || printf 'System')
+
+    printf '%s\t%s\n' \
+        overview   "$label · overview" \
+        failed     "$label · failed units" \
+        services   "$label · services" \
+        timers     "$label · timers" \
+        units      "$label · all loaded units" \
+        unitfiles  "$label · installed unit files" \
+        logs       "$label · journal by unit" \
+        boots      "$label · journal boots"
+}
+
+_fsys__scope_menu() {
+    local scope=${1:-system}
+    _fsys__valid_scope "$scope" || return 2
+    local selected
+
+    selected=$(
+        _fsys__scope_menu_list "$scope" |
+            fzf \
+                --with-shell='bash -c' \
+                --exact \
+                --no-multi \
+                --delimiter=$'\t' \
+                --with-nth=2 \
+                --accept-nth='{1}' \
+                --prompt="systemd $scope ❯❯❯ " \
+                --header="$(_fsys__menu_header)" \
+                --preview="_fsys__menu_preview ${scope}-{1}" \
+                --preview-window='right:55%:hidden:wrap' \
+                --bind="ctrl-r:reload(_fsys__scope_menu_list '$scope')"
+    ) || return 0
+
+    case $selected in
+        overview) _fsys__overview "$scope" ;;
+        failed) _fsys__failed "$scope" ;;
+        services) _fsys__services "$scope" ;;
+        timers) _fsys__timers "$scope" ;;
+        units) _fsys__units "$scope" ;;
+        unitfiles) _fsys__unit_files "$scope" ;;
+        logs) _fsys__logs "$scope" ;;
+        boots) _fsys__boots "$scope" ;;
+    esac
+}
+
+# -----------------------------------------------------------------------------
+# Help
+# -----------------------------------------------------------------------------
+
+_fsys__help() {
+    cat <<'EOF'
+fsys - fzf-driven systemd workflows
+
+Usage:
+  fsys                         Choose system/user workflows.
+  fsys services [query]        Browse system services.
+  fsys timers [query]          Browse system timers.
+  fsys units [query]           Browse loaded system units.
+  fsys unit-files [query]      Browse installed system unit files.
+  fsys failed [query]          Browse failed system units.
+  fsys logs [query]             Browse journal sources by unit.
+  fsys boots                    Browse journal boots.
+  fsys overview                 Show system-manager overview.
+  fsys linger                   Manage linger for the current user.
+
+Scope forms:
+  fsys user services            Browse user-manager services.
+  fsys user timers              Browse user-manager timers.
+  fsys user units               Browse user-manager units.
+  fsys user logs                Browse user-manager journal sources.
+  fsys --user services          Same as `fsys user services`.
+  fsys -u timers                Same as `fsys user timers`.
+  fsys system failed            Explicit system-manager scope.
+
+Global options (before the command):
+  -u, --user                    Use the per-user systemd manager.
+  -s, --system                  Use the system manager (default).
+  -y, --yes, --no-confirm       Bypass mutation confirmations for this call.
+  -h, --help                    Show this help.
+  --version                     Print the fsys version.
+
+Safety:
+  - Matching is exact by default.
+  - Previews are hidden initially; Ctrl-/ toggles them.
+  - All state-changing actions confirm before execution.
+  - High-impact actions require typing YES exactly.
+  - System-manager mutations authenticate with sudo only after confirmation.
+  - --yes is intentionally explicit and applies only to the current call.
+  - User-manager operations do not use sudo except linger management, because
+    enabling/disabling linger changes login-manager state for the user.
+
+Common picker keys:
+  Ctrl-R      reload
+  Ctrl-A      select all
+  Ctrl-D      deselect all
+  Ctrl-/      toggle preview
+  Alt-C       copy selected unit names
+  Alt-Enter   accept selected unit names and exit
+
+Service / unit keys:
+  Enter       status
+  Ctrl-S      start
+  Ctrl-X      stop
+  Alt-R       restart
+  Alt-L       reload
+  Ctrl-E      edit unit/drop-in (single selection)
+  Ctrl-Y      cat unit/drop-ins
+  Ctrl-L      recent logs
+  Alt-F       follow logs
+  Alt-P       previous-boot logs
+  Alt-E       error logs
+  Alt-W       warning-and-higher logs
+  Ctrl-O      selected systemd properties
+  Ctrl-B      dependencies
+  Ctrl-N      enable
+  Alt-D       disable
+  Alt-M       mask
+  Alt-U       unmask
+  Ctrl-I      reset-failed
+  Alt-G       daemon-reload
+
+Timer keys:
+  Enter       status
+  Ctrl-S      start timer
+  Ctrl-X      stop timer
+  Ctrl-N      enable timer
+  Alt-D       disable timer
+  Ctrl-E      edit timer/drop-in
+  Ctrl-Y      cat timer/drop-ins
+  Ctrl-L      logs for activated service(s)
+  Alt-F       follow activated service (single timer)
+  Alt-T       trigger activated service(s) now
+  Ctrl-O      selected systemd properties
+  Alt-G       daemon-reload
+
+Failed-unit keys:
+  Enter       status
+  Ctrl-S      restart
+  Ctrl-X      stop
+  Ctrl-I      reset-failed
+  Ctrl-L      logs
+  Alt-F       follow logs
+  Ctrl-Y      cat unit/drop-ins
+  Ctrl-C      copy selected unit names
+
+Log-unit keys:
+  Enter / Ctrl-L   recent logs
+  Alt-F       follow logs
+  Alt-P       previous-boot logs
+  Alt-E       errors only
+  Alt-W       warning-and-higher
+  Ctrl-Y      cat unit/drop-ins
+  Alt-Y       500-line snapshot
+
+Rendering / sudo:
+  bat is preferred for text rendering; cat is the fallback.
+  Clipboard support: wl-copy, xclip, xsel, or pbcopy.
+  System-manager sudo preserves by default:
+    EDITOR,VISUAL,MANPAGER,PAGER,PATH,TERM,COLORTERM,TMUX,SSH_AUTH_SOCK,
+    UNISHELL_SESSION_RUNTIME_DIR
+  Override this list with FSYS_SUDO_PRESERVE_ENV when needed.
+  Override log sizes with FSYS_LOG_LINES, FSYS_PREVIEW_LOG_LINES, and
+  FSYS_SNAPSHOT_LOG_LINES.
+EOF
+}
+
+# -----------------------------------------------------------------------------
+# Public command
+# -----------------------------------------------------------------------------
+
+fsys() {
+    local scope=system
+    local explicit_scope=false
+    local command=''
+    local query=''
+    local old_assume_yes=${FSYS_ASSUME_YES-}
+    local had_assume_yes=false
+
+    if [[ ${FSYS_ASSUME_YES+x} ]]; then
+        had_assume_yes=true
+    fi
+
+    # Parse only leading global/scope options. This keeps query text available
+    # for fzf while making `fsys user services ssh` and `fsys --yes service`
+    # predictable.
+    while (($#)); do
+        case $1 in
+            -u|--user)
+                scope=user
+                explicit_scope=true
+                shift
+                ;;
+            -s|--system)
+                scope=system
+                explicit_scope=true
+                shift
+                ;;
+            -y|--yes|--no-confirm)
+                FSYS_ASSUME_YES=1
+                export FSYS_ASSUME_YES
+                shift
+                ;;
+            -h|--help)
+                _fsys__help
+                if [[ $had_assume_yes == true ]]; then
+                    FSYS_ASSUME_YES=$old_assume_yes
+                    export FSYS_ASSUME_YES
+                else
+                    unset FSYS_ASSUME_YES
+                fi
+                return 0
+                ;;
+            --version)
+                _fsys__version
+                if [[ $had_assume_yes == true ]]; then
+                    FSYS_ASSUME_YES=$old_assume_yes
+                    export FSYS_ASSUME_YES
+                else
+                    unset FSYS_ASSUME_YES
+                fi
+                return 0
+                ;;
+            --)
+                shift
+                break
+                ;;
+            system|user)
+                scope=$1
+                explicit_scope=true
+                shift
+                ;;
+            service|services|svc|timer|timers|unit|units|unit-file|unit-files|failed|log|logs|journal|boot|boots|overview|status|linger)
+                command=$1
+                shift
+                break
+                ;;
+            -* )
+                _fsys__usage_error "unknown option: $1"
+                local rc=$?
+                if [[ $had_assume_yes == true ]]; then
+                    FSYS_ASSUME_YES=$old_assume_yes
+                    export FSYS_ASSUME_YES
+                else
+                    unset FSYS_ASSUME_YES
+                fi
+                return "$rc"
+                ;;
+            *)
+                # Treat an unrecognized first word as a command so typos are
+                # reported rather than silently becoming fzf queries.
+                command=$1
+                shift
+                break
+                ;;
+        esac
+    done
+
+    # Everything after the command becomes fzf's initial query.
+    if (($#)); then
+        query=$*
+    fi
+
+    local rc=0
+    case $command in
+        service|services|svc)
+            _fsys__services "$scope" "$query"
+            rc=$?
+            ;;
+        timer|timers)
+            _fsys__timers "$scope" "$query"
+            rc=$?
+            ;;
+        unit|units)
+            _fsys__units "$scope" "$query"
+            rc=$?
+            ;;
+        unit-file|unit-files)
+            _fsys__unit_files "$scope" "$query"
+            rc=$?
+            ;;
+        failed)
+            _fsys__failed "$scope" "$query"
+            rc=$?
+            ;;
+        log|logs|journal)
+            _fsys__logs "$scope" "$query"
+            rc=$?
+            ;;
+        boot|boots)
+            _fsys__boots "$scope"
+            rc=$?
+            ;;
+        overview|status)
+            _fsys__overview "$scope"
+            rc=$?
+            ;;
+        linger)
+            _fsys__linger
+            rc=$?
+            ;;
+        '')
+            if [[ $explicit_scope == true ]]; then
+                _fsys__scope_menu "$scope"
+            else
+                _fsys__menu
+            fi
+            rc=$?
+            ;;
+        *)
+            _fsys__usage_error "unknown command: $command"
+            rc=$?
+            ;;
+    esac
+
+    # Restore FSYS_ASSUME_YES if the caller already had one, or remove the
+    # temporary value created by this invocation. Do this even after failures.
+    if [[ $had_assume_yes == true ]]; then
+        FSYS_ASSUME_YES=$old_assume_yes
+        export FSYS_ASSUME_YES
+    else
+        unset FSYS_ASSUME_YES
+    fi
+
+    return "$rc"
+}
+
+# -----------------------------------------------------------------------------
+# Exported functions for fzf's child Bash processes
+# -----------------------------------------------------------------------------
+
+export -f \
+    _fsys__version \
+    _fsys__usage_error \
+    _fsys__valid_scope \
+    _fsys__require_commands \
+    _fsys__pause \
+    _fsys__render \
+    _fsys__preview_render \
+    _fsys__clip \
+    _fsys__scope_label \
+    _fsys__scope_args \
+    _fsys__unit_args_valid \
+    _fsys__sudo_systemctl \
+    _fsys__confirm \
+    _fsys__systemctl_mutate_as \
+    _fsys__systemctl_mutate \
+    _fsys__daemon_reload \
+    _fsys__reset_failed_all \
+    _fsys__read_units \
+    _fsys__read_timer_pairs \
+    _fsys__copy_selected \
+    _fsys__services_list \
+    _fsys__timers_list \
+    _fsys__units_list \
+    _fsys__failed_list \
+    _fsys__unit_files_list \
+    _fsys__boots_list \
+    _fsys__service_preview \
+    _fsys__timer_preview \
+    _fsys__unit_preview \
+    _fsys__logs_preview \
+    _fsys__failed_preview \
+    _fsys__edit_selected \
+    _fsys__cat_selected \
+    _fsys__show_properties \
+    _fsys__dependencies_selected \
+    _fsys__journal_selected \
+    _fsys__action \
+    _fsys__services_header \
+    _fsys__timers_header \
+    _fsys__units_header \
+    _fsys__failed_header \
+    _fsys__unit_files_header \
+    _fsys__logs_header \
+    _fsys__services \
+    _fsys__timers \
+    _fsys__units \
+    _fsys__failed \
+    _fsys__unit_files \
+    _fsys__logs_snapshot_selected \
+    _fsys__logs \
+    _fsys__boots_header \
+    _fsys__boot_preview \
+    _fsys__boot_action \
+    _fsys__boots \
+    _fsys__boot_action_copy \
+    _fsys__overview_preview \
+    _fsys__overview \
+    _fsys__linger_status \
+    _fsys__linger \
+    _fsys__menu_list \
+    _fsys__menu_header \
+    _fsys__menu_preview \
+    _fsys__menu \
+    _fsys__scope_menu_list \
+    _fsys__scope_menu \
+    _fsys__help \
+    fsys
+
+# Direct execution is supported in addition to the intended "source in Bash"
+# workflow. This block is skipped when the file is sourced.
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+    fsys "$@"
+fi
