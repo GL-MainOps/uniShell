@@ -2,7 +2,7 @@
 # ║ FZF FUNCTIONS
 
 # ╭────────────────────────────────╮
-# │ BROWSE HISTORY ON SHIFT/CTRL UP│
+# │ BROWSE HISTORY ON MOD+UP       │
 # ╰────────────────────────────────╯
 fzf-history() {
     local -a selected
@@ -28,13 +28,12 @@ fzf-history() {
                         printf "%s%c", entry, 0
                 }
             ' |
-            fzf \
+            fzf --border-label='SHELL HISTORY' \
                 --read0 \
                 --print0 \
                 --no-sort \
                 --exact \
                 --query="$READLINE_LINE" \
-                --border-label 'SHELL HISTORY' \
                 --preview 'echo {}' \
                 --preview-window='down:25%:wrap' \
                 --layout=default
@@ -49,14 +48,14 @@ fzf-history() {
 # ┌────────────────┐
 # │ KEYBINDINGS    │
 # └────────────────┘
-# bind -x '"\e[1;5A":fzf-history'
-# bind -x '"\e[1;2A":fzf-history'
-
+bind -x '"\e[1;2A":fzf-history'  # Shift+Up
+bind -x '"\e[1;5A":fzf-history'  # Ctrl+Up
+bind -x '"\e[1;6A":fzf-history'  # Ctrl+Shift+Up
 
 # ╭────────────────────────────────╮
 # │ ZOXIDE ON CDABLE VARS          │
 # ╰────────────────────────────────╯
-ze() {
+fz() {
     command -v zoxide >/dev/null 2>&1 || { printf 'fcdvar: zoxide not found\n' >&2; return 1; }
 
     local sel var val
@@ -66,7 +65,8 @@ ze() {
             val=${!var-}
             [[ -n $val && -d $val ]] && printf '%s\t%s=%s\n' "$val" "$var" "$val"
         done < <(compgen -v) |
-        fzf --exact \
+        fzf --border-label='Zoxide on Vars' \
+            --exact \
             --delimiter=$'\t' \
             --with-nth=2 \
             --header='Enter: zoxide add + cd' \
@@ -83,14 +83,14 @@ ze() {
 # ┌────────────────┐
 # │ KEYBINDINGS    │
 # └────────────────┘
-# N/A
+bind -x '"\eZ":fz'
 
 
 # ╭────────────────────────────────╮
 # │ ENVIRONMENT VARIABLES BROWSER  │
 # ╰────────────────────────────────╯
 fenv() {
-    env | fzf --exact --preview 'echo {}' --preview-window='down:25%:wrap'
+    env | fzf --border-label='Environment Variables' --exact --preview 'echo {}' --preview-window='down:25%:wrap'
 }
 
 # ┌────────────────┐
@@ -104,7 +104,7 @@ fenv() {
 # ╰────────────────────────────────╯
 fkill() {
     local pid
-    pid=$(ps -ef | sed 1d | fzf -m --preview='' | awk '{print $2}') && echo "$pid" | xargs -r kill -"${1:-9}"
+    pid=$(ps -ef | sed 1d | fzf --border-label='Kill a Running Processes' -m --preview='' | awk '{print $2}') && echo "$pid" | xargs -r kill -"${1:-9}"
 }
 
 # ┌────────────────┐
@@ -116,33 +116,36 @@ fkill() {
 # ╭────────────────────────────────╮
 # │ VIM ANYWHERE                   │
 # ╰────────────────────────────────╯
-vv() {
+fvim() {
     local -a files
 
     mapfile -t files < <(
         eval "$FZF_CTRL_T_COMMAND" |
-            eval "fzf $FZF_CTRL_T_OPTS"
+            eval "fzf --border-label='VIM Anywhere' $FZF_CTRL_T_OPTS"
     )
 
     ((${#files[@]})) && vim "${files[@]}"
 }
 
+alias vv='fvim'
+
 # ┌────────────────┐
 # │ KEYBINDINGS    │
 # └────────────────┘
-# bind -x '"\ev": vv;'
+bind -x '"\ev": fvim;'
 
 
 # ╭────────────────────────────────╮
-# │ GREP TO VIM                    │
+# │ RIPGREP TO VIM                 │
 # ╰────────────────────────────────╯
-fv() {
+frg() {
     local -a selected vim_args
     local item file line
 
     mapfile -t selected < <(
         rg --line-number --no-heading --color=always "${1:-}" |
-            fzf --ansi \
+            fzf --border-label='RIPGREP TO VIM' \
+                --ansi \
                 --multi \
                 --delimiter : \
                 --preview 'bat --color=always {1} --highlight-line {2}' |

@@ -143,9 +143,7 @@ if command -sq docker
 
 
     ##### COMPLETION
-    #
-    # Fish's `--wraps` replaces the Bash COMP_* rewriting machinery.
-    # Docker's native fish completion is inherited by these wrappers.
+    # Fish's `--wraps` replaces the Bash COMP_* rewriting machinery. Load
 
     complete -c d     --wraps docker
     complete -c dps   --wraps 'docker ps'
