@@ -15,17 +15,18 @@ $directory[](fg:#3465A4)\
 $fill\
 ${custom.timestamp}\
 $fill\
-[](fg:#303030)$hostname[](fg:#204056 bg:#303030)\
+${custom.needReboot}[](fg:#303030)\
+$hostname[](fg:#204056 bg:#303030)\
 $os[](fg:#204056)╮\
-$line_break│$fill│ $line_break\
-╰[$sudo](bold fg:#C6D6CF)$character\
+$line_break│$fill|$line_break\
+╰[$sudo](bold fg:#C6D6CF)$character
 """
 
 # ╭────────────────────────────────╮
 # │ RIGHT PROMPT                   │
 # ╰────────────────────────────────╯
 right_format = """
-$git_commit$git_branch[](#C6D6CF)${custom.E_UNISHELL_SESSION_VERSION}[](fg:#C6D6CF)╯ \
+$git_commit$git_branch[](#C6D6CF)${custom.E_UNISHELL_SESSION_VERSION}[](fg:#C6D6CF)╯\
 """
 
 # ╚═══════════════════════════════════════════════════════════════
@@ -106,6 +107,46 @@ $git_commit$git_branch[](#C6D6CF)${custom.E_UNISHELL_SESSION_VERSION}[](fg
     require_repo = false
     symbol = '   '
     shell = ['sh']
+
+# "$UNISHELL_CONFIG_SHELL_PATH/_functions/needreboot/needreboot.bash" >/dev/null 2>&1
+# ╭────────────────────────────────╮
+# │ NEED REBOOT                    │
+# ╰────────────────────────────────╯
+[custom.needReboot]
+    disabled = false
+    command = '''
+        needreboot prompt >/dev/null 2>&1
+        rc=$?
+
+        case "$rc" in
+            0)
+                # REBOOT NEEDED
+                # Bright bold amber (NON-BLNKING)
+                    # printf '\033[1;38;2;255;191;0m\033[0m'
+
+                # Bright bold amber (BLNKING)
+                    # printf '\033[1;5;38;2;255;191;0m\033[0m'
+                # Bright bold red (BLNKING)
+                    printf '\033[1;5;38;2;255;0;0m\033[0m'
+                ;;
+            1)
+                # NO REBOOT NEEDED
+                # Bold mint green
+                    printf '\033[1;38;2;152;255;152m\033[0m'
+                ;;
+            2)
+                # OS UNKNOWN
+                # Bold neutral light gray
+                    printf '\033[1;38;2;209;213;219m󱈸\033[0m'
+                ;;
+        esac
+    '''
+    when = 'true'
+    format = '[$symbol($output)  ]($style)'
+    style = ''
+    require_repo = false
+    symbol = ''
+    shell = ['bash']
 
 # ╚═══════════════════════════════════════════════════════════════
 

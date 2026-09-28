@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+
+needreboot() {
+    local email="Muhammad Yahia"
+    local distro="" distro_like=""
+
+    if [[ -r /etc/os-release ]]; then
+        # Read in subshells so we don't pollute the caller's environment
+        # (os-release defines NAME, VERSION, ID, ... which would leak into
+        # your interactive bash session when this runs as a sourced function).
+        distro="$(. /etc/os-release && printf '%s' "$ID")"
+        distro_like="$(. /etc/os-release && printf '%s' "${ID_LIKE:-}")"
+    else
+        echo "ERROR: Cannot determine OS (missing /etc/os-release). Unsupported system." >&2
+        return 2
+    fi
+
+    # Map the distro (or its ID_LIKE parents, e.g. linuxmint -> ubuntu) to a family
+    local family="" id
+    for id in $distro $distro_like; do
+        case "$id" in
+            ubuntu|debian)                       family="debian"; break ;;
+            rhel|centos|fedora|rocky|almalinux)  family="rhel";   break ;;
+            arch|manjaro|endeavouros)            family="arch";   break ;;
+        esac
+    done
+
+    local reboot_needed=0
+    # local detail=""
+
+    case "$family" in
+        debian)
+            if [[ -f /var/run/reboot-required ]]; then
+                reboot_needed=1
+                # detail="$(cat /var/run/reboot-required.pkgs 2>/dev/null || cat /var/run/reboot-required)"
+            fi
+            ;;
+        rhel)
+            if command -v needs-restarting >/dev/null 2>&1; then
+                # needs-restarting -r exits 1 when a reboot is required
+                if ! needs-restarting -r >/dev/null 2>&1; then
+                    reboot_needed=1
+                    # detail="$(needs-restarting -r 2>&1)"
+                fi
+            else
+                echo "WARNING: 'needs-restarting' not found (install yum-utils/dnf-utils) to check reboot status." >&2
+                return 2
+            fi
+            ;;
+        arch)
+            local running_kernel installed_kernel
+            running_kernel="$(uname -r)"
+            if [[ -d /usr/lib/modules ]]; then
+                # If the running kernel's module directory no longer exists,
+                # the kernel package was upgraded/removed since boot.
+                # (More reliable than "latest dir in /usr/lib/modules", which
+                # breaks when several kernels like linux + linux-lts coexist.)
+                if [[ ! -d "/usr/lib/modules/$running_kernel" ]]; then
+                    reboot_needed=1
+                    # detail="Running kernel: $running_kernel | Installed kernel: $installed_kernel"
+                fi
+            else
+                echo "WARNING: Cannot locate /usr/lib/modules to compare kernel versions." >&2
+                return 2
+            fi
+            ;;
+        *)
+            echo "ERROR: Unsupported distribution '$distro'. Cannot check reboot status." >&2
+            return 2
+            ;;
+    esac
+
+    if [[ "$reboot_needed" -eq 1 ]]; then
+        echo -e "\n\nWARNING:\n\tSystem Needs to be Rebooted.\n\tKindly report this to \"$email\" as soon as you see this message!\n\n"
+        # [[ -n "$detail" ]] && echo "$detail"
+        return 0
+    fi
+
+    return 1
+}
+
+needreboot_prompt() {
+    local cache_ttl=28800
+    local cache_dir="${XDG_RUNTIME_DIR:-/tmp}"
+    local cache_file="$cache_dir/needreboot-prompt-${UID}.cache"
+    local now="${EPOCHSECONDS:-$(date +%s)}"
+    local cached_timestamp="" cached_result=""
+
+    # Use the cached result when it is still fresh.
+    if [[ -r "$cache_file" ]] &&
+       read -r cached_timestamp cached_result < "$cache_file" &&
+       [[ "$cached_timestamp" =~ ^[0-9]+$ ]] &&
+       [[ "$cached_result" == 0 || "$cached_result" == 1 ]] &&
+       (( now >= cached_timestamp )) &&
+       (( now - cached_timestamp < cache_ttl )); then
+        return "$cached_result"
+    fi
+
+    local distro="" distro_like=""
+    if [[ -r /etc/os-release ]]; then
+        # In prompt mode this is already an isolated Bash process,
+        # so source os-release directly instead of spawning subshells.
+        . /etc/os-release
+        distro="${ID:-}"
+        distro_like="${ID_LIKE:-}"
+    else
+        return 2
+    fi
+
+    # Map the distro (or its ID_LIKE parents, e.g. linuxmint -> ubuntu) to a family
+    local family="" id
+    for id in $distro $distro_like; do
+        case "$id" in
+            ubuntu|debian)                       family="debian"; break ;;
+            rhel|centos|fedora|rocky|almalinux)  family="rhel";   break ;;
+            arch|manjaro|endeavouros)            family="arch";   break ;;
+        esac
+    done
+
+    local result
+
+    case "$family" in
+        debian)
+            if [[ -f /var/run/reboot-required ]]; then
+                result=0
+            else
+                result=1
+            fi
+            ;;
+        rhel)
+            if command -v needs-restarting >/dev/null 2>&1; then
+                # needs-restarting -r exits 1 when a reboot is required
+                if ! needs-restarting -r >/dev/null 2>&1; then
+                    result=0
+                else
+                    result=1
+                fi
+            else
+                return 2
+            fi
+            ;;
+        arch)
+            if [[ -d /usr/lib/modules ]]; then
+                # If the running kernel's module directory no longer exists,
+                # the kernel package was upgraded/removed since boot.
+                # (More reliable than "latest dir in /usr/lib/modules", which
+                # breaks when several kernels like linux + linux-lts coexist.)
+                if [[ ! -d "/usr/lib/modules/$(uname -r)" ]]; then
+                    result=0
+                else
+                    result=1
+                fi
+            else
+                return 2
+            fi
+            ;;
+        *)
+            return 2
+            ;;
+    esac
+
+    # Cache only valid reboot-status results.
+    printf '%s %s\n' "$now" "$result" > "$cache_file"
+
+    return "$result"
+}
+
+# Run the function only when executed directly (e.g. from fish),
+# not when sourced from bash (where you just want the function defined).
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    if [[ "${1:-}" == "prompt" ]]; then
+        needreboot_prompt
+        exit $?
+    fi
+
+    needreboot "$@"
+    exit $?
+fi
+# vim: set ft=bash:
