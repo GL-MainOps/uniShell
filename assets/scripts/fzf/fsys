@@ -951,7 +951,7 @@ _fsys__action() {
 # -----------------------------------------------------------------------------
 
 _fsys__services_header() {
-    printf '%s\n%s\n%s' \
+    printf '%s\n%s\n%s\n%s' \
         'Enter status · Tab select · Ctrl-A all · Ctrl-R reload · Ctrl-/ preview' \
         'Ctrl-S start · Ctrl-X stop · Alt-R restart · Alt-L reload · Ctrl-E edit · Ctrl-Y cat' \
         'Ctrl-L logs · Alt-F follow · Alt-P previous boot · Alt-E errors · Alt-W warnings · Ctrl-O properties' \
@@ -966,7 +966,7 @@ _fsys__timers_header() {
 }
 
 _fsys__units_header() {
-    printf '%s\n%s\n%s' \
+    printf '%s\n%s\n%s\n%s' \
         'Enter status · Tab select · Ctrl-A all · Ctrl-R reload · Ctrl-/ preview' \
         'Ctrl-S start · Ctrl-X stop · Alt-R restart · Alt-L reload · Ctrl-E edit · Ctrl-Y cat' \
         'Ctrl-L logs · Alt-F follow · Alt-P previous boot · Alt-E errors · Alt-W warnings · Ctrl-O properties' \
