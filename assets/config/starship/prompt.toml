@@ -1,0 +1,314 @@
+# vim: set ft=toml:
+# ╔═══════════════════════════════════════════════════════════════
+# ║ PROMPT
+# ╚═
+
+# ╭────────────────────────────────╮
+# │ LEFT PROMPT                    │            ---    ╯ ╮ ╰ ╭ ─
+# ╰────────────────────────────────╯
+format = """
+╭[](fg:#8f8f8c)$shell[ ](fg:#8f8f8c bg:#303030)\
+$username\
+[ 🔗 ](bg:#303030)\
+${custom.ipaddr}[](fg:#303030 bg:#3465A4)\
+$directory[](fg:#3465A4)\
+$fill\
+${custom.timestamp}\
+$fill\
+[](fg:#303030)$hostname[](fg:#204056 bg:#303030)\
+$os[](fg:#204056)╮\
+$line_break│$fill│ $line_break\
+╰[$sudo](bold fg:#C6D6CF)$character\
+"""
+
+# ╭────────────────────────────────╮
+# │ RIGHT PROMPT                   │
+# ╰────────────────────────────────╯
+right_format = """
+$git_commit$git_branch[](#C6D6CF)${custom.E_UNISHELL_SESSION_VERSION}[](fg:#C6D6CF)╯ \
+"""
+
+# ╚═══════════════════════════════════════════════════════════════
+
+
+
+# ╔═══════════════════════════════════════════════════════════════
+# ║ CUSTOM COMMANDS # VARS: style | symbol | output
+
+# ╭────────────────────────────────╮
+# │ IP ADDRESS                     │
+# ╰────────────────────────────────╯
+[custom.ipaddr]
+    disabled = false
+    command = '''
+        ip -4 -o addr show | \
+            awk '$4 ~ /^192\.168\./ {split($4,a,"/"); split(a[1],o,"."); print o[3]"."o[4]; exit}'
+    '''
+    when = true
+    style = "bold fg:#ffb151 bg:#303030"
+    require_repo = false
+    symbol = ''
+    format = '[$symbol($output )]($style)'
+    shell = ['sh']
+
+# ╭────────────────────────────────╮
+# │ TIMESTAMP                      │
+# ╰────────────────────────────────╯
+[custom.timestamp]
+    disabled = false
+    command = 'date "+%R %p"'
+    when = 'true'
+    format = '[$symbol($output)]($style)'
+    style = "bold fg:white"
+    require_repo = false
+    symbol = ''
+    shell = ['sh']
+[custom.long-timestamp]
+    disabled = false
+    command = 'date "+%X | %B-%d"'
+    when = 'true'
+    format = '[ $symbol ($output) $symbol ]($style)'
+    style = "fg:black bg:bright-white"
+    require_repo = false
+    symbol = '  '
+    shell = ['sh']
+
+# ╭────────────────────────────────╮
+# │ TIMESTAMP                      │
+# ╰────────────────────────────────╯
+[custom.timezone]
+    disabled = false
+    command = '''
+        tz="$(timedatectl show --property=Timezone --value)";
+        city="${tz##*/}"
+        echo "$city"
+    '''
+    when = 'true'
+    format = '[$symbol( $output)]($style)'
+    style = "bold yellow"
+    require_repo = false
+    symbol = ''
+    shell = ['sh']
+
+# ╭────────────────────────────────╮
+# │ UNISHELL VERSION               │
+# ╰────────────────────────────────╯
+[custom.E_UNISHELL_SESSION_VERSION]
+    disabled = false
+    command = '''
+        if [ -n "$UNISHELL_SESSION_VERSION" ]; then
+            echo "$UNISHELL_SESSION_VERSION"
+        fi
+    '''
+    when = 'true'
+    format = '[$symbol($output )]($style)'
+    style = "fg:black bg:#C6D6CF"
+    require_repo = false
+    symbol = '   '
+    shell = ['sh']
+
+# ╚═══════════════════════════════════════════════════════════════
+
+
+
+# ╔═══════════════════════════════════════════════════════════════
+# ║ SPECIFIC MODULES
+
+# ╭────────────────────────────────╮
+# │ DECORATIVE                     │
+# ╰────────────────────────────────╯
+# ┌────────────────┐
+# │ LINE BREAK     │
+# └────────────────┘
+[line_break]
+    disabled = false
+
+# ┌────────────────┐
+# │ FILL           │
+# └────────────────┘
+[fill]
+    disabled = false
+    symbol = ' '
+    style = 'bold black'
+
+# ┌────────────────┐
+# │ CHARACTER      │
+# └────────────────┘
+[character] # VARS: symbol
+    disabled = false
+    format = '$symbol '
+    success_symbol = '[](bold green)'
+    error_symbol = '[](bold red)'
+
+
+
+# ╭────────────────────────────────╮
+# │ MACHINE INFO                   │
+# ╰────────────────────────────────╯
+# ┌────────────────┐
+# │ OS             │
+# └────────────────┘
+[os] # VARS: style | symbol | name | type | codename | edition | version
+
+    disabled = false
+    format = '[ $symbol ]($style)'
+    style = 'bold fg:white bg:#204056'
+    [os.symbols]
+        Windows = " "
+        Arch = "󰣇 "
+        AlmaLinux = " "
+        Alpine = " "
+        Amazon = " "
+        CentOS = " "
+        Debian = " "
+        EndeavourOS = " "
+        Fedora = " "
+        FreeBSD = " "
+        Garuda = " "
+        Linux = " "
+        Macos = " "
+        Manjaro = " "
+        Mint = "󰣭 "
+        NixOS = " "
+        openSUSE = " "
+        Pop = " "
+        Redhat = " "
+        RedHatEnterprise = " "
+        RockyLinux = " "
+        SUSE = " "
+        Ubuntu = " "
+        Unknown = " "
+
+# ┌────────────────┐
+# │ HOSTNAME       │
+# └────────────────┘
+[hostname] # VARS: style | ssh_symbol | hostname
+    ssh_only = false
+    ssh_symbol = ''
+    # trim_at = '.'
+    format = '[ 󰒍 $ssh_symbol$hostname ]($style)'
+    style = 'bold fg:bright-yellow bg:#303030'
+    disabled = false
+    aliases = {
+        "myahia" = "NTG-Laptop",
+    }
+
+# ┌────────────────┐
+# │ USERNAME       │
+# └────────────────┘
+[username] # VARS: style | user
+    disabled = false
+    show_always= true
+    style_root = 'bold fg:bright-red bg:#303030'
+    style_user = 'bold fg:bright-green bg:#303030'
+    format = '[$user]($style)'
+    aliases = { "root" = "ROOT", "myahia" = "YAHIA", "yahia" = "YAHIA"}
+
+
+
+# ╭────────────────────────────────╮
+# │ SESSION & COMMANDS INFO        │
+# ╰────────────────────────────────╯
+# ┌────────────────┐
+# │ SHELL          │
+# └────────────────┘
+[shell] # VARS: style | indicator
+    disabled = false
+    format = '[$indicator]($style)'
+    style = 'fg:#005387 bg:#8f8f8c'
+    bash_indicator = ' '
+    fish_indicator = ' '
+    zsh_indicator = ' '
+    nu_indicator = ' '
+    powershell_indicator = '󰨊 '
+    pwsh_indicator = ' '
+    unknown_indicator = '>_?'
+
+# ┌────────────────┐
+# │ SUDO           │
+# └────────────────┘
+[sudo] # VARS: style | symbol
+    disabled = false
+    format = '[$symbol](bold fg:yellow)'
+    symbol = '  '
+    # style = 'bold red'
+    allow_windows = false
+
+# ┌────────────────┐
+# │ EXIT STATUS    │
+# └────────────────┘
+[status] # VARS: style | symbol | status | hex_status | int | common_meaning | signal_number | signal_name | maybe_int | pipestatus
+    disabled = false
+    format = '[$symbol $status]($style) '
+    style = "(bold red)"
+    success_symbol = '[❯](bold green)'
+    # success_style = "(bold green)"
+    # failure_style = "(bold red)"
+    map_symbol = true
+    recognize_signal_code = true
+    # symbol = '❌'
+    # success_symbol = '[❯](bold green)'
+    # success_symbol = ''
+    # error_symbol =
+    # not_executable_symbol = '🚫'
+    # not_found_symbol = '🔍'
+    # sigint_symbol = '🧱'
+    # signal_symbol = '⚡'
+
+
+
+# ╭────────────────────────────────╮
+# │ DIRECTORY & GIT INFO           │
+# ╰────────────────────────────────╯
+# ┌────────────────┐
+# │ DIRECTORIES    │
+# └────────────────┘
+[directory] # VARS: style | path
+    disabled = false
+    use_os_path_sep = true
+
+    truncation_length = 4
+    truncate_to_repo = true
+    truncation_symbol = ' …/'
+    home_symbol = " ~"
+    read_only = ' '
+    read_only_style = 'bold dimmed fg:red bg:#3465A4'
+
+    before_repo_root_style = 'bold fg:yellow bg:#3465A4' # The style for the path segment above the root of the git repo. The default value is equivalent to style.
+    repo_root_style = 'bold fg:yellow bg:#3465A4' # The style for the root of the git repo. The default value is equivalent to style.
+    repo_root_format = '[  ](bold fg:yellow bg:#3465A4)[$before_root_path]($before_repo_root_style)[$repo_root]($repo_root_style)[$path]($style)[$read_only ]($read_only_style)'
+
+    format = '[  ](bold fg:yellow bg:#3465A4)[$path ]($style)[$read_only]($read_only_style)'
+    style = 'bold fg:white bg:#3465A4'
+
+# ┌────────────────┐
+# │ GIT COMMIT     │
+# └────────────────┘
+[git_commit] # VARS: style | hash | tag
+    disabled = false
+    commit_hash_length = 5
+    only_detached = false
+    tag_disabled = false
+    tag_max_candidates = 0
+    tag_symbol = ' 🏷 '
+    format = '[[](fg:purple)[  ](bold fg:green bg:purple)\($hash$tag\)]($style)'
+    style = 'bold bg:purple fg:white'
+
+# ┌────────────────┐
+# │ GIT BRANCH     │
+# └────────────────┘
+[git_branch] # VARS: style | symbol | branch | remote_name | remote_branch
+    disabled = false
+    always_show_remote = false
+    # truncation_length = '2^63 - 1'
+    truncation_symbol = '…'
+    only_attached = true # Only show the branch name when not in a detached HEAD state.
+    # ignore_branches = [] # A list of names to avoid displaying. Useful for 'master' or 'main'.
+    ignore_bare_repo = false
+    format = '[[$symbol](bold fg:green bg:purple)$branch(:$remote_branch) [](fg:purple)]($style)'
+    symbol = '  '
+    # symbol = ''
+    style = 'bold bg:purple fg:white'
+
+# ╚═══════════════════════════════════════════════════════════════
+

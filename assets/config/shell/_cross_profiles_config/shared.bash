@@ -117,26 +117,24 @@ done
 # │ ON-DEMAND COMPLETION SOURCING  │
 # ╰────────────────────────────────╯
 declare -A completions=(
-    [bat]="bat --completion bash"
-    [crictl]="crictl completion bash"
-    [fd]="fd --gen-completions bash"
-    [helm]="helm completion bash"
-    [kubectl]="kubectl completion bash"
-    # [kubeadm]="kubeadm completion bash"
-    [rg]="rg --generate complete-bash"
+# ┌────────────────┐
+# │ FOR-REFERENCE  │
+# └────────────────┘
+    # [bat]="bat --completion bash"
+    # [fd]="fd --gen-completions bash"
+    # [helm]="helm completion bash"
+    # [kubectl]="kubectl completion bash"
+    # [rg]="rg --generate complete-bash"
     # [zellij]="zellij setup --generate-completion bash"
+# ┌────────────────┐
+# │ DYNAMIC SOURCE │
+# └────────────────┘
+    # [crictl]="crictl completion bash"
+    # [kubeadm]="kubeadm completion bash"
 )
 for cmd in "${!completions[@]}"; do
     command -v "$cmd" >/dev/null 2>&1 && source <(${completions[$cmd]})
 done
-
-# docker needs a version gate (completion subcommand requires >=23.0)
-if command -v docker >/dev/null 2>&1; then
-    docker_ver=$(docker version --format '{{.Client.Version}}' 2>/dev/null)
-    if [[ -n "$docker_ver" ]] && printf '%s\n' "23.0.0" "$docker_ver" | sort -V -C; then
-        source <(docker completion bash)
-    fi
-fi
 
 # ╭────────────────────────────────╮
 # │ COMPLETION SHELL-OPTS          │
@@ -221,6 +219,11 @@ fi
 
 # ╔═══════════════════════════════════════════════════════════════
 # ║ EVALs
+
+# ╭────────────────────────────────╮
+# │ STARSHIP                       │
+# ╰────────────────────────────────╯
+eval "$(starship init bash)"
 
 # ╭────────────────────────────────╮
 # │ FZF                            │
