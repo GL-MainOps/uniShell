@@ -1,11 +1,16 @@
 # ╔═══════════════════════════════════════════════════════════════
 # ║ SHELL PRE-INIT STEPS
 
-set -g fish_history fish
+# ╭────────────────────────────────╮
+# │ PRUNE STALE RCOPY SOCKETS      │
+# ╰────────────────────────────────╯
+rcopy --prune
 
 # ╭────────────────────────────────╮
 # │ SPECIAL COLORING               │
 # ╰────────────────────────────────╯
+
+set -g fish_history fish
 fish_config theme choose 'fish default'
 
 # Design:

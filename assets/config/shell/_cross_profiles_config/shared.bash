@@ -1,6 +1,11 @@
 # ╔═══════════════════════════════════════════════════════════════
 # ║ SHELL PRE-INIT STEPS
 
+# ╭────────────────────────────────╮
+# │ PRUNE STALE RCOPY SOCKETS      │
+# ╰────────────────────────────────╯
+rcopy --prune
+
 ## SKIP IF NOT INTERACTIVE
 case $- in
     *i*) ;;
