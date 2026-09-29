@@ -103,6 +103,13 @@ ll = "eza --icons=auto --classify --group-directories-first -l --group"
 l1 = "eza --icons=auto --classify --almost-all --sort changed --time-style relative -l --no-user --no-permissions --total-size"
 
 # ┌────────────────┐
+# │ FZF SCRIPTS    │
+# └────────────────┘
+ffs = "fsys"
+ffd = "fdoc"
+ffk = "fkube"
+
+# ┌────────────────┐
 # │ HAVN           │
 # └────────────────┘
 ports = "havn -a localhost"

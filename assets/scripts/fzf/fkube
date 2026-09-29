@@ -1,0 +1,1940 @@
+#!/usr/bin/env bash
+
+# fkube - fzf-driven Kubernetes operations for Bash
+#
+# This file is intentionally BOTH:
+#   1. sourceable:     source /path/to/fkube
+#   2. directly usable: /path/to/fkube [arguments]
+#
+# It is a hardened/refactored successor to the original `kfz` function.
+# The public command is `fkube`; the old `kfz` command is deliberately not
+# defined here.
+#
+# Design goals
+#   - Keep the original K9s-like, fzf-driven workflow.
+#   - Exact matching by default.
+#   - Preview panes are hidden by default and can be toggled with Ctrl-/.
+#   - Keep machine-readable fields separate from the displayed row.
+#   - Never change the caller's shell options when sourced.
+#   - Confirm operations that can materially change cluster state.
+#   - Fail closed when an interactive confirmation cannot be presented.
+#   - Use kubectl API discovery instead of a hard-coded resource list.
+#   - Work with short names such as `po`, `deploy`, `svc`, etc. whenever
+#     kubectl itself exposes them.
+#
+# Required:
+#   bash 5.x, kubectl, fzf, awk, mktemp
+#
+# Optional:
+#   bat, less                         paging / syntax highlighting
+#   wl-copy, xclip, xsel, pbcopy      clipboard support
+#
+# Useful environment variables:
+#   FKUBE_CONFIRM_MUTATIONS=0         disable mutation confirmations
+#   FKUBE_LOG_LINES=200               pod log tail size
+#   FKUBE_EXEC_SHELL=/bin/zsh         preferred pod shell (auto by default)
+#   FKUBE_INCLUDE_INIT_CONTAINERS=1   include init containers in container picker
+#   FKUBE_INCLUDE_EPHEMERAL=1         include ephemeral containers in picker
+#
+# `fkube --help` documents command-line options and key bindings.
+
+# Keep a version string inside a function so sourcing this file does not create
+# an additional global variable in the caller's shell.
+_fkube__version() {
+    printf '%s\n' '2.0.0'
+}
+
+# ----------------------------------------------------------------------------
+# Small, dependency-safe helpers
+# -----------------------------------------------------------------------------
+
+_fkube__require_commands() {
+    local missing=()
+    local cmd
+
+    for cmd in kubectl fzf awk mktemp; do
+        command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+    done
+
+    if ((${#missing[@]})); then
+        printf 'fkube: missing command(s): %s\n' "${missing[*]}" >&2
+        return 127
+    fi
+}
+
+_fkube__is_tty() {
+    [[ -r /dev/tty && -w /dev/tty ]]
+}
+
+_fkube__pause() {
+    # A pause is deliberately skipped when stdin/tty is unavailable rather
+    # than blocking a non-interactive caller forever.
+    _fkube__is_tty || return 0
+    printf '\nPress Enter to return to fzf...' >&2
+    IFS= read -r _ </dev/tty
+}
+
+# Render stdin for an fzf preview. Preview rendering must never start an
+# interactive pager because the preview pane owns the terminal area.
+_fkube__preview_render() {
+    local language=${1:-text}
+
+    if command -v bat >/dev/null 2>&1; then
+        if [[ $language == text ]]; then
+            bat --style=plain --color=always --paging=never 2>/dev/null
+        else
+            bat \
+                --style=plain \
+                --color=always \
+                --paging=never \
+                --language="$language" \
+                2>/dev/null
+        fi
+    else
+        cat
+    fi
+}
+
+# Render non-paged content outside fzf when appropriate.
+_fkube__render() {
+    _fkube__preview_render "${1:-text}"
+}
+
+# Page a real file. `bat` is preferred, then `less -R`, then plain `cat`.
+_fkube__page_file() {
+    local language=${1:-text}
+    local file=${2:-}
+
+    [[ -r $file ]] || return 1
+
+    if command -v bat >/dev/null 2>&1; then
+        if [[ $language == text ]]; then
+            bat --style=plain --color=always --paging=always "$file" && return 0
+        else
+            bat \
+                --style=plain \
+                --color=always \
+                --paging=always \
+                --language="$language" \
+                "$file" && return 0
+        fi
+    fi
+
+    if command -v less >/dev/null 2>&1; then
+        less -R "$file" && return 0
+    fi
+
+    cat "$file"
+}
+
+# Stream clipboard data directly. The original implementation loaded all input
+# into a shell variable; streaming is safer for large YAML/JSON output.
+_fkube__clip() {
+    if command -v wl-copy >/dev/null 2>&1; then
+        wl-copy
+        return $?
+    elif command -v xclip >/dev/null 2>&1; then
+        xclip -selection clipboard
+        return $?
+    elif command -v xsel >/dev/null 2>&1; then
+        xsel --clipboard --input
+        return $?
+    elif command -v pbcopy >/dev/null 2>&1; then
+        pbcopy
+        return $?
+    fi
+
+    printf 'fkube: no clipboard command available (wl-copy/xclip/xsel/pbcopy).\n' >&2
+    return 127
+}
+
+_fkube__current_context() {
+    _fkube__kubectl config current-context 2>/dev/null || true
+}
+
+_fkube__current_namespace() {
+    local namespace
+    namespace=$(_fkube__kubectl config view --minify -o jsonpath='{.contexts[0].context.namespace}' 2>/dev/null) || true
+    printf '%s\n' "${namespace:-default}"
+}
+
+# All kubectl calls go through this tiny wrapper. It gives us one place to
+# preserve a possible future backend/context override without changing every
+# caller again. At present it simply executes kubectl with exact argv.
+_fkube__kubectl() {
+    command kubectl "$@"
+}
+
+# ----------------------------------------------------------------------------
+# Safety / confirmation helpers
+# -----------------------------------------------------------------------------
+
+_fkube__confirm_enabled() {
+    # A command-line --yes/--no-confirm override is represented by the private
+    # exported variable below. If it is absent, the public environment setting
+    # is used; confirmations are ON by default.
+    [[ ${FKUBE__CONFIRM_MUTATIONS:-${FKUBE_CONFIRM_MUTATIONS:-1}} != 0 ]]
+}
+
+_fkube__assume_yes() {
+    [[ ${FKUBE__ASSUME_YES:-0} == 1 ]]
+}
+
+_fkube__confirm() {
+    local prompt=${1:-'Proceed?'}
+    local answer
+
+    _fkube__assume_yes && return 0
+    _fkube__confirm_enabled || return 0
+
+    if ! _fkube__is_tty; then
+        printf 'fkube: refusing an interactive mutation because no controlling tty is available.\n' >&2
+        return 1
+    fi
+
+    read -r -p "$prompt [y/N] " answer </dev/tty || return 1
+    [[ $answer =~ ^[Yy]$ ]]
+}
+
+_fkube__print_context_warning() {
+    local context
+    context=$(_fkube__current_context)
+    printf 'Context: %s\n' "${context:-<unknown>}" >&2
+}
+
+_fkube__confirm_targets() {
+    # Usage: _fkube__confirm_targets ACTION TARGET...
+    local action=$1
+    shift
+
+    printf '\nSelected target(s):\n' >&2
+    printf '  %s\n' "$@" >&2
+    _fkube__print_context_warning
+    printf '\n' >&2
+    _fkube__confirm "$action" 
+}
+
+
+# ----------------------------------------------------------------------------
+# Kubernetes resource discovery
+# -----------------------------------------------------------------------------
+
+# Resolve a resource name or kubectl short name to:
+#   canonical<TAB>namespaced<TAB>kind
+#
+# Do not assume fixed API column positions. `kubectl api-resources` is a human
+# table whose columns have changed over time. We parse its header by name.
+_fkube__resource_meta() {
+    local wanted=${1:-}
+    local namespaced table meta
+
+    [[ -n $wanted ]] || return 1
+
+    for namespaced in true false; do
+        table=$(_fkube__kubectl api-resources \
+            --verbs=list \
+            --namespaced="$namespaced" 2>/dev/null) || continue
+
+        meta=$(awk -v wanted="$wanted" '
+            function short_match(value, wanted,    n, a, i) {
+                if (value == "" || value == "<none>") return 0
+                n = split(value, a, ",")
+                for (i = 1; i <= n; i++)
+                    if (a[i] == wanted)
+                        return 1
+                return 0
+            }
+
+            NR == 1 {
+                name_col = short_col = ns_col = kind_col = 0
+                for (i = 1; i <= NF; i++) {
+                    if ($i == "NAME") name_col = i
+                    else if ($i == "SHORTNAMES") short_col = i
+                    else if ($i == "NAMESPACED") ns_col = i
+                    else if ($i == "KIND") kind_col = i
+                }
+                next
+            }
+
+            name_col && ns_col && kind_col && NF >= kind_col {
+                if ($name_col == wanted || (short_col && short_match($short_col, wanted))) {
+                    printf "%s\t%s\t%s\n", $name_col, $ns_col, $kind_col
+                    exit
+                }
+            }
+        ' <<< "$table")
+
+        if [[ -n $meta ]]; then
+            printf '%s' "$meta"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# Return all listable resources in the stable internal format:
+#   resource<TAB>shortnames<TAB>namespaced<TAB>kind<TAB>display
+_fkube__resource_types_list() {
+    {
+        _fkube__kubectl api-resources --verbs=list --namespaced=true 2>/dev/null
+        _fkube__kubectl api-resources --verbs=list --namespaced=false 2>/dev/null
+    } |
+        awk '
+            function is_header() {
+                return ($1 == "NAME" && $2 == "SHORTNAMES")
+            }
+
+            is_header() {
+                name_col = short_col = ns_col = kind_col = 0
+                for (i = 1; i <= NF; i++) {
+                    if ($i == "NAME") name_col = i
+                    else if ($i == "SHORTNAMES") short_col = i
+                    else if ($i == "NAMESPACED") ns_col = i
+                    else if ($i == "KIND") kind_col = i
+                }
+                next
+            }
+
+            name_col && ns_col && kind_col && NF >= kind_col {
+                resource = $name_col
+                short = (short_col && $short_col != "<none>" ? $short_col : "-")
+                namespaced = $ns_col
+                kind = $kind_col
+                key = resource SUBSEP namespaced
+
+                if (seen[key]++)
+                    next
+
+                row_resource[++count] = resource
+                row_short[count] = short
+                row_namespaced[count] = namespaced
+                row_kind[count] = kind
+
+                if (length(resource) > w1) w1 = length(resource)
+                if (length(short) > w2) w2 = length(short)
+                if (length(namespaced) > w3) w3 = length(namespaced)
+            }
+
+            END {
+                for (i = 1; i <= count; i++)
+                    printf "%s\t%s\t%s\t%s\t%-*s  %-*s  %-*s  %s\n", \
+                        row_resource[i], row_short[i], row_namespaced[i], \
+                        row_kind[i], w1, row_resource[i], w2, row_short[i], \
+                        w3, row_namespaced[i], row_kind[i]
+            }
+        '
+}
+
+# Build resource rows in the stable internal format:
+#   namespace<TAB>name<TAB>display
+#
+# Only the third field is displayed. This avoids literal tab artifacts and
+# lets fzf actions consume the first two fields without reparsing the display.
+_fkube__list() {
+    local resource=$1
+    local namespaced=$2
+    local scope=$3
+    local namespace=$4
+
+    if [[ $namespaced == true ]]; then
+        if [[ $scope == all ]]; then
+            _fkube__kubectl get "$resource" -A --no-headers -o wide 2>/dev/null |
+                awk '
+                    {
+                        if (!match($0, /^[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+/)) next
+
+                        ns = $1
+                        name = $2
+                        if (ns == "" || name == "") next
+
+                        suffix = substr($0, RSTART + RLENGTH)
+                        sub(/^[[:space:]]+/, "", suffix)
+                        identity = ns "/" name
+
+                        row_ns[NR] = ns
+                        row_name[NR] = name
+                        row_identity[NR] = identity
+                        row_suffix[NR] = suffix
+                        if (length(identity) > max_identity)
+                            max_identity = length(identity)
+                    }
+                    END {
+                        for (i = 1; i <= NR; i++)
+                            if (row_name[i] != "")
+                                printf "%s\t%s\t%-*s  %s\n", \
+                                    row_ns[i], row_name[i], max_identity, \
+                                    row_identity[i], row_suffix[i]
+                    }
+                '
+        else
+            _fkube__kubectl get "$resource" -n "$namespace" --no-headers -o wide 2>/dev/null |
+                awk -v ns="$namespace" '
+                    {
+                        name = $1
+                        if (name == "") next
+
+                        match($0, /^[^[:space:]]+/)
+                        suffix = substr($0, RSTART + RLENGTH)
+                        sub(/^[[:space:]]+/, "", suffix)
+                        identity = ns "/" name
+
+                        row_name[NR] = name
+                        row_identity[NR] = identity
+                        row_suffix[NR] = suffix
+                        if (length(identity) > max_identity)
+                            max_identity = length(identity)
+                    }
+                    END {
+                        for (i = 1; i <= NR; i++)
+                            if (row_name[i] != "")
+                                printf "%s\t%s\t%-*s  %s\n", \
+                                    ns, row_name[i], max_identity, \
+                                    row_identity[i], row_suffix[i]
+                    }
+                '
+        fi
+    else
+        _fkube__kubectl get "$resource" --no-headers -o wide 2>/dev/null |
+            awk '
+                {
+                    name = $1
+                    if (name == "") next
+
+                    match($0, /^[^[:space:]]+/)
+                    suffix = substr($0, RSTART + RLENGTH)
+                    sub(/^[[:space:]]+/, "", suffix)
+                    row_name[NR] = name
+                    row_identity[NR] = name
+                    row_suffix[NR] = suffix
+                    if (length(name) > max_identity)
+                        max_identity = length(name)
+                }
+                END {
+                    for (i = 1; i <= NR; i++)
+                        if (row_name[i] != "")
+                            printf "-\t%s\t%-*s  %s\n", \
+                                row_name[i], max_identity, row_identity[i], row_suffix[i]
+                }
+            '
+    fi
+}
+
+_fkube__reload() {
+    local resource=$1
+    local namespaced=$2
+    local namespace=$3
+
+    if [[ ${FZF_PROMPT-} == *'[ALL]'* ]]; then
+        _fkube__list "$resource" "$namespaced" all "$namespace"
+    else
+        _fkube__list "$resource" "$namespaced" current "$namespace"
+    fi
+}
+
+_fkube__toggle_scope() {
+    local resource=$1
+    local namespaced=$2
+    local namespace=$3
+    local prompt
+
+    if [[ ${FZF_PROMPT-} == *'[ALL]'* ]]; then
+        prompt="K8s:$resource [ns:$namespace] ❯❯❯ "
+        printf 'change-prompt(%s)+reload(_fkube__list %q %q current %q)' \
+            "$prompt" "$resource" "$namespaced" "$namespace"
+    else
+        prompt="K8s:$resource [ALL] ❯❯❯ "
+        printf 'change-prompt(%s)+reload(_fkube__list %q %q all %q)' \
+            "$prompt" "$resource" "$namespaced" "$namespace"
+    fi
+}
+
+# ----------------------------------------------------------------------------
+# Object previews / container selection
+# -----------------------------------------------------------------------------
+
+_fkube__preview_resource() {
+    local resource=$1
+    local namespace=$2
+    local name=$3
+
+    [[ -n $name ]] || return 0
+
+    if [[ $namespace == '-' ]]; then
+        _fkube__kubectl describe "$resource" "$name" 2>&1
+    else
+        _fkube__kubectl describe "$resource" "$name" -n "$namespace" 2>&1
+    fi | _fkube__preview_render text
+}
+
+# Pick a pod container. stdout is exactly the selected container name.
+_fkube__select_container() {
+    local resource=$1
+    local namespace=$2
+    local name=$3
+    local -a containers=()
+    local container
+
+    [[ $resource == pods || $resource == pod ]] || return 1
+
+    local jsonpath='{range .spec.containers[*]}{.name}{"\t"}{"container"}{"\n"}{end}'
+    if [[ ${FKUBE_INCLUDE_INIT_CONTAINERS:-0} == 1 ]]; then
+        jsonpath+='{range .spec.initContainers[*]}{.name}{"\t"}{"init"}{"\n"}{end}'
+    fi
+    if [[ ${FKUBE_INCLUDE_EPHEMERAL:-0} == 1 ]]; then
+        jsonpath+='{range .spec.ephemeralContainers[*]}{.name}{"\t"}{"ephemeral"}{"\n"}{end}'
+    fi
+
+    local args=(get pod "$name" -o "jsonpath=$jsonpath")
+    [[ $namespace == '-' ]] || args+=( -n "$namespace" )
+
+    mapfile -t containers < <(_fkube__kubectl "${args[@]}" 2>/dev/null)
+    ((${#containers[@]})) || return 1
+
+    if ((${#containers[@]} == 1)); then
+        printf '%s\n' "${containers[0]%%$'\t'*}"
+        return 0
+    fi
+
+    container=$(
+        printf '%s\n' "${containers[@]}" |
+            fzf \
+                --with-shell='bash -c' \
+                --exact \
+                --no-multi \
+                --no-preview \
+                --delimiter=$'\t' \
+                --with-nth=1 \
+                --accept-nth='{1}' \
+                --prompt='Container ❯❯❯ ' \
+                --header='Enter select · Esc cancel' \
+                --height=50% \
+                --layout=reverse
+    ) || return 1
+
+    printf '%s\n' "$container"
+}
+
+# ----------------------------------------------------------------------------
+# Common object action plumbing
+# -----------------------------------------------------------------------------
+
+# Convert a resource tuple into a human-readable kubectl target string.
+_fkube__kubectl_target() {
+    local target_resource=$1
+    local target_ns=$2
+    local target_name=$3
+
+    if [[ $target_ns == '-' || -z $target_ns ]]; then
+        printf '%s/%s' "$target_resource" "$target_name"
+    else
+        printf '%s/%s -n %q' "$target_resource" "$target_name" "$target_ns"
+    fi
+}
+
+_fkube__read_selection_file() {
+    local file=$1
+    local -n out_ns=$2
+    local -n out_name=$3
+    local ns name rest line identity
+
+    out_ns=()
+    out_name=()
+
+    [[ -r $file ]] || return 1
+
+    while IFS= read -r line; do
+        [[ -n $line ]] || continue
+
+        IFS=$'\t' read -r ns name rest <<< "$line"
+        if [[ -z $name ]]; then
+            identity=${line%%[[:space:]]*}
+            if [[ $identity == */* ]]; then
+                ns=${identity%%/*}
+                name=${identity#*/}
+            else
+                ns='-'
+                name=$identity
+            fi
+        fi
+
+        [[ -n $name ]] || continue
+        out_ns+=("$ns")
+        out_name+=("$name")
+    done < "$file"
+
+    ((${#out_name[@]}))
+}
+
+_fkube__page_describes() {
+    local resource=$1
+    # The caller passes array names (for example `ns_list` and `name_list`).
+    # Keep the nameref variable names distinct from those caller names; Bash
+    # otherwise creates a circular self-reference such as `ns_list -> ns_list`.
+    local -n selected_ns=$2
+    local -n selected_name=$3
+    local page_file page_rc=0 pager_rc=0 kubectl_rc i
+
+    page_file=$(mktemp "${TMPDIR:-/tmp}/fkube-describe.XXXXXX") || return 1
+
+    for i in "${!selected_name[@]}"; do
+        printf '\n===== %s =====\n' \\
+            "$(_fkube__kubectl_target "$resource" "${selected_ns[i]}" "${selected_name[i]}")" \\
+            >>"$page_file"
+
+        if [[ ${selected_ns[i]} == '-' ]]; then
+            _fkube__kubectl describe "$resource" "${selected_name[i]}" >>"$page_file" 2>&1
+        else
+            _fkube__kubectl describe "$resource" "${selected_name[i]}" -n "${selected_ns[i]}" >>"$page_file" 2>&1
+        fi
+        kubectl_rc=$?
+        if ((kubectl_rc != 0 && page_rc == 0)); then
+            page_rc=$kubectl_rc
+        fi
+    done
+
+    _fkube__page_file text "$page_file"
+    pager_rc=$?
+    rm -f -- "$page_file"
+
+    ((page_rc != 0)) && return "$page_rc"
+    return "$pager_rc"
+}
+
+_fkube__page_yaml_or_json() {
+    local format=$1
+    local resource=$2
+    # Keep these nameref variables distinct from the array names supplied by
+    # the caller; otherwise Bash reports a circular name reference.
+    local -n selected_ns=$3
+    local -n selected_name=$4
+    local page_file page_rc=0 pager_rc=0 kubectl_rc i
+
+    page_file=$(mktemp "${TMPDIR:-/tmp}/fkube-${format}.XXXXXX") || return 1
+    : >"$page_file"
+
+    for i in "${!selected_name[@]}"; do
+        printf '\n===== %s =====\n' \\
+            "$(_fkube__kubectl_target "$resource" "${selected_ns[i]}" "${selected_name[i]}")" \\
+            >>"$page_file"
+
+        if [[ ${selected_ns[i]} == '-' ]]; then
+            _fkube__kubectl get "$resource" "${selected_name[i]}" -o "$format" >>"$page_file" 2>&1
+        else
+            _fkube__kubectl get "$resource" "${selected_name[i]}" -n "${selected_ns[i]}" -o "$format" >>"$page_file" 2>&1
+        fi
+        kubectl_rc=$?
+        if ((kubectl_rc != 0 && page_rc == 0)); then
+            page_rc=$kubectl_rc
+        fi
+    done
+
+    _fkube__page_file "$format" "$page_file"
+    pager_rc=$?
+    rm -f -- "$page_file"
+
+    ((page_rc != 0)) && return "$page_rc"
+    return "$pager_rc"
+}
+
+_fkube__copy_names() {
+    local mode=$1
+    local -n selected_ns=$2
+    local -n selected_name=$3
+    local i
+
+    case $mode in
+        name)
+            for i in "${!selected_name[@]}"; do
+                printf '%s\n' "${selected_name[i]}"
+            done
+            ;;
+        namespace)
+            for i in "${!selected_ns[@]}"; do
+                [[ ${selected_ns[i]} != '-' ]] || continue
+                printf '%s\n' "${selected_ns[i]}"
+            done
+            ;;
+        *)
+            return 2
+            ;;
+    esac | _fkube__clip
+}
+
+_fkube__copy_object_output() {
+    local format=$1
+    local resource=$2
+    local -n selected_ns=$3
+    local -n selected_name=$4
+    local i first=1
+
+    for i in "${!selected_name[@]}"; do
+        ((first)) || printf '\n---\n'
+        first=0
+        if [[ ${selected_ns[i]} == '-' ]]; then
+            _fkube__kubectl get "$resource" "${selected_name[i]}" -o "$format"
+        else
+            _fkube__kubectl get "$resource" "${selected_name[i]}" -n "${selected_ns[i]}" -o "$format"
+        fi
+    done | _fkube__clip
+}
+
+_fkube__action() {
+    local action=${1:-}
+    local resource=${2:-}
+
+    [[ ${3-} == --file ]] || {
+        printf 'fkube: internal error: expected --file <fzf temp file>\n' >&2
+        return 2
+    }
+
+    local file=${4-}
+    [[ -r $file ]] || {
+        printf 'fkube: selected-resource file is not readable\n' >&2
+        return 2
+    }
+
+    local -a ns_list=() name_list=()
+    _fkube__read_selection_file "$file" ns_list name_list || return 0
+
+    local i answer replicas port_spec container target unschedulable
+    local -a targets=()
+
+    for i in "${!name_list[@]}"; do
+        targets+=("$(_fkube__kubectl_target "$resource" "${ns_list[i]}" "${name_list[i]}")")
+    done
+
+    case $action in
+        describe)
+            _fkube__page_describes "$resource" ns_list name_list
+            ;;
+
+        yaml|json)
+            _fkube__page_yaml_or_json "$action" "$resource" ns_list name_list
+            ;;
+
+        edit)
+            for i in "${!name_list[@]}"; do
+                if [[ ${ns_list[i]} == '-' ]]; then
+                    _fkube__kubectl edit "$resource" "${name_list[i]}"
+                else
+                    _fkube__kubectl edit "$resource" "${name_list[i]}" -n "${ns_list[i]}"
+                fi
+            done
+            ;;
+
+        copy-name)
+            _fkube__copy_names name ns_list name_list
+            ;;
+
+        copy-namespace)
+            _fkube__copy_names namespace ns_list name_list
+            ;;
+
+        copy-yaml|copy-json)
+            local format=${action#copy-}
+            _fkube__copy_object_output "$format" "$resource" ns_list name_list
+            ;;
+
+        delete)
+            printf 'Selected resources:\n' >&2
+            printf '  %s\n' "${targets[@]}" >&2
+            printf '\n' >&2
+            _fkube__confirm_targets "Delete ${#name_list[@]} resource(s)?" "${targets[@]}" || return 0
+
+            for i in "${!name_list[@]}"; do
+                if [[ ${ns_list[i]} == '-' ]]; then
+                    _fkube__kubectl delete "$resource" "${name_list[i]}"
+                else
+                    _fkube__kubectl delete "$resource" "${name_list[i]}" -n "${ns_list[i]}"
+                fi
+            done
+            ;;
+
+        logs)
+            [[ $resource == pods || $resource == pod ]] || {
+                printf 'fkube: logs are only available from a pod picker.\n' >&2
+                _fkube__pause
+                return 1
+            }
+            local tail_lines=${FKUBE_LOG_LINES:-200}
+            [[ $tail_lines =~ ^[0-9]+$ ]] || tail_lines=200
+            for i in "${!name_list[@]}"; do
+                printf '\n===== %s =====\n' \
+                    "$(_fkube__kubectl_target pod "${ns_list[i]}" "${name_list[i]}")"
+                if [[ ${ns_list[i]} == '-' ]]; then
+                    _fkube__kubectl logs "${name_list[i]}" --all-containers --prefix --tail="$tail_lines"
+                else
+                    _fkube__kubectl logs "${name_list[i]}" -n "${ns_list[i]}" --all-containers --prefix --tail="$tail_lines"
+                fi
+            done
+            _fkube__pause
+            ;;
+
+        logs-follow)
+            [[ $resource == pods || $resource == pod ]] || {
+                printf 'fkube: logs are only available from a pod picker.\n' >&2
+                _fkube__pause
+                return 1
+            }
+            ((${#name_list[@]} == 1)) || {
+                printf 'fkube: follow requires exactly one selected pod.\n' >&2
+                _fkube__pause
+                return 1
+            }
+            local tail_lines=${FKUBE_LOG_LINES:-200}
+            [[ $tail_lines =~ ^[0-9]+$ ]] || tail_lines=200
+            if [[ ${ns_list[0]} == '-' ]]; then
+                _fkube__kubectl logs -f "${name_list[0]}" --all-containers --prefix --tail="$tail_lines"
+            else
+                _fkube__kubectl logs -f "${name_list[0]}" -n "${ns_list[0]}" --all-containers --prefix --tail="$tail_lines"
+            fi
+            ;;
+
+        logs-previous)
+            [[ $resource == pods || $resource == pod ]] || {
+                printf 'fkube: logs are only available from a pod picker.\n' >&2
+                _fkube__pause
+                return 1
+            }
+            for i in "${!name_list[@]}"; do
+                printf '\n===== previous: %s =====\n' \
+                    "$(_fkube__kubectl_target pod "${ns_list[i]}" "${name_list[i]}")"
+                if [[ ${ns_list[i]} == '-' ]]; then
+                    _fkube__kubectl logs "${name_list[i]}" --all-containers --prefix --previous
+                else
+                    _fkube__kubectl logs "${name_list[i]}" -n "${ns_list[i]}" --all-containers --prefix --previous
+                fi
+            done
+            _fkube__pause
+            ;;
+
+        exec|attach)
+            [[ $resource == pods || $resource == pod ]] || {
+                printf 'fkube: %s is only available from a pod picker.\n' "$action" >&2
+                _fkube__pause
+                return 1
+            }
+            ((${#name_list[@]} == 1)) || {
+                printf 'fkube: %s requires exactly one selected pod.\n' "$action" >&2
+                _fkube__pause
+                return 1
+            }
+
+            container=$(_fkube__select_container pod "${ns_list[0]}" "${name_list[0]}") || return 1
+            [[ -n $container ]] || return 1
+
+            if [[ $action == exec ]]; then
+                local requested_shell=${FKUBE_EXEC_SHELL:-}
+                if [[ -n $requested_shell ]]; then
+                    if [[ ${ns_list[0]} == '-' ]]; then
+                        _fkube__kubectl exec -it "${name_list[0]}" -c "$container" -- "$requested_shell" -il
+                    else
+                        _fkube__kubectl exec -it "${name_list[0]}" -n "${ns_list[0]}" -c "$container" -- "$requested_shell" -il
+                    fi
+                elif [[ ${ns_list[0]} == '-' ]]; then
+                    if _fkube__kubectl exec "${name_list[0]}" -c "$container" -- test -x /bin/bash >/dev/null 2>&1; then
+                        _fkube__kubectl exec -it "${name_list[0]}" -c "$container" -- /bin/bash -il
+                    else
+                        _fkube__kubectl exec -it "${name_list[0]}" -c "$container" -- /bin/sh
+                    fi
+                elif _fkube__kubectl exec "${name_list[0]}" -n "${ns_list[0]}" -c "$container" -- test -x /bin/bash >/dev/null 2>&1; then
+                    _fkube__kubectl exec -it "${name_list[0]}" -n "${ns_list[0]}" -c "$container" -- /bin/bash -il
+                else
+                    _fkube__kubectl exec -it "${name_list[0]}" -n "${ns_list[0]}" -c "$container" -- /bin/sh
+                fi
+            elif [[ ${ns_list[0]} == '-' ]]; then
+                _fkube__kubectl attach -it "${name_list[0]}" -c "$container"
+            else
+                _fkube__kubectl attach -it "${name_list[0]}" -n "${ns_list[0]}" -c "$container"
+            fi
+            ;;
+
+        port-forward)
+            case $resource in
+                pods|pod|services|service|deployments|deployment) ;;
+                *)
+                    printf 'fkube: port-forward is enabled for pods, services and deployments.\n' >&2
+                    _fkube__pause
+                    return 1
+                    ;;
+            esac
+
+            ((${#name_list[@]} == 1)) || {
+                printf 'fkube: port-forward requires exactly one selected resource.\n' >&2
+                _fkube__pause
+                return 1
+            }
+
+            printf 'Examples: 8080:80, 8443:https, :5000, 8080\n'
+            if ! _fkube__is_tty; then
+                printf 'fkube: port-forward requires an interactive terminal.\n' >&2
+                return 1
+            fi
+            read -r -p 'Port forward [LOCAL:REMOTE]: ' port_spec </dev/tty || return 1
+            [[ -n $port_spec ]] || return 0
+            [[ $port_spec =~ ^[0-9]+:[A-Za-z0-9._-]+$ ||
+               $port_spec =~ ^:[A-Za-z0-9._-]+$ ||
+               $port_spec =~ ^[0-9]+$ ]] || {
+                printf 'fkube: invalid port specification: %s\n' "$port_spec" >&2
+                _fkube__pause
+                return 1
+            }
+
+            target="${resource}/${name_list[0]}"
+            if [[ ${ns_list[0]} == '-' ]]; then
+                _fkube__kubectl port-forward "$target" "$port_spec"
+            else
+                _fkube__kubectl port-forward "$target" -n "${ns_list[0]}" "$port_spec"
+            fi
+            ;;
+
+        restart|undo|rollout-history|rollout-status)
+            case $resource in
+                deployments|deployment|daemonsets|daemonset|statefulsets|statefulset) ;;
+                *)
+                    printf 'fkube: rollout actions are only available for deployments, daemonsets and statefulsets.\n' >&2
+                    _fkube__pause
+                    return 1
+                    ;;
+            esac
+
+            local rollout_action
+            case $action in
+                restart) rollout_action=restart ;;
+                undo) rollout_action=undo ;;
+                rollout-history) rollout_action=history ;;
+                rollout-status) rollout_action=status ;;
+            esac
+
+            if [[ $action == restart || $action == undo ]]; then
+                _fkube__confirm_targets "${action^} selected workload(s)?" "${targets[@]}" || return 0
+            fi
+
+            for i in "${!name_list[@]}"; do
+                printf '\n===== %s =====\n' "${targets[i]}" >&2
+                if [[ ${ns_list[i]} == '-' ]]; then
+                    _fkube__kubectl rollout "$rollout_action" "$resource" "${name_list[i]}"
+                else
+                    _fkube__kubectl rollout "$rollout_action" "$resource" "${name_list[i]}" -n "${ns_list[i]}"
+                fi
+            done
+
+            [[ $action == rollout-history ]] && _fkube__pause
+            ;;
+
+        scale)
+            case $resource in
+                deployments|deployment|daemonsets|daemonset|statefulsets|statefulset|replicasets|replicaset) ;;
+                *)
+                    printf 'fkube: scale is enabled for deployments, daemonsets, statefulsets and replicasets.\n' >&2
+                    _fkube__pause
+                    return 1
+                    ;;
+            esac
+
+            if ! _fkube__is_tty; then
+                printf 'fkube: scaling requires an interactive terminal.\n' >&2
+                return 1
+            fi
+            read -r -p 'Desired replicas: ' replicas </dev/tty || return 1
+            [[ $replicas =~ ^[0-9]+$ ]] || {
+                printf 'fkube: replicas must be a non-negative integer.\n' >&2
+                _fkube__pause
+                return 1
+            }
+
+            _fkube__confirm_targets "Scale selected workload(s) to ${replicas} replica(s)?" "${targets[@]}" || return 0
+
+            for i in "${!name_list[@]}"; do
+                if [[ ${ns_list[i]} == '-' ]]; then
+                    _fkube__kubectl scale "$resource" "${name_list[i]}" --replicas="$replicas"
+                else
+                    _fkube__kubectl scale "$resource" "${name_list[i]}" -n "${ns_list[i]}" --replicas="$replicas"
+                fi
+            done
+            ;;
+
+        top)
+            case $resource in
+                pods|pod)
+                    for i in "${!name_list[@]}"; do
+                        if [[ ${ns_list[i]} == '-' ]]; then
+                            _fkube__kubectl top pod "${name_list[i]}"
+                        else
+                            _fkube__kubectl top pod "${name_list[i]}" -n "${ns_list[i]}"
+                        fi
+                    done
+                    ;;
+                nodes|node)
+                    for i in "${!name_list[@]}"; do
+                        _fkube__kubectl top node "${name_list[i]}"
+                    done
+                    ;;
+                *)
+                    printf 'fkube: top is enabled for pods and nodes.\n' >&2
+                    _fkube__pause
+                    return 1
+                    ;;
+            esac
+            _fkube__pause
+            ;;
+
+        events)
+            for i in "${!name_list[@]}"; do
+                if [[ ${ns_list[i]} == '-' ]]; then
+                    _fkube__kubectl get events \
+                        --field-selector "involvedObject.name=${name_list[i]}" \
+                        --sort-by=.lastTimestamp
+                else
+                    _fkube__kubectl get events \
+                        -n "${ns_list[i]}" \
+                        --field-selector "involvedObject.name=${name_list[i]}" \
+                        --sort-by=.lastTimestamp
+                fi
+            done
+            _fkube__pause
+            ;;
+
+        cordon-toggle)
+            [[ $resource == nodes || $resource == node ]] || {
+                printf 'fkube: cordon/uncordon is only available from a node picker.\n' >&2
+                _fkube__pause
+                return 1
+            }
+
+            for i in "${!name_list[@]}"; do
+                unschedulable=$(_fkube__kubectl get node "${name_list[i]}" -o jsonpath='{.spec.unschedulable}' 2>/dev/null) || unschedulable=''
+                if [[ $unschedulable == true ]]; then
+                    targets[i]="uncordon/${name_list[i]}"
+                else
+                    targets[i]="cordon/${name_list[i]}"
+                fi
+            done
+
+            printf 'Planned node changes:\n' >&2
+            printf '  %s\n' "${targets[@]}" >&2
+            printf '\n' >&2
+            _fkube__print_context_warning
+            _fkube__confirm 'Apply node scheduling changes?' || return 0
+
+            for i in "${!name_list[@]}"; do
+                unschedulable=$(_fkube__kubectl get node "${name_list[i]}" -o jsonpath='{.spec.unschedulable}' 2>/dev/null) || unschedulable=''
+                if [[ $unschedulable == true ]]; then
+                    _fkube__kubectl uncordon "${name_list[i]}"
+                else
+                    _fkube__kubectl cordon "${name_list[i]}"
+                fi
+            done
+            ;;
+
+        drain)
+            [[ $resource == nodes || $resource == node ]] || {
+                printf 'fkube: drain is only available from a node picker.\n' >&2
+                _fkube__pause
+                return 1
+            }
+
+            printf 'Selected node(s):\n' >&2
+            printf '  %s\n' "${name_list[@]}" >&2
+            printf '\nDrain will evict eligible workloads and may delete emptyDir data.\n' >&2
+            _fkube__print_context_warning
+
+            if _fkube__assume_yes || ! _fkube__confirm_enabled; then
+                :
+            else
+                if ! _fkube__is_tty; then
+                    printf 'fkube: refusing drain because no controlling tty is available.\n' >&2
+                    return 1
+                fi
+                local drain_confirmation=''
+                read -r -p 'Type DRAIN to continue: ' drain_confirmation </dev/tty || return 1
+                [[ $drain_confirmation == DRAIN ]] || return 0
+            fi
+
+            for i in "${!name_list[@]}"; do
+                _fkube__kubectl drain "${name_list[i]}" --ignore-daemonsets --delete-emptydir-data
+            done
+            ;;
+
+        *)
+            printf 'fkube: unknown action: %s\n' "$action" >&2
+            return 2
+            ;;
+    esac
+}
+
+# ----------------------------------------------------------------------------
+# Resource picker
+# -----------------------------------------------------------------------------
+
+_fkube__resource_header() {
+    local resource=$1
+
+    printf '%s\n%s' \
+        'Enter describe · Tab select · Ctrl-D delete · Ctrl-E edit · Ctrl-Y YAML · Ctrl-J JSON' \
+        'Ctrl-R reload · Ctrl-A all-ns · Alt-C name · Alt-N namespace · Alt-Y copy YAML · Ctrl-/ preview'
+
+    case $resource in
+        pods|pod)
+            printf '\n%s\n%s' \
+                'Pod: Ctrl-L logs · Alt-L follow · Alt-P previous · Ctrl-X exec · Alt-A attach' \
+                'Pod: Alt-F forward · Ctrl-T top · Alt-E events'
+            ;;
+        deployments|deployment|daemonsets|daemonset|statefulsets|statefulset)
+            printf '\n%s\n%s' \
+                'Workload: Alt-R restart · Alt-U undo · Alt-H history · Alt-W status' \
+                'Workload: Alt-S scale · Alt-F forward'
+            ;;
+        services|service)
+            printf '\n%s' 'Service: Alt-F port-forward'
+            ;;
+        nodes|node)
+            printf '\n%s' 'Nodes: Ctrl-T top · Alt-U cordon/uncordon · Alt-R drain'
+            ;;
+        replicasets|replicaset)
+            printf '\n%s' 'ReplicaSets: Alt-S scale'
+            ;;
+    esac
+}
+
+_fkube__resource_picker() {
+    _fkube__require_commands || return
+
+    local requested=${1:-}
+    shift || true
+
+    local namespace=''
+    local initial_scope='current'
+    local -a query_parts=()
+    local arg
+
+    # Parse picker-local flags without disturbing the public command parser.
+    while (($#)); do
+        arg=$1
+        case $arg in
+            -n|--namespace)
+                if (($# < 2)); then
+                    printf 'fkube: %s requires a namespace.\n' "$arg" >&2
+                    return 2
+                fi
+                namespace=$2
+                shift 2
+                ;;
+            -A|--all-namespaces)
+                initial_scope='all'
+                shift
+                ;;
+            --)
+                shift
+                query_parts+=("$@")
+                break
+                ;;
+            *)
+                query_parts+=("$arg")
+                shift
+                ;;
+        esac
+    done
+
+    local initial_query=''
+    ((${#query_parts[@]})) && initial_query=${query_parts[*]}
+
+    if [[ -z $requested ]]; then
+        _fkube__resource_types "$namespace" "$initial_query"
+        return $?
+    fi
+
+    local current_namespace
+    current_namespace=$(_fkube__current_namespace)
+    [[ -n $namespace ]] || namespace=$current_namespace
+
+    local meta canonical namespaced kind
+    meta=$(_fkube__resource_meta "$requested") || true
+    if [[ -z $meta ]]; then
+        printf 'fkube: unknown/list-incompatible resource: %s\n' "$requested" >&2
+        printf 'Use `kubectl api-resources` or `fkube` to choose a resource type.\n' >&2
+        return 2
+    fi
+
+    IFS=$'\t' read -r canonical namespaced kind <<< "$meta"
+    [[ -n $canonical ]] || return 2
+
+    local prompt
+    if [[ $namespaced != true ]]; then
+        prompt="K8s:$canonical [cluster] ❯❯❯ "
+        initial_scope='current'
+    elif [[ $initial_scope == all ]]; then
+        prompt="K8s:$canonical [ALL] ❯❯❯ "
+    else
+        prompt="K8s:$canonical [ns:$namespace] ❯❯❯ "
+    fi
+
+    local preview_cmd
+    if [[ $namespaced == true ]]; then
+        printf -v preview_cmd '_fkube__preview_resource %q {1} {2}' "$canonical"
+    else
+        printf -v preview_cmd '_fkube__preview_resource %q - {2}' "$canonical"
+    fi
+
+    local reload_current reload_all
+    printf -v reload_current '_fkube__list %q %q current %q' "$canonical" "$namespaced" "$namespace"
+    printf -v reload_all '_fkube__list %q %q all %q' "$canonical" "$namespaced" "$namespace"
+
+    local accept_nth
+    if [[ $namespaced == true ]]; then
+        accept_nth='{1}/{2}'
+    else
+        accept_nth="${canonical}/{2}"
+    fi
+
+    local -a args=(
+        --with-shell='bash -c'
+        --exact
+        --multi
+        --delimiter=$'\t'
+        --with-nth=3
+        --accept-nth="$accept_nth"
+        --prompt="$prompt"
+        --query="$initial_query"
+        --header="$(_fkube__resource_header "$canonical")"
+        --preview="$preview_cmd"
+        --preview-window='right:55%:hidden:wrap'
+        --bind="ctrl-r:reload($reload_current)"
+        --bind="enter:execute(_fkube__action describe '$canonical' --file {+f})"
+        --bind="ctrl-d:execute(_fkube__action delete '$canonical' --file {+f})+reload($reload_current)"
+        --bind="ctrl-e:execute(_fkube__action edit '$canonical' --file {+f})+reload($reload_current)"
+        --bind="ctrl-y:execute(_fkube__action yaml '$canonical' --file {+f})"
+        --bind="ctrl-j:execute(_fkube__action json '$canonical' --file {+f})"
+        --bind="alt-c:execute-silent(_fkube__action copy-name '$canonical' --file {+f})"
+        --bind="alt-n:execute-silent(_fkube__action copy-namespace '$canonical' --file {+f})"
+        --bind="alt-y:execute-silent(_fkube__action copy-yaml '$canonical' --file {+f})"
+        --bind='alt-enter:accept'
+    )
+
+    if [[ $namespaced == true ]]; then
+        args+=(
+            --bind="ctrl-a:transform:_fkube__toggle_scope '$canonical' '$namespaced' '$namespace'"
+        )
+    fi
+
+    case $canonical in
+        pods|pod)
+            args+=(
+                --bind="ctrl-l:execute(_fkube__action logs '$canonical' --file {+f})"
+                --bind="alt-l:execute(_fkube__action logs-follow '$canonical' --file {+f})"
+                --bind="alt-p:execute(_fkube__action logs-previous '$canonical' --file {+f})"
+                --bind="ctrl-x:execute(_fkube__action exec '$canonical' --file {+f})"
+                --bind="alt-a:execute(_fkube__action attach '$canonical' --file {+f})"
+                --bind="alt-f:execute(_fkube__action port-forward '$canonical' --file {+f})"
+                --bind="ctrl-t:execute(_fkube__action top '$canonical' --file {+f})"
+                --bind="alt-e:execute(_fkube__action events '$canonical' --file {+f})"
+            )
+            ;;
+        deployments|deployment|daemonsets|daemonset|statefulsets|statefulset)
+            args+=(
+                --bind="alt-f:execute(_fkube__action port-forward '$canonical' --file {+f})"
+                --bind="alt-r:execute(_fkube__action restart '$canonical' --file {+f})+reload($reload_current)"
+                --bind="alt-u:execute(_fkube__action undo '$canonical' --file {+f})+reload($reload_current)"
+                --bind="alt-h:execute(_fkube__action rollout-history '$canonical' --file {+f})"
+                --bind="alt-w:execute(_fkube__action rollout-status '$canonical' --file {+f})"
+                --bind="alt-s:execute(_fkube__action scale '$canonical' --file {+f})+reload($reload_current)"
+            )
+            ;;
+        services|service)
+            args+=(
+                --bind="alt-f:execute(_fkube__action port-forward '$canonical' --file {+f})"
+            )
+            ;;
+        nodes|node)
+            args+=(
+                --bind="ctrl-t:execute(_fkube__action top '$canonical' --file {+f})"
+                --bind="alt-u:execute(_fkube__action cordon-toggle '$canonical' --file {+f})+reload($reload_current)"
+                --bind="alt-r:execute(_fkube__action drain '$canonical' --file {+f})+reload($reload_current)"
+            )
+            ;;
+        replicasets|replicaset)
+            args+=(
+                --bind="alt-s:execute(_fkube__action scale '$canonical' --file {+f})+reload($reload_current)"
+            )
+            ;;
+    esac
+
+    if [[ $initial_scope == all && $namespaced == true ]]; then
+        _fkube__list "$canonical" "$namespaced" all "$namespace" | fzf "${args[@]}"
+    else
+        _fkube__list "$canonical" "$namespaced" current "$namespace" | fzf "${args[@]}"
+    fi
+}
+
+# ----------------------------------------------------------------------------
+# Resource-type chooser
+# -----------------------------------------------------------------------------
+
+_fkube__resource_type_header() {
+    printf '%s\n%s' \
+        'Enter browse · Ctrl-R reload · Alt-C copy name · Ctrl-/ preview' \
+        'Exact matching · Esc exit'
+}
+
+_fkube__resource_types() {
+    local namespace=${1-}
+    local initial_query=${2-}
+    local selected resource
+    local preview_cmd
+
+    _fkube__require_commands || return
+
+    printf -v preview_cmd '_fkube__kubectl explain {1} 2>&1 | _fkube__preview_render text'
+
+    selected=$(
+        _fkube__resource_types_list |
+            fzf \
+                --with-shell='bash -c' \
+                --exact \
+                --no-multi \
+                --delimiter=$'\t' \
+                --with-nth=5 \
+                --accept-nth='{1}' \
+                --prompt="K8s resource${namespace:+ [ns:$namespace]} ❯❯❯ " \
+                --query="$initial_query" \
+                --header="$(_fkube__resource_type_header)" \
+                --preview="$preview_cmd" \
+                --preview-window='right:55%:hidden:wrap' \
+                --bind='ctrl-r:reload(_fkube__resource_types_list)' \
+                --bind='alt-c:execute-silent(printf %s {1} | _fkube__clip)' \
+                --bind='enter:accept'
+    ) || return 0
+
+    resource=$selected
+    [[ -n $resource ]] || return 0
+
+    if [[ -n $namespace ]]; then
+        _fkube__resource_picker "$resource" -n "$namespace"
+    else
+        _fkube__resource_picker "$resource"
+    fi
+}
+
+# ----------------------------------------------------------------------------
+# Namespace picker / namespace gate
+# -----------------------------------------------------------------------------
+
+# This deliberately does NOT call `kubectl config set-context --current ...`.
+# Enter means: "use this namespace as the starting exploration scope".
+_fkube__namespace_gate_action() {
+    local namespace=${1:-}
+    [[ -n $namespace ]] || return 0
+    _fkube__resource_types "$namespace"
+}
+
+_fkube__namespaces_list() {
+    local current
+    current=$(_fkube__current_namespace)
+
+    _fkube__kubectl get namespaces --no-headers \
+        -o custom-columns='NAME:.metadata.name,STATUS:.status.phase' 2>/dev/null |
+        awk -v current="$current" '
+            {
+                name = $1
+                status = ($2 == "" ? "-" : $2)
+                marker = (name == current ? " *" : "")
+
+                row_name[NR] = name
+                row_status[NR] = status marker
+                if (length(name) > w1) w1 = length(name)
+                if (length(status marker) > w2) w2 = length(status marker)
+            }
+            END {
+                for (i = 1; i <= NR; i++)
+                    if (row_name[i] != "")
+                        printf "%s\t%s\t%-*s  %-*s\n", \
+                            row_name[i], row_status[i], w1, row_name[i], \
+                            w2, row_status[i]
+            }
+        '
+}
+
+_fkube__namespace_header() {
+    printf '%s\n%s' \
+        'Enter explore resources · Ctrl-R reload · Ctrl-D delete · Alt-C copy' \
+        'Current namespace is marked with * · Ctrl-/ preview · Esc exit'
+}
+
+_fkube__namespace_action() {
+    local action=${1:-}
+    local namespace=${2:-}
+
+    case $action in
+        delete)
+            [[ -n $namespace ]] || return 1
+            printf 'Namespace: %s\n' "$namespace" >&2
+            printf 'This deletes the namespace and resources governed by its lifecycle.\n\n' >&2
+
+            if _fkube__assume_yes || ! _fkube__confirm_enabled; then
+                :
+            else
+                if ! _fkube__is_tty; then
+                    printf 'fkube: refusing namespace deletion because no controlling tty is available.\n' >&2
+                    return 1
+                fi
+                local confirm answer
+                read -r -p 'Delete namespace? Type the namespace name exactly: ' confirm </dev/tty || return 1
+                [[ $confirm == "$namespace" ]] || return 0
+                read -r -p 'Final confirmation [y/N]: ' answer </dev/tty || return 1
+                [[ $answer =~ ^[Yy]$ ]] || return 0
+            fi
+
+            _fkube__kubectl delete namespace "$namespace"
+            ;;
+        *)
+            printf 'fkube: unknown namespace action: %s\n' "$action" >&2
+            return 2
+            ;;
+    esac
+}
+
+_fkube__namespaces() {
+    local -a query_parts=()
+    local arg initial_query=''
+
+    _fkube__require_commands || return
+
+    while (($#)); do
+        arg=$1
+        case $arg in
+            -n|--namespace)
+                printf 'fkube: -n/--namespace is not applicable to the namespace gate.\n' >&2
+                return 2
+                ;;
+            --)
+                shift
+                query_parts+=("$@")
+                break
+                ;;
+            *)
+                query_parts+=("$arg")
+                shift
+                ;;
+        esac
+    done
+    ((${#query_parts[@]})) && initial_query=${query_parts[*]}
+
+    _fkube__namespaces_list |
+        fzf \
+            --with-shell='bash -c' \
+            --exact \
+            --no-multi \
+            --delimiter=$'\t' \
+            --with-nth=3 \
+            --accept-nth='{1}' \
+            --prompt='K8s namespace ❯❯❯ ' \
+            --query="$initial_query" \
+            --header="$(_fkube__namespace_header)" \
+            --preview='_fkube__kubectl describe namespace {1} 2>&1 | _fkube__preview_render text' \
+            --preview-window='right:55%:hidden:wrap' \
+            --bind='ctrl-r:reload(_fkube__namespaces_list)' \
+            --bind='enter:execute(_fkube__namespace_gate_action {1})' \
+            --bind='ctrl-d:execute(_fkube__namespace_action delete {1})+reload(_fkube__namespaces_list)' \
+            --bind='alt-c:execute-silent(printf %s {1} | _fkube__clip)'
+}
+
+# ----------------------------------------------------------------------------
+# Context picker
+# -----------------------------------------------------------------------------
+
+_fkube__contexts_list() {
+    local current
+    current=$(_fkube__current_context)
+
+    _fkube__kubectl config get-contexts -o name 2>/dev/null |
+        awk -v current="$current" '{ marker = ($0 == current) ? "*" : " "; printf "%s\t%s\t%s  %s\n", $0, marker, marker, $0 }'
+}
+
+_fkube__context_header() {
+    printf '%s\n%s' \
+        'Enter switch · Ctrl-R reload · Ctrl-D delete · Alt-C copy' \
+        'Exact matching · Ctrl-/ preview · Esc exit'
+}
+
+_fkube__context_action() {
+    local action=${1:-}
+    local context=${2:-}
+
+    case $action in
+        use)
+            [[ -n $context ]] || return 1
+            _fkube__kubectl config use-context "$context"
+            ;;
+        delete)
+            [[ -n $context ]] || return 1
+            printf 'Context: %s\n' "$context" >&2
+            _fkube__print_context_warning
+            _fkube__confirm 'Delete this kubeconfig context?' || return 0
+            _fkube__kubectl config delete-context "$context"
+            ;;
+        *)
+            printf 'fkube: unknown context action: %s\n' "$action" >&2
+            return 2
+            ;;
+    esac
+}
+
+_fkube__contexts() {
+    _fkube__require_commands || return
+
+    local -a query_parts=()
+    local arg initial_query=''
+
+    while (($#)); do
+        arg=$1
+        case $arg in
+            --)
+                shift
+                query_parts+=("$@")
+                break
+                ;;
+            *)
+                query_parts+=("$arg")
+                shift
+                ;;
+        esac
+    done
+    ((${#query_parts[@]})) && initial_query=${query_parts[*]}
+
+    local selected
+    selected=$(
+        _fkube__contexts_list |
+            fzf \
+                --with-shell='bash -c' \
+                --exact \
+                --no-multi \
+                --delimiter=$'\t' \
+                --with-nth=3 \
+                --accept-nth='{1}' \
+                --prompt='K8s context ❯❯❯ ' \
+                --query="$initial_query" \
+                --header="$(_fkube__context_header)" \
+                --preview='_fkube__kubectl config get-contexts {1} 2>&1 | _fkube__preview_render text' \
+                --preview-window='right:55%:hidden:wrap' \
+                --bind='ctrl-r:reload(_fkube__contexts_list)' \
+                --bind='enter:execute(_fkube__context_action use {1})+reload(_fkube__contexts_list)' \
+                --bind='ctrl-d:execute(_fkube__context_action delete {1})+reload(_fkube__contexts_list)' \
+                --bind='alt-c:execute-silent(printf %s {1} | _fkube__clip)'
+    ) || return 0
+
+    [[ -n $selected ]]
+}
+
+# ----------------------------------------------------------------------------
+# Help / diagnostics
+# -----------------------------------------------------------------------------
+
+_fkube__help() {
+    cat <<'HELP'
+fkube - fzf-driven kubectl/K9s-style workflows
+
+Usage:
+  fkube                         Choose a resource type, then browse it.
+  fkube pods                    Browse pods in the current namespace.
+  fkube pods -n observability   Browse pods in a specific namespace.
+  fkube -n observability pods   Same, with namespace before the resource.
+  fkube pods -A                 Browse all namespaces immediately.
+  fkube deploy                  Browse deployments (short names are supported).
+  fkube ns                      Choose a namespace, then choose a resource type.
+  fkube ctx                     Choose/switch kubeconfig context.
+  fkube resource                Choose a resource type explicitly.
+  fkube doctor                  Check local fkube prerequisites.
+  fkube --doctor                Same as `fkube doctor`.
+  fkube --version               Print fkube version.
+
+Global options:
+  -n, --namespace NAME          Start a namespaced picker in NAME.
+  -A, --all-namespaces          Start a namespaced picker in all namespaces.
+  -y, --yes, --assume-yes       Skip mutation confirmations.
+      --no-confirm              Disable mutation confirmations for this call.
+      --confirm                 Force mutation confirmations for this call.
+  -h, --help                    Show this help.
+      --version                 Print the version.
+
+Namespace behavior:
+  fkube ns                      Namespace gate; NEVER changes kubeconfig namespace.
+  fkube -n NAME RESOURCE        Start a namespaced resource picker in NAME.
+  fkube RESOURCE -n NAME        Same, with -n after the resource.
+  fkube RESOURCE -A             Start that resource in all namespaces.
+
+Resource picker keys:
+  Enter       Describe selected resource(s) with a pager.
+  Alt-Enter   Accept selected resource(s).
+  Tab         Multi-select.
+  Ctrl-R      Reload.
+  Ctrl-A      Toggle current namespace / all namespaces.
+  Ctrl-D      Delete, with confirmation.
+  Ctrl-E      Edit selected resource(s).
+  Ctrl-Y      View YAML with a pager.
+  Ctrl-J      View JSON with a pager.
+  Alt-C       Copy resource name(s).
+  Alt-N       Copy namespace(s).
+  Alt-Y       Copy YAML to the system clipboard.
+  Ctrl-/      Toggle preview (preview starts hidden).
+
+Pod keys:
+  Ctrl-L      Show recent logs (all containers).
+  Alt-L       Follow logs (one pod only).
+  Alt-P       Show previous logs.
+  Ctrl-X      Exec (container picker when needed).
+  Alt-A       Attach (container picker when needed).
+  Alt-F       Port-forward.
+  Ctrl-T      kubectl top pod.
+  Alt-E       Events for the selected pod(s).
+
+Workload keys (Deployment/DaemonSet/StatefulSet):
+  Alt-R       Rollout restart, with confirmation.
+  Alt-U       Rollout undo, with confirmation.
+  Alt-H       Rollout history.
+  Alt-W       Rollout status.
+  Alt-S       Scale, with confirmation.
+  Alt-F       Port-forward.
+
+Node keys:
+  Ctrl-T      kubectl top node.
+  Alt-U       Cordon / uncordon, with confirmation.
+  Alt-R       Drain, with a strong confirmation.
+
+Context / namespace picker keys:
+  Enter       Explore / switch.
+  Ctrl-R      Reload.
+  Ctrl-D      Delete, with confirmation.
+  Alt-C       Copy name.
+  Ctrl-/      Toggle hidden preview.
+
+Safety:
+  Mutation confirmations are enabled by default.
+  FKUBE_CONFIRM_MUTATIONS=0 disables them for the environment.
+  `--yes` / `--assume-yes` skips confirmations for one invocation.
+  Namespace deletion requires the exact namespace name plus confirmation unless
+  confirmations were explicitly disabled.
+  Node drain asks for the literal word DRAIN unless confirmation is disabled.
+
+Other environment settings:
+  FKUBE_LOG_LINES=200               Log tail length.
+  FKUBE_EXEC_SHELL=/bin/zsh         Force the pod shell for Ctrl-X.
+  FKUBE_INCLUDE_INIT_CONTAINERS=1   Include init containers in the picker.
+  FKUBE_INCLUDE_EPHEMERAL=1         Include ephemeral containers in the picker.
+
+Notes:
+  - fzf matching is exact by default.
+  - Previews are hidden by default and can be toggled with Ctrl-/.
+  - This file is sourceable; sourcing it does not launch a picker.
+HELP
+}
+
+_fkube__doctor() {
+    local cmd
+    local rc=0
+
+    printf 'fkube %s\n\n' "$(_fkube__version)"
+    for cmd in bash kubectl fzf awk mktemp; do
+        if command -v "$cmd" >/dev/null 2>&1; then
+            printf '  [OK]   %s -> %s\n' "$cmd" "$(command -v "$cmd")"
+        else
+            printf '  [MISS] %s\n' "$cmd"
+            rc=1
+        fi
+    done
+
+    printf '\nOptional:\n'
+    for cmd in bat less wl-copy xclip xsel pbcopy; do
+        if command -v "$cmd" >/dev/null 2>&1; then
+            printf '  [OK]   %s -> %s\n' "$cmd" "$(command -v "$cmd")"
+        else
+            printf '  [----] %s\n' "$cmd"
+        fi
+    done
+
+    if command -v kubectl >/dev/null 2>&1; then
+        printf '\nKubectl client:\n'
+        _fkube__kubectl version --client=true --output=yaml 2>/dev/null | awk '
+            /gitVersion:/ { print "  " $0; found=1; exit }
+            END { if (!found) print "  unable to query kubectl client version" }
+        '
+
+        printf 'Current context: %s\n' "$(_fkube__current_context)"
+        printf 'Current namespace: %s\n' "$(_fkube__current_namespace)"
+    fi
+
+    return "$rc"
+}
+
+# ----------------------------------------------------------------------------
+# Public dispatcher
+# -----------------------------------------------------------------------------
+
+_fkube__dispatch() {
+    local namespace=''
+    local all_namespaces=0
+    local arg
+
+    while (($#)); do
+        arg=$1
+        case $arg in
+            -n|--namespace)
+                if (($# < 2)); then
+                    printf 'fkube: %s requires a namespace.\n' "$arg" >&2
+                    return 2
+                fi
+                namespace=$2
+                shift 2
+                ;;
+            -A|--all-namespaces)
+                all_namespaces=1
+                shift
+                ;;
+            ctx|context|contexts)
+                shift
+                # A context picker is not namespaced; an -n value encountered
+                # before it is rejected to avoid silently ignoring user input.
+                if [[ -n $namespace || $all_namespaces -eq 1 ]]; then
+                    printf 'fkube: namespace flags are not applicable to the context picker.\n' >&2
+                    return 2
+                fi
+                _fkube__contexts "$@"
+                return $?
+                ;;
+            ns|namespace|namespaces)
+                shift
+                if [[ -n $namespace || $all_namespaces -eq 1 ]]; then
+                    printf 'fkube: namespace flags are not applicable to the namespace gate.\n' >&2
+                    return 2
+                fi
+                _fkube__namespaces "$@"
+                return $?
+                ;;
+            resource|resources|type|types)
+                shift
+                local resource_namespace=$namespace
+                local -a resource_query=()
+
+                while (($#)); do
+                    arg=$1
+                    case $arg in
+                        -n|--namespace)
+                            if (($# < 2)); then
+                                printf 'fkube: %s requires a namespace.\n' "$arg" >&2
+                                return 2
+                            fi
+                            resource_namespace=$2
+                            shift 2
+                            ;;
+                        -A|--all-namespaces)
+                            shift
+                            ;;
+                        --)
+                            shift
+                            resource_query+=("$@")
+                            break
+                            ;;
+                        *)
+                            resource_query+=("$arg")
+                            shift
+                            ;;
+                    esac
+                done
+
+                local query=''
+                ((${#resource_query[@]})) && query=${resource_query[*]}
+                if [[ -n $resource_namespace ]]; then
+                    _fkube__resource_types "$resource_namespace" "$query"
+                else
+                    _fkube__resource_types '' "$query"
+                fi
+                return $?
+                ;;
+            doctor|--doctor)
+                shift
+                (($# == 0)) || {
+                    printf 'fkube: doctor does not accept additional arguments.\n' >&2
+                    return 2
+                }
+                _fkube__doctor
+                return $?
+                ;;
+            help|-h|--help)
+                _fkube__help
+                return 0
+                ;;
+            version|--version)
+                printf 'fkube %s\n' "$(_fkube__version)"
+                return 0
+                ;;
+            '')
+                _fkube__resource_types
+                return $?
+                ;;
+            *)
+                # Everything after the resource is parsed by the resource
+                # picker, preserving arbitrary fzf query words.
+                if [[ -n $namespace ]]; then
+                    if ((all_namespaces)); then
+                        _fkube__resource_picker "$arg" -n "$namespace" -A "${@:2}"
+                    else
+                        _fkube__resource_picker "$arg" -n "$namespace" "${@:2}"
+                    fi
+                elif ((all_namespaces)); then
+                    _fkube__resource_picker "$arg" -A "${@:2}"
+                else
+                    _fkube__resource_picker "$@"
+                fi
+                return $?
+                ;;
+        esac
+    done
+
+    if [[ -n $namespace ]]; then
+        if ((all_namespaces)); then
+            _fkube__resource_types "$namespace"
+        else
+            _fkube__resource_types "$namespace"
+        fi
+    else
+        _fkube__resource_types
+    fi
+}
+
+fkube() {
+    local assume_yes=0
+    local confirm_mode='inherit'
+    local -a filtered=()
+    local arg
+    local parse_global=1
+
+    # Extract global safety switches anywhere before `--`. This lets users use
+    # either `fkube --yes pods` or `fkube pods --yes` without changing query
+    # semantics. Everything else is passed through unchanged.
+    while (($#)); do
+        arg=$1
+        if ((parse_global)); then
+            case $arg in
+                -y|--yes|--assume-yes)
+                    assume_yes=1
+                    shift
+                    continue
+                    ;;
+                --no-confirm)
+                    confirm_mode='off'
+                    shift
+                    continue
+                    ;;
+                --confirm)
+                    confirm_mode='on'
+                    shift
+                    continue
+                    ;;
+                --)
+                    parse_global=0
+                    filtered+=("$arg")
+                    shift
+                    continue
+                    ;;
+            esac
+        fi
+        filtered+=("$arg")
+        shift
+    done
+
+    local had_assume=0 old_assume=''
+    local had_confirm=0 old_confirm=''
+    if [[ ${FKUBE__ASSUME_YES+x} ]]; then
+        had_assume=1
+        old_assume=$FKUBE__ASSUME_YES
+    fi
+    if [[ ${FKUBE__CONFIRM_MUTATIONS+x} ]]; then
+        had_confirm=1
+        old_confirm=$FKUBE__CONFIRM_MUTATIONS
+    fi
+
+    if ((assume_yes)); then
+        export FKUBE__ASSUME_YES=1
+    fi
+
+    case $confirm_mode in
+        off) export FKUBE__CONFIRM_MUTATIONS=0 ;;
+        on) export FKUBE__CONFIRM_MUTATIONS=1 ;;
+    esac
+
+    _fkube__dispatch "${filtered[@]}"
+    local rc=$?
+
+    # Restore the caller's environment because this script is sourceable.
+    if ((had_assume)); then
+        export FKUBE__ASSUME_YES=$old_assume
+    else
+        unset FKUBE__ASSUME_YES
+    fi
+    if ((had_confirm)); then
+        export FKUBE__CONFIRM_MUTATIONS=$old_confirm
+    else
+        unset FKUBE__CONFIRM_MUTATIONS
+    fi
+
+    return "$rc"
+}
+
+# fzf launches preview/execute/transform commands through its configured shell.
+# Export only helpers that those child Bash processes actually need.
+export -f \
+    _fkube__version \
+    _fkube__require_commands \
+    _fkube__is_tty \
+    _fkube__pause \
+    _fkube__preview_render \
+    _fkube__render \
+    _fkube__page_file \
+    _fkube__clip \
+    _fkube__kubectl \
+    _fkube__current_context \
+    _fkube__current_namespace \
+    _fkube__confirm_enabled \
+    _fkube__assume_yes \
+    _fkube__confirm \
+    _fkube__print_context_warning \
+    _fkube__confirm_targets \
+    _fkube__resource_meta \
+    _fkube__resource_types_list \
+    _fkube__list \
+    _fkube__reload \
+    _fkube__toggle_scope \
+    _fkube__preview_resource \
+    _fkube__select_container \
+    _fkube__kubectl_target \
+    _fkube__read_selection_file \
+    _fkube__page_describes \
+    _fkube__page_yaml_or_json \
+    _fkube__copy_names \
+    _fkube__copy_object_output \
+    _fkube__action \
+    _fkube__resource_header \
+    _fkube__resource_picker \
+    _fkube__resource_type_header \
+    _fkube__resource_types \
+    _fkube__namespace_gate_action \
+    _fkube__namespaces_list \
+    _fkube__namespace_header \
+    _fkube__namespace_action \
+    _fkube__namespaces \
+    _fkube__contexts_list \
+    _fkube__context_header \
+    _fkube__context_action \
+    _fkube__contexts \
+    _fkube__help \
+    _fkube__doctor \
+    _fkube__dispatch \
+    fkube
+
+# Execute immediately only when the file itself is run. When sourced, the
+# function definitions above are installed but no picker is launched.
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+    fkube "$@"
+fi
+
+# vim: set ft=bash:
