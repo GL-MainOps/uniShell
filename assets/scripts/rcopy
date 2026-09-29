@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# rcopy - copy stdin/args/files to the clipboard of the machine you SSH'd from.
+# Transport 1: SSH-forwarded unix socket (/tmp/rcopy-*.sock) -> local sink.
+# Transport 2: OSC 52 through the terminal (tmux/screen aware).
+#
+# Housekeeping (called from ~/.ssh/rc):
+#   rcopy --prune       remove dead /tmp/rcopy-*.sock files
+#   rcopy --reap PID    wait until PID exits, then prune
+
+set -euo pipefail
+
+usage() {
+    cat >&2 <<'USAGE'
+Usage:
+  command | rcopy [-k]
+  rcopy [-k] 'text to copy'
+  rcopy [-k] file.txt
+
+  -k, --keep-newline   keep the trailing newline (default: strip one)
+  --prune              remove stale forwarded sockets
+  --reap PID           wait for PID to exit, then prune
+USAGE
+}
+
+# sshd leaves the socket file behind when a session ends, so every session
+# produces an orphan. The kernel's socket table tells us which files still
+# have a listener; anything else is dead. No connecting, so live sessions
+# are never disturbed.
+prune_stale_sockets() {
+    local s live
+    [[ -r /proc/net/unix ]] || return 0
+    live=$(awk '{print $NF}' /proc/net/unix 2>/dev/null) || return 0
+    [[ -n $live ]] || return 0
+    for s in /tmp/rcopy-*.sock; do
+        [[ -S $s && -O $s ]] || continue
+        grep -qxF -- "$s" <<<"$live" || rm -f -- "$s"
+    done
+}
+
+reap_after() {
+    local pid=${1:-}
+    [[ $pid =~ ^[0-9]+$ ]] || return 1
+    while kill -0 "$pid" 2>/dev/null; do sleep 5; done
+    sleep 1
+    prune_stale_sockets
+}
+
+open_tty() {
+    if [[ -r /dev/tty && -w /dev/tty ]]; then
+        exec 3>/dev/tty
+        return 0
+    fi
+    printf '%s\n' 'rcopy: no forwarded socket and no controlling terminal.' >&2
+    return 1
+}
+
+encode_base64() { base64 | tr -d '\r\n'; }
+
+copy_input() {
+    if (( $# == 0 )); then
+        cat
+        return
+    fi
+    local path
+    for path in "$@"; do
+        if [[ -f $path ]]; then cat -- "$path"; else printf '%s' "$path"; fi
+        if (( $# > 1 )); then printf '\n'; fi
+    done
+}
+
+send_to_socket() {
+    local sock=$1 reply
+    if command -v python3 >/dev/null 2>&1; then
+        reply=$(printf '%s\n' "$payload" | python3 -c '
+import socket, sys
+data = sys.stdin.buffer.read()
+s = socket.socket(socket.AF_UNIX)
+s.settimeout(3 + len(data) / 50000.0)   # assumes >= ~400 kbit/s, so big copies are not cut off
+s.connect(sys.argv[1])
+s.sendall(data)
+s.shutdown(socket.SHUT_WR)
+sys.stdout.write(s.recv(16).decode())
+' "$sock" 2>/dev/null) || return 1
+    elif command -v socat >/dev/null 2>&1; then
+        reply=$(printf '%s\n' "$payload" | socat -t3 - "UNIX-CONNECT:$sock" 2>/dev/null) || return 1
+    else
+        return 1
+    fi
+    [[ $reply == ok* ]]
+}
+
+send_via_sockets() {
+    local s
+    prune_stale_sockets
+    for s in $(ls -t /tmp/rcopy-*.sock 2>/dev/null); do
+        [[ -S $s && -O $s ]] || continue
+        if send_to_socket "$s"; then return 0; fi
+        # Session that looks alive to sshd but does not answer (laptop asleep,
+        # network switched): push it to the back of the queue so it costs one
+        # stall instead of one per copy.
+        touch -m -t 197001020000 -- "$s" 2>/dev/null || true
+    done
+    return 1
+}
+
+trim=1
+while (( $# )); do
+    case $1 in
+        -k|--keep-newline) trim=0; shift ;;
+        -h|--help)         usage; exit 0 ;;
+        --prune)           prune_stale_sockets; exit 0 ;;
+        --reap)            reap_after "${2:-}"; exit $? ;;
+        --)                shift; break ;;
+        *)                 break ;;
+    esac
+done
+
+# Read everything, preserving trailing newlines via the sentinel "x" trick.
+# (Held in a shell variable, so this is for text; NUL bytes are dropped.)
+raw=$(copy_input "$@" && printf x)
+raw=${raw%x}
+if (( trim )); then
+    raw=${raw%$'\n'}
+fi
+payload=$(printf '%s' "$raw" | encode_base64)
+
+# 1. SSH-forwarded socket: independent of the terminal, works in tmux/screen/zellij
+if send_via_sockets; then exit 0; fi
+
+# 2. Fallback: OSC 52 through the tty
+open_tty || exit 1
+if [[ -n ${TMUX:-} ]]; then
+    printf '\033Ptmux;\033\033]52;c;%s\a\033\\' "$payload" >&3
+elif [[ ${TERM:-} == screen* ]] && [[ -n ${STY:-} ]]; then
+    printf '\033P\033]52;c;%s\a\033\\' "$payload" >&3
+else
+    printf '\033]52;c;%s\a' "$payload" >&3
+fi
+# vim: set ft=bash:
