@@ -87,8 +87,9 @@ func TestBashRenderExactOutput(t *testing.T) {
 			},
 		},
 		Aliases: map[string]string{
-			"gs": "git status",
-			"ll": "ls -lah",
+			"gs":      "git status",
+			"ll":      "ls -lah",
+			"wl-copy": "rcopy",
 		},
 	}
 
@@ -104,6 +105,7 @@ export VISUAL='$EDITOR'
 export PATH='$HOME/.local/bin':'$HOME/bin':"$PATH"
 alias gs='git status'
 alias ll='ls -lah'
+alias wl-copy='rcopy'
 `
 
 	if got != want {

@@ -121,3 +121,27 @@ func TestValidateAcceptsValidIdentifiers(t *testing.T) {
 		t.Fatalf("Validate() returned error: %v", err)
 	}
 }
+
+func TestValidateAcceptsHyphenatedAlias(t *testing.T) {
+	cfg := Config{
+		Aliases: map[string]string{
+			"wl-copy": "rcopy",
+		},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() returned error: %v", err)
+	}
+}
+
+func TestValidateRejectsAliasStartingWithHyphen(t *testing.T) {
+	cfg := Config{
+		Aliases: map[string]string{
+			"-wl-copy": "rcopy",
+		},
+	}
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() returned nil error")
+	}
+}

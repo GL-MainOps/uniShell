@@ -45,7 +45,7 @@ func (c Config) Validate() error {
 	}
 
 	for name := range c.Aliases {
-		if !validIdentifier(name) {
+		if !validAliasName(name) {
 			return fmt.Errorf(
 				"invalid alias name %q",
 				name,

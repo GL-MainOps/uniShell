@@ -7,6 +7,7 @@ import (
 )
 
 var identifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var aliasNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
 
 type Adapter interface {
 	Name() string
@@ -52,4 +53,8 @@ func renderFishValue(value string) string {
 
 func validIdentifier(value string) bool {
 	return identifierPattern.MatchString(value)
+}
+
+func validAliasName(value string) bool {
+	return aliasNamePattern.MatchString(value)
 }
