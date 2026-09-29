@@ -331,7 +331,7 @@ $git_commit$git_branch[](#C6D6CF)${custom.E_UNISHELL_SESSION_VERSION}[](fg
     only_detached = false
     tag_disabled = false
     tag_max_candidates = 0
-    tag_symbol = ' 🏷 '
+    tag_symbol = '  󰓹  '
     format = '[[](fg:purple)[  ](bold fg:green bg:purple)\($hash$tag\)]($style)'
     style = 'bold bg:purple fg:white'
 
