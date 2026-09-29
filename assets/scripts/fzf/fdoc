@@ -36,8 +36,9 @@
 # Optional tools:
 #   bat       preferred renderer for JSON/YAML/text
 #   less      pager fallback when bat is unavailable
-#   wl-copy   Wayland clipboard
-#   xclip     X11 clipboard
+#   rcopy     SSH-aware clipboard transport (preferred)
+#   wl-copy   Wayland clipboard fallback
+#   xclip     X11 clipboard fallback
 #   xsel      X11 clipboard
 #   pbcopy    macOS clipboard
 #
@@ -258,6 +259,13 @@ _fdoc__page() {
 }
 
 _fdoc__clip() {
+    # Prefer rcopy so copying works over SSH, including from tmux/screen/zellij.
+    # Fall back to the local clipboard tools when rcopy is not installed.
+    if _fdoc__have rcopy; then
+        rcopy
+        return $?
+    fi
+
     # Do not silently report success when there is no clipboard integration.
     # The selected value is also printed in that case, so clipboard actions
     # remain useful on minimal servers.

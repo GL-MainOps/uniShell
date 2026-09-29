@@ -27,7 +27,8 @@
 #
 # Optional:
 #   bat, less                         paging / syntax highlighting
-#   wl-copy, xclip, xsel, pbcopy      clipboard support
+#   rcopy                             preferred SSH-aware clipboard transport
+#   wl-copy, xclip, xsel, pbcopy      local clipboard fallbacks
 #
 # Useful environment variables:
 #   FKUBE_CONFIRM_MUTATIONS=0         disable mutation confirmations
@@ -130,7 +131,12 @@ _fkube__page_file() {
 # Stream clipboard data directly. The original implementation loaded all input
 # into a shell variable; streaming is safer for large YAML/JSON output.
 _fkube__clip() {
-    if command -v wl-copy >/dev/null 2>&1; then
+    # Prefer rcopy so clipboard actions work over SSH, including tmux/screen/zellij.
+    # Fall back to local clipboard tools only when rcopy is not installed.
+    if command -v rcopy >/dev/null 2>&1; then
+        rcopy
+        return $?
+    elif command -v wl-copy >/dev/null 2>&1; then
         wl-copy
         return $?
     elif command -v xclip >/dev/null 2>&1; then
@@ -144,7 +150,7 @@ _fkube__clip() {
         return $?
     fi
 
-    printf 'fkube: no clipboard command available (wl-copy/xclip/xsel/pbcopy).\n' >&2
+    printf 'fkube: no clipboard command available (rcopy/wl-copy/xclip/xsel/pbcopy).\n' >&2
     return 127
 }
 

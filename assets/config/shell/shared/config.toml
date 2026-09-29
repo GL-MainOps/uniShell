@@ -121,13 +121,6 @@ ngxt = "sudo nginx -t"
 ngxr = "sudo nginx -s reload"
 
 # ┌────────────────┐
-# │ RCOPY          │
-# └────────────────┘
-wl-copy = 'rcopy'
-copy = 'rcopy'
-xclip = 'rcopy'
-
-# ┌────────────────┐
 # │ ZOXIDE         │
 # └────────────────┘
 cd = "z"

@@ -25,8 +25,9 @@
 #
 # Optional:
 #   bat       colored output
-#   wl-copy   Wayland clipboard
-#   xclip     X11 clipboard
+#   rcopy     SSH-aware clipboard transport (preferred)
+#   wl-copy   Wayland clipboard fallback
+#   xclip     X11 clipboard fallback
 #   xsel      X11 clipboard
 #   pbcopy    macOS clipboard (useful when the script is shared)
 #
@@ -125,6 +126,13 @@ _fsys__preview_render() {
 }
 
 _fsys__clip() {
+    # Prefer rcopy so clipboard actions work over SSH, including tmux/screen/zellij.
+    # Fall back to local clipboard tools only when rcopy is not installed.
+    if command -v rcopy >/dev/null 2>&1; then
+        rcopy
+        return $?
+    fi
+
     local value
     value=$(< /dev/stdin)
 
