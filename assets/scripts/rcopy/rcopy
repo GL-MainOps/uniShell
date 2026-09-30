@@ -46,8 +46,9 @@ reap_after() {
 }
 
 open_tty() {
-    if [[ -r /dev/tty && -w /dev/tty ]]; then
-        exec 3>/dev/tty
+    # /dev/tty can look openable yet fail with ENXIO when there is no
+    # controlling terminal (e.g. when tmux runs us as copy-command).
+    if { exec 3>/dev/tty; } 2>/dev/null; then
         return 0
     fi
     printf '%s\n' 'rcopy: no forwarded socket and no controlling terminal.' >&2
