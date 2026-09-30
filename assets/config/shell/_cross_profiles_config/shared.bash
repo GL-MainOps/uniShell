@@ -2,17 +2,16 @@
 # ║ SHELL PRE-INIT STEPS
 
 # ╭────────────────────────────────╮
-# │ PRUNE STALE RCOPY SOCKETS      │
+# │ SKIP IF NOT INTERACTIVE        │
 # ╰────────────────────────────────╯
-rcopy --prune
-
-## SKIP IF NOT INTERACTIVE
 case $- in
     *i*) ;;
     *) return;;
 esac
 
-## INITIAL SOURCING
+# ╭────────────────────────────────╮
+# │ INITIAL SOURCING               │
+# ╰────────────────────────────────╯
 if [ -f /etc/bashrc ]; then
     . /etc/bashrc
 fi
