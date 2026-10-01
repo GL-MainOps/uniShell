@@ -117,6 +117,7 @@ ports = "havn -a localhost"
 # ┌────────────────┐
 # │ NGINX          │
 # └────────────────┘
+ngx = "sudo systemctl status nginx"
 ngxt = "sudo nginx -t"
 ngxr = "sudo nginx -s reload"
 
