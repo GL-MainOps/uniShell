@@ -16,6 +16,15 @@ if [ -f /etc/bashrc ]; then
     . /etc/bashrc
 fi
 
+# ╭────────────────────────────────╮
+# │ SUDO SETUP                     │
+# ╰────────────────────────────────╯
+UNISHELL_ENVS=$(IFS=,; echo "${!UNISHELL_*}")
+export SUDO_PRESERVED_VARIABLES="$SUDO_INITIAL_PRESERVED_VARIABLES,$UNISHELL_ENVS"
+sudo() {
+    command sudo --preserve-env="$SUDO_PRESERVED_VARIABLES" env "PATH=$PATH" "$@"
+}
+
 # ╚═══════════════════════════════════════════════════════════════
 
 
@@ -191,15 +200,6 @@ done
 # ╭────────────────────────────────╮
 # │ SYSTEM                         │
 # ╰────────────────────────────────╯
-# ┌────────────────┐
-# │ SUDO           │
-# └────────────────┘
-UNISHELL_ENVS=$(IFS=,; echo "${!UNISHELL_*}")
-export SUDO_PRESERVED_VARIABLES="$SUDO_INITIAL_PRESERVED_VARIABLES,$UNISHELL_ENVS"
-sudo() {
-    command sudo --preserve-env="$SUDO_PRESERVED_VARIABLES" "$@"
-}
-
 # ┌────────────────┐
 # │ VIM            │
 # └────────────────┘

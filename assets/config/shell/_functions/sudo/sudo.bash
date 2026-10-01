@@ -1,10 +1,9 @@
-
 # --- Elevate safely ----------------------------------------------------------
 es() {
-    sudo --preserve-env=$SUDO_PRESERVED_VARIABLES bash --rcfile "$UNISHELL_CONFIG_PATH/shell-generated/$UNISHELL_SESSION_SHELL_PROFILE.bash"
+    sudo bash --rcfile "$UNISHELL_CONFIG_PATH/shell-generated/$UNISHELL_SESSION_SHELL_PROFILE.bash"
 }
 
-# --- DOUBLE ESC = SUDO <previous command> -----------------------------------
+# --- DOUBLE ESC = toggle sudo on the current or previous command--------------
 function _sudo_add_sudo {
     if [[ -z $READLINE_LINE ]]; then
         READLINE_LINE=$(fc -ln -1)

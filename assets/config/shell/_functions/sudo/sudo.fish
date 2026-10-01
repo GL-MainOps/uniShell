@@ -1,7 +1,6 @@
 # --- Elevate safely ----------------------------------------------------------
 function es
-    sudo --preserve-env=$SUDO_PRESERVED_VARIABLES \
-        fish --init-command "source '$UNISHELL_CONFIG_PATH/shell-generated/$UNISHELL_SESSION_SHELL_PROFILE.fish'"
+    sudo fish --init-command "source '$UNISHELL_CONFIG_PATH/shell-generated/$UNISHELL_SESSION_SHELL_PROFILE.fish'"
 end
 
 # --- DOUBLE ESC = toggle sudo on the current or previous command--------------

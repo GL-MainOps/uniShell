@@ -2,6 +2,16 @@
 # ║ SHELL PRE-INIT STEPS
 
 # ╭────────────────────────────────╮
+# │ SUDO SETUP                     │
+# ╰────────────────────────────────╯
+set -l unishell_envs (set --names | string match 'UNISHELL_*' | string join ',')
+set -gx SUDO_PRESERVED_VARIABLES "$SUDO_INITIAL_PRESERVED_VARIABLES,$unishell_envs"
+
+function sudo
+    command sudo --preserve-env="$SUDO_PRESERVED_VARIABLES" env "PATH=$PATH" $argv
+end
+
+# ╭────────────────────────────────╮
 # │ SPECIAL COLORING               │
 # ╰────────────────────────────────╯
 
@@ -370,17 +380,6 @@ function starship_transient_rprompt_func
 
 end
 
-
-# ┌────────────────┐
-# │ SUDO           │
-# └────────────────┘
-set -l unishell_envs (set --names | string match 'UNISHELL_*' | string join ',')
-set -gx SUDO_PRESERVED_VARIABLES \
-    "$SUDO_INITIAL_PRESERVED_VARIABLES,$unishell_envs"
-function sudo
-    command sudo --preserve-env="$SUDO_PRESERVED_VARIABLES" $argv
-end
-
 # ┌────────────────┐
 # │ VIM            │
 # └────────────────┘
@@ -392,7 +391,7 @@ alias v vim
 alias vi vim
 
 function svim
-    sudo --preserve-env="$SUDO_PRESERVED_VARIABLES" vim -c "source $vimrc" $argv
+    sudo vim -c "source $vimrc" $argv
 end
 
 alias sv svim
