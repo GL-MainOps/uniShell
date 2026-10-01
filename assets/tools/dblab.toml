@@ -7,7 +7,7 @@ profiles = [
 ]
 
 [[tools.artifacts]]
-version = "0.50.0"
+version = "0.51.0"
 platform = "linux"
 architecture = "amd64"
 archive_type = "tar.gz"
@@ -26,5 +26,5 @@ kind = "github-release"
 [tools.artifacts.source.github_release]
 owner = "danvergara"
 repository = "dblab"
-release = "v0.50.0"
-asset = "dblab_0.50.0_linux_amd64.tar.gz"
+release = "v0.51.0"
+asset = "dblab_0.51.0_linux_amd64.tar.gz"
