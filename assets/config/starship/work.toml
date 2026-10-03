@@ -2,14 +2,16 @@
 # ╔═══════════════════════════════════════════════════════════════
 # ║ PROMPT
 # ╚═
+
+add_newline = true
+
 # ╭────────────────────────────────╮
-# │ LEFT PROMPT                    │        ---    ╯ ╮ ╰ ╭ ─ 
+# │ LEFT PROMPT                    │        ---    ╯ ╮ ╰ ╭ ─ │ 
 # ╰────────────────────────────────╯
 format = """
-
-$git_branch$git_commit$directory(fg:#C6D6CF)
-
-\\[ $username$os${custom.ipaddr} \\] [$shell$sudo](bold fg:#C6D6CF)$character
+╭\\[ $username$os${custom.ipaddr} \\] $git_branch$git_commit $directory(fg:#C6D6CF) $fill${custom.timestamp}
+│
+╰[$shell$sudo](bold fg:#C6D6CF)$character
 """
 
 # ╭────────────────────────────────╮
@@ -158,7 +160,7 @@ $git_branch$git_commit$directory(fg:#C6D6CF)
 # └────────────────┘
 [fill]
     disabled = false
-    symbol = ' '
+    symbol = '─'
     style = 'bold black'
 
 # ┌────────────────┐
@@ -230,7 +232,7 @@ $git_branch$git_commit$directory(fg:#C6D6CF)
     disabled = false
     show_always= true
     style_root = 'blink bold fg:bright-red'
-    style_user = 'bold fg:bright-green'
+    style_user = 'bold fg:#63c77b'
     format = '[$user]($style)'
     aliases = { "root" = "  ROOT  ", "myahia" = "YAHIA", "yahia" = "YAHIA"}
 
@@ -305,11 +307,11 @@ $git_branch$git_commit$directory(fg:#C6D6CF)
     read_only_style = 'bold blink dimmed fg:#ff5364'
 
     before_repo_root_style = 'bold fg:#f0b84b' # The style for the path segment above the root of the git repo. The default value is equivalent to style.
-    repo_root_style = 'bold fg:#f0b84b' # The style for the root of the git repo. The default value is equivalent to style.
+    repo_root_style = 'bold fg:#dc7bd1' # The style for the root of the git repo. The default value is equivalent to style.
     repo_root_format = '[  ](bold fg:#f0b84b)[$before_root_path]($before_repo_root_style)[$repo_root]($repo_root_style)[$path]($style)[$read_only ]($read_only_style)'
 
     format = '[  ](bold fg:#f0b84b)[ $path ]($style)[$read_only]($read_only_style)'
-    style = 'bold fg:white'
+    style = 'bold fg:white bg:#303030'
 
 # ┌────────────────┐
 # │ GIT BRANCH     │
