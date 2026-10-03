@@ -2,6 +2,11 @@
 # ║ SHELL PRE-INIT STEPS
 
 # ╭────────────────────────────────╮
+# │ DISABLE WELCOME MESSAGE        │
+# ╰────────────────────────────────╯
+set fish_greeting
+
+# ╭────────────────────────────────╮
 # │ SUDO SETUP                     │
 # ╰────────────────────────────────╯
 set -l unishell_envs (set --names | string match 'UNISHELL_*' | string join ',')
@@ -366,19 +371,6 @@ end
 # ╭────────────────────────────────╮
 # │ SYSTEM                         │
 # ╰────────────────────────────────╯
-# ┌────────────────┐
-# │ STARTSHIP      │
-# └────────────────┘
-function starship_transient_prompt_func
-  echo -n ""; starship module sudo; echo -n ""
-  starship module character
-  starship module line_break
-end
-
-function starship_transient_rprompt_func
-  echo -n ""; starship module custom.long-timestamp; echo -n ""
-
-end
 
 # ┌────────────────┐
 # │ VIM            │

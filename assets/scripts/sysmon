@@ -16,9 +16,9 @@ id=$((idle - i1))
 td=$((t2 - t1))
 if [ $td -ne 0 ]; then
     cpu_pct=$((1000*(td - id)/td))
-    printf "(%d.%d%%) $(nproc)   │ " $((cpu_pct/10)) $((cpu_pct%10))
+    printf "  (%d.%d%%) $(nproc) │ " $((cpu_pct/10)) $((cpu_pct%10))
 else
-    printf "(0.0%%) $(nproc)   │ "
+    printf "  (0.0%%) $(nproc) │ "
 fi
 
 # Memory calculation (single read of /proc/meminfo)
