@@ -203,13 +203,15 @@ done
 # ┌────────────────┐
 # │ VIM            │
 # └────────────────┘
-vimrc="$UNISHELL_CONFIG_PATH/vim/vimrc"
+vimrc="$UNISHELL_CONFIG_PATH/vim/main.vim"
 
 if [[ -f $vimrc ]]; then
     for a in v vi vim; do
-        alias "$a"="vim -c 'source $vimrc' "
+        alias "$a"="vim -N -u \"$vimrc\" "
     done
-    alias sv="sudo --preserve-env=$SUDO_PRESERVED_VARIABLES vim -c 'source $vimrc' "
+    for a in sv svim; do
+        alias "$a"="sudo --preserve-env=$SUDO_PRESERVED_VARIABLES vim -N -u \"$vimrc\" "
+    done
 else
     echo -e "\nFailed to set VIM aliases. VIMRC file not found\n" >&2
 fi

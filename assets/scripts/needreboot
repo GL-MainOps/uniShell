@@ -80,7 +80,7 @@ needreboot() {
 }
 
 needreboot_prompt() {
-    local cache_ttl=28800
+    local cache_ttl=60
     local cache_dir="${XDG_RUNTIME_DIR:-/tmp}"
     local cache_file="$cache_dir/needreboot-prompt-${UID}.cache"
     local now="${EPOCHSECONDS:-$(date +%s)}"

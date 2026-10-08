@@ -375,15 +375,16 @@ end
 # ┌────────────────┐
 # │ VIM            │
 # └────────────────┘
+set vimrc "$UNISHELL_CONFIG_PATH/vim/main.vim"
 function vim
-    command vim -c "source $vimrc" $argv
+    command vim -N -u "$vimrc" $argv
 end
 
 alias v vim
 alias vi vim
 
 function svim
-    sudo vim -c "source $vimrc" $argv
+    sudo vim -N -u "$vimrc" $argv
 end
 
 alias sv svim
@@ -402,7 +403,7 @@ alias sv svim
 # ╭────────────────────────────────╮
 # │ STARSHIP                       │
 # ╰────────────────────────────────╯
-starship init fish | source && enable_transience
+starship init fish | source # && enable_transience
 
 # ╭────────────────────────────────╮
 # │ FZF                            │

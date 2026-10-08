@@ -161,7 +161,7 @@ format = """
 [fill]
     disabled = false
     symbol = '─'
-    style = 'bold black'
+    style = 'bold fg:#63c77b'
 
 # ┌────────────────┐
 # │ CHARACTER      │
@@ -311,7 +311,7 @@ format = """
     repo_root_format = '[  ](bold fg:#f0b84b)[$before_root_path]($before_repo_root_style)[$repo_root]($repo_root_style)[$path]($style)[$read_only ]($read_only_style)'
 
     format = '[  ](bold fg:#f0b84b)[ $path ]($style)[$read_only]($read_only_style)'
-    style = 'bold fg:white bg:#303030'
+    style = 'bold fg:white'
 
 # ┌────────────────┐
 # │ GIT BRANCH     │

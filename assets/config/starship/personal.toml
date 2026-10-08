@@ -163,7 +163,7 @@ $directory[](fg:#303030) $fill ${custom.timestamp} $git_commit$git_branch
 [fill]
     disabled = false
     symbol = '─'
-    style = 'bold black'
+    style = 'bold #f6c945'
 
 # ┌────────────────┐
 # │ CHARACTER      │
